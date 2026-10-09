@@ -1,0 +1,142 @@
+{
+  "_comment": "Правила оценки лида по таблице «Этапы продаж». Баллы суммируются, затем переводятся в рейтинг 1–5 с учётом ограничений (caps).",
+  "points": {
+    "budget": {
+      "gt3m": 4,
+      "1m_3m": 3,
+      "300k_1m": 2,
+      "100_300k": 1,
+      "lt100k": 0,
+      "unknown": 0.5
+    },
+    "industry": {
+      "finance": 1.5,
+      "realty": 1.5,
+      "medicine": 1.5,
+      "auto": 1.5,
+      "tourism": 0.5,
+      "sport": 0.5,
+      "b2b_services": 0.5,
+      "ecom": 0.5,
+      "other": 0
+    },
+    "geography": {
+      "international": 1.5,
+      "cis": 0.5,
+      "russia": 0
+    },
+    "market": {
+      "b2b": 0.5,
+      "both": 0.5,
+      "b2c": 0
+    },
+    "role": {
+      "owner": 1,
+      "marketing_head": 0.5,
+      "marketer": 0,
+      "manager": -0.5,
+      "other": 0
+    },
+    "decision_maker": {
+      "me": 0.5,
+      "with_me": 0,
+      "other": -1
+    },
+    "start": {
+      "asap": 0.5,
+      "month": 0.5,
+      "quarter": 0,
+      "exploring": -0.5
+    },
+    "criteria": {
+      "results": 0.5,
+      "expertise": 0.5,
+      "transparency": 0.5,
+      "speed": 0,
+      "price": -1.5
+    },
+    "source": {
+      "recommendation": 0.5,
+      "unistream": 0.5,
+      "known": 0.5
+    }
+  },
+  "engagement": {
+    "_comment": "«Отвечает охотно или надо тянуть информацию?» — по доле необязательных ответов и подробности текста",
+    "engagedBonus": 0.5,
+    "reluctantPenalty": -0.5
+  },
+  "thresholds": {
+    "5": 7,
+    "4": 5,
+    "3": 1
+  },
+  "caps": {
+    "_comment": "Звёздный бренд — всегда 5. Остальным: 5 — только при бюджете от 1 млн; 4 — при бюджете от 300 тыс.",
+    "rating5": {
+      "budget": [
+        "gt3m",
+        "1m_3m"
+      ]
+    },
+    "rating4": {
+      "budget": [
+        "gt3m",
+        "1m_3m",
+        "300k_1m"
+      ]
+    }
+  },
+  "starBrands": [
+    "юнистрим",
+    "unistream",
+    "квикпей",
+    "qiwi",
+    "сбербанк",
+    "сбер",
+    "тинькофф",
+    "т-банк",
+    "альфа-банк",
+    "альфабанк",
+    "втб",
+    "газпром",
+    "газпромбанк",
+    "яндекс",
+    "yandex",
+    "ozon",
+    "озон",
+    "wildberries",
+    "вайлдберриз",
+    "мтс",
+    "мегафон",
+    "билайн",
+    "ингосстрах",
+    "росгосстрах",
+    "аэрофлот",
+    "ржд",
+    "x5",
+    "магнит",
+    "лукойл",
+    "роснефть"
+  ],
+  "stopWords": [
+    "рос среди",
+    "тюрьм",
+    "тюрем",
+    "закладк",
+    "наркот",
+    "обнал",
+    "порно"
+  ],
+  "spamPatterns": [
+    "https?://\\S+\\s*https?://",
+    "(.)\\1{7,}",
+    "^[^а-яёa-z]*$"
+  ],
+  "priorityIndustries": [
+    "finance",
+    "realty",
+    "medicine",
+    "auto"
+  ]
+}

@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "intro": "Здравствуйте! Я помощник агентства Soroka Marketing. Задам несколько коротких вопросов (2–3 минуты), чтобы сразу передать задачу нужному специалисту и подготовить предложение.",
+  "steps": [
+    {
+      "id": "service",
+      "label": "Услуга",
+      "type": "choice",
+      "required": true,
+      "text": "Какая услуга вас интересует?",
+      "options": [
+        {
+          "value": "context",
+          "label": "Контекстная реклама"
+        },
+        {
+          "value": "target",
+          "label": "Таргетированная реклама"
+        },
+        {
+          "value": "seo",
+          "label": "SEO-продвижение"
+        },
+        {
+          "value": "marketplaces",
+          "label": "Маркетплейсы"
+        },
+        {
+          "value": "smm",
+          "label": "SMM"
+        },
+        {
+          "value": "analytics",
+          "label": "Веб-аналитика / сквозная аналитика"
+        },
+        {
+          "value": "site",
+          "label": "Сайт / лендинг"
+        },
+        {
+          "value": "complex",
+          "label": "Комплексное продвижение"
+        },
+        {
+          "value": "consult",
+          "label": "Пока не знаю, нужна консультация"
+        }
+      ]
+    },
+    {
+      "id": "task",
+      "label": "Задача",
+      "type": "text",
+      "required": true,
+      "text": "Расскажите, пожалуйста, в чём состоит задача?",
+      "placeholder": "Например: нужно увеличить количество заявок на ипотеку из Москвы"
+    },
+    {
+      "id": "reason",
+      "label": "Причина",
+      "type": "text",
+      "required": false,
+      "text": "В связи с чем возникла задача?",
+      "placeholder": "Запуск нового продукта, падение заявок, смена подрядчика…"
+    },
+    {
+      "id": "company",
+      "label": "Компания",
+      "type": "text",
+      "required": true,
+      "text": "Как называется ваша компания и какой у неё сайт?",
+      "placeholder": "ООО «Ромашка», romashka.ru"
+    },
+    {
+      "id": "industry",
+      "label": "Сфера",
+      "type": "choice",
+      "required": true,
+      "text": "В какой сфере работает компания?",
+      "options": [
+        {
+          "value": "finance",
+          "label": "Финансы: банки, МФО, инвестиции"
+        },
+        {
+          "value": "realty",
+          "label": "Недвижимость"
+        },
+        {
+          "value": "medicine",
+          "label": "Медицина"
+        },
+        {
+          "value": "auto",
+          "label": "Автодилеры / авто"
+        },
+        {
+          "value": "ecom",
+          "label": "E-commerce"
+        },
+        {
+          "value": "tourism",
+          "label": "Туризм"
+        },
+        {
+          "value": "sport",
+          "label": "Спорт"
+        },
+        {
+          "value": "b2b_services",
+          "label": "B2B-услуги / производство"
+        },
+        {
+          "value": "other",
+          "label": "Другое"
+        }
+      ]
+    },
+    {
+      "id": "market",
+      "label": "Рынок",
+      "type": "choice",
+      "required": false,
+      "text": "На каком рынке работаете?",
+      "options": [
+        {
+          "value": "b2b",
+          "label": "B2B"
+        },
+        {
+          "value": "b2c",
+          "label": "B2C"
+        },
+        {
+          "value": "both",
+          "label": "B2B и B2C"
+        }
+      ]
+    },
+    {
+      "id": "geography",
+      "label": "География",
+      "type": "choice",
+      "required": false,
+      "text": "Бизнес работает только в России или и за рубежом?",
+      "options": [
+        {
+          "value": "russia",
+          "label": "Только Россия"
+        },
+        {
+          "value": "cis",
+          "label": "Россия и СНГ"
+        },
+        {
+          "value": "international",
+          "label": "Международная / зарубежная компания"
+        }
+      ]
+    },
+    {
+      "id": "role",
+      "label": "Роль",
+      "type": "choice",
+      "required": true,
+      "text": "Какова ваша роль в проекте?",
+      "options": [
+        {
+          "value": "owner",
+          "label": "Собственник / генеральный директор"
+        },
+        {
+          "value": "marketing_head",
+          "label": "Директор по маркетингу"
+        },
+        {
+          "value": "marketer",
+          "label": "Маркетолог"
+        },
+        {
+          "value": "manager",
+          "label": "Менеджер / ассистент"
+        },
+        {
+          "value": "other",
+          "label": "Другое"
+        }
+      ]
+    },
+    {
+      "id": "decision_maker",
+      "label": "ЛПР",
+      "type": "choice",
+      "required": true,
+      "text": "Кто принимает ключевое решение по выбору подрядчика?",
+      "options": [
+        {
+          "value": "me",
+          "label": "Я"
+        },
+        {
+          "value": "with_me",
+          "label": "Руководство, я участвую в решении"
+        },
+        {
+          "value": "other",
+          "label": "Руководство, я собираю предложения"
+        }
+      ]
+    },
+    {
+      "id": "participants",
+      "label": "Участники / ЛПР",
+      "type": "text",
+      "required": false,
+      "when": {
+        "decision_maker": [
+          "with_me",
+          "other"
+        ]
+      },
+      "text": "Если мы возьмёмся за проект — с кем будем взаимодействовать и чьи интересы нужно учесть?",
+      "placeholder": "Например: коммерческий директор, решение за ним"
+    },
+    {
+      "id": "start",
+      "label": "Старт",
+      "type": "choice",
+      "required": true,
+      "text": "Когда хотите стартовать?",
+      "options": [
+        {
+          "value": "asap",
+          "label": "Как можно скорее"
+        },
+        {
+          "value": "month",
+          "label": "В течение месяца"
+        },
+        {
+          "value": "quarter",
+          "label": "В ближайшие 1–3 месяца"
+        },
+        {
+          "value": "exploring",
+          "label": "Пока изучаю варианты"
+        }
+      ]
+    },
+    {
+      "id": "budget",
+      "label": "Бюджет",
+      "type": "choice",
+      "required": true,
+      "text": "Ориентировочный бюджет в месяц (рекламный бюджет + работа агентства)?",
+      "options": [
+        {
+          "value": "lt100k",
+          "label": "До 100 000 ₽"
+        },
+        {
+          "value": "100_300k",
+          "label": "100 000 – 300 000 ₽"
+        },
+        {
+          "value": "300k_1m",
+          "label": "300 000 ₽ – 1 млн ₽"
+        },
+        {
+          "value": "1m_3m",
+          "label": "1 – 3 млн ₽"
+        },
+        {
+          "value": "gt3m",
+          "label": "Более 3 млн ₽"
+        },
+        {
+          "value": "unknown",
+          "label": "Пока не определён"
+        }
+      ]
+    },
+    {
+      "id": "agency_experience",
+      "label": "Опыт с агентствами",
+      "type": "choice",
+      "required": true,
+      "text": "Был ли опыт работы с агентствами?",
+      "options": [
+        {
+          "value": "none",
+          "label": "Нет, впервые"
+        },
+        {
+          "value": "past",
+          "label": "Да, работали раньше"
+        },
+        {
+          "value": "current",
+          "label": "Да, работаем с подрядчиком сейчас"
+        }
+      ]
+    },
+    {
+      "id": "dissatisfaction",
+      "label": "Чем недовольны",
+      "type": "text",
+      "required": true,
+      "when": {
+        "agency_experience": [
+          "past",
+          "current"
+        ]
+      },
+      "text": "Почему ищете нового подрядчика? Чем были недовольны?",
+      "placeholder": "Дорогой лид, нет отчётности, медленно реагируют…"
+    },
+    {
+      "id": "criteria",
+      "label": "Критерий выбора",
+      "type": "choice",
+      "required": true,
+      "text": "Что для вас главное при выборе подрядчика?",
+      "options": [
+        {
+          "value": "results",
+          "label": "Результат и KPI"
+        },
+        {
+          "value": "expertise",
+          "label": "Опыт в нашей отрасли"
+        },
+        {
+          "value": "transparency",
+          "label": "Прозрачность и отчётность"
+        },
+        {
+          "value": "speed",
+          "label": "Скорость запуска"
+        },
+        {
+          "value": "price",
+          "label": "Стоимость услуг"
+        }
+      ]
+    },
+    {
+      "id": "source",
+      "label": "Откуда узнали",
+      "type": "choice",
+      "required": false,
+      "text": "Как вы о нас узнали?",
+      "options": [
+        {
+          "value": "search",
+          "label": "Поиск в интернете"
+        },
+        {
+          "value": "recommendation",
+          "label": "По рекомендации"
+        },
+        {
+          "value": "unistream",
+          "label": "Партнёрская программа банка «Юнистрим»"
+        },
+        {
+          "value": "social",
+          "label": "Соцсети / Telegram"
+        },
+        {
+          "value": "known",
+          "label": "Давно знаем агентство"
+        },
+        {
+          "value": "other",
+          "label": "Другое"
+        }
+      ]
+    },
+    {
+      "id": "name",
+      "label": "Имя",
+      "type": "text",
+      "required": true,
+      "text": "Как к вам обращаться?",
+      "placeholder": "Имя"
+    },
+    {
+      "id": "consent",
+      "label": "Согласие на ОПД",
+      "type": "consent",
+      "required": true,
+      "text": "Чтобы мы могли связаться с вами, подтвердите согласие на обработку персональных данных.",
+      "options": [
+        {
+          "value": "yes",
+          "label": "Согласен(на)"
+        }
+      ]
+    },
+    {
+      "id": "contact",
+      "label": "Контакт",
+      "type": "contact",
+      "required": true,
+      "text": "Оставьте телефон, e-mail или Telegram для связи.",
+      "placeholder": "+7 999 123-45-67"
+    }
+  ],
+  "outro": {
+    "hot": "Спасибо! Задача приоритетная — руководитель свяжется с вами в течение 30 минут в рабочее время.",
+    "warm": "Спасибо! Специалист изучит задачу и свяжется с вами в течение рабочего дня.",
+    "cold": "Спасибо! Мы получили ваш запрос и свяжемся с вами.",
+    "rejected": "Спасибо, ваш запрос получен."
+  },
+  "budgetHints": {
+    "_comment": "Ориентиры для ответа «как показывает практика, бюджет примерно такой…». Показываются лидам с рейтингом 2, только если текст заполнен.",
+    "context": "",
+    "target": "",
+    "seo": "",
+    "marketplaces": "",
+    "smm": "",
+    "analytics": "",
+    "site": "",
+    "complex": ""
+  }
+}

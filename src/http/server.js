@@ -1,0 +1,130 @@
+// HTTP API для виджета на сайте + раздача самого widget.js.
+
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
+import { resolve } from 'node:path';
+import { AnswerError, SessionError } from '../core/qualifier.js';
+
+const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'yclid', 'gclid'];
+
+const metaSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    page: { type: 'string', maxLength: 500 },
+    referrer: { type: 'string', maxLength: 500 },
+    utm: {
+      type: 'object',
+      additionalProperties: false,
+      properties: Object.fromEntries(UTM_KEYS.map((k) => [k, { type: 'string', maxLength: 200 }])),
+    },
+  },
+};
+
+const answerSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    stepId: { type: 'string', maxLength: 64 },
+    value: { type: 'string', maxLength: 2000 },
+    skip: { type: 'boolean' },
+  },
+};
+
+const sessionParams = {
+  type: 'object',
+  required: ['id'],
+  properties: { id: { type: 'string', format: 'uuid' } },
+};
+
+export async function buildServer({ config, qualifier, logger }) {
+  const app = Fastify({
+    ...(logger ? { loggerInstance: logger } : { logger: false }),
+    trustProxy: config.trustProxy,
+    bodyLimit: 16 * 1024,
+  });
+
+  await app.register(cors, {
+    // Пустой список — разрешены все источники (удобно при разработке)
+    origin: config.allowedOrigins.length ? config.allowedOrigins : true,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['content-type', 'x-session-token'],
+    maxAge: 86400,
+  });
+  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  await app.register(fastifyStatic, {
+    root: resolve(config.root, 'widget'),
+    prefix: '/',
+    index: false,
+    maxAge: '1h',
+  });
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof SessionError) return reply.code(404).send({ error: err.message });
+    if (err.validation) return reply.code(400).send({ error: 'Некорректный запрос' });
+    if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
+    req.log.error({ err }, 'Ошибка обработки запроса');
+    return reply.code(500).send({ error: 'Что-то пошло не так. Попробуйте ещё раз.' });
+  });
+
+  app.get('/health', async () => ({ ok: true }));
+
+  const handoffLinks = (session) => ({
+    telegram: config.telegram.botUsername
+      ? `https://t.me/${config.telegram.botUsername}?start=${session.handoff_code}`
+      : null,
+    max: config.max.botUsername ? `https://max.ru/${config.max.botUsername}?start=${session.handoff_code}` : null,
+  });
+
+  app.post(
+    '/api/sessions',
+    {
+      schema: { body: { type: 'object', additionalProperties: false, properties: { meta: metaSchema } } },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const { session, reply } = qualifier.startSession({ channel: 'web', meta: req.body?.meta ?? {} });
+      return {
+        sessionId: session.id,
+        token: session.token,
+        privacyPolicyUrl: config.privacyPolicyUrl,
+        handoff: handoffLinks(session),
+        reply,
+      };
+    },
+  );
+
+  app.get('/api/sessions/:id', { schema: { params: sessionParams } }, async (req) => {
+    const session = qualifier.getSession(req.params.id, tokenOf(req));
+    return {
+      privacyPolicyUrl: config.privacyPolicyUrl,
+      handoff: session.status === 'active' ? handoffLinks(session) : null,
+      reply: qualifier.resume(session),
+    };
+  });
+
+  app.post(
+    '/api/sessions/:id/answer',
+    { schema: { params: sessionParams, body: answerSchema } },
+    async (req, res) => {
+      const session = qualifier.getSession(req.params.id, tokenOf(req));
+      try {
+        return { reply: await qualifier.answer(session.id, req.body) };
+      } catch (err) {
+        if (!(err instanceof AnswerError)) throw err;
+        const fresh = qualifier.getSession(session.id);
+        return res.code(422).send({ error: err.message, reply: qualifier.resume(fresh) });
+      }
+    },
+  );
+
+  return app;
+}
+
+function tokenOf(req) {
+  const token = req.headers['x-session-token'];
+  if (typeof token !== 'string' || !token) throw new SessionError('Сессия не найдена');
+  return token;
+}
