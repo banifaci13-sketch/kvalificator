@@ -1,17 +1,31 @@
-// Клиенты агентства и задачи команды по ним. Смена статуса, исполнителя и срока
-// записывается в ленту задачи — видно, кто что сделал, без отдельного журнала.
+// Клиенты агентства и задачи команды — по логике YouGile: проект (клиент или «Общие задачи")
+// → доски проекта → колонки доски (свои названия и цвета) → задачи. Перенос между колонками,
+// смена исполнителя и срока, отметка «выполнено» записываются в ленту задачи.
 
 export class CrmError extends Error {}
 
-export const TASK_STATUSES = {
-  todo: 'К выполнению',
-  doing: 'В работе',
-  review: 'На проверке',
-  done: 'Готово',
+// Важность — стикер на карточке, как в YouGile; 0 — не задана
+export const PRIORITIES = { 0: 'Не задана', 1: 'Низкая', 2: 'Средняя', 3: 'Высокая', 4: 'Критичная' };
+// Цвета колонок — ключи, а не произвольные значения: цвет задаёт CSS по ключу
+export const COLUMN_COLORS = {
+  gray: 'Серый',
+  cyan: 'Бирюзовый',
+  teal: 'Морской',
+  green: 'Зелёный',
+  amber: 'Жёлтый',
+  orange: 'Оранжевый',
+  red: 'Красный',
+  violet: 'Фиолетовый',
 };
-export const PRIORITIES = { 0: 'Обычная', 1: 'Срочная' };
+export const DEFAULT_COLUMNS = [
+  { name: 'К выполнению', color: 'gray', isDone: false },
+  { name: 'В работе', color: 'orange', isDone: false },
+  { name: 'На проверке', color: 'violet', isDone: false },
+  { name: 'Готово', color: 'green', isDone: true },
+];
+const LIMITS = { boards: 20, columns: 12 };
 
-// Готовые задачи на доске — только недавние, чтобы колонка не разрасталась
+// Выполненные задачи на доске — только недавние, чтобы колонки не разрастались
 const DONE_DAYS = 14;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -21,6 +35,14 @@ const text = (v, max) => {
 };
 
 export function createCrm({ db }) {
+  const TASK_COLS = `t.*, c.name AS client_name, u.name AS assignee_name,
+                     col.name AS column_name, col.color AS column_color, col.is_done AS column_done,
+                     col.board_id AS board_id, b.name AS board_name`;
+  const TASK_JOINS = `FROM tasks t
+       LEFT JOIN clients c ON c.id = t.client_id
+       LEFT JOIN admin_users u ON u.id = t.assignee_id
+       LEFT JOIN task_columns col ON col.id = t.column_id
+       LEFT JOIN task_boards b ON b.id = col.board_id`;
   const q = {
     clients: db.prepare(
       `SELECT c.*, u.name AS manager_name,
@@ -35,18 +57,50 @@ export function createCrm({ db }) {
     updateClient: db.prepare("UPDATE clients SET name = ?, contact = ?, phone = ?, email = ?, site = ?, notes = ?, manager_id = ?, archived = ?, updated_at = datetime('now') WHERE id = ?"),
     deleteClient: db.prepare('DELETE FROM clients WHERE id = ?'),
     user: db.prepare('SELECT id, name FROM admin_users WHERE id = ? AND disabled = 0'),
-    task: db.prepare(
-      `SELECT t.*, c.name AS client_name, u.name AS assignee_name
-       FROM tasks t LEFT JOIN clients c ON c.id = t.client_id LEFT JOIN admin_users u ON u.id = t.assignee_id WHERE t.id = ?`,
+    // доски и колонки
+    boards: db.prepare('SELECT * FROM task_boards WHERE client_id IS ? ORDER BY position, id'),
+    board: db.prepare('SELECT * FROM task_boards WHERE id = ?'),
+    insertBoard: db.prepare('INSERT INTO task_boards (client_id, name, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM task_boards WHERE client_id IS ?))'),
+    renameBoard: db.prepare('UPDATE task_boards SET name = ? WHERE id = ?'),
+    setBoardPos: db.prepare('UPDATE task_boards SET position = ? WHERE id = ?'),
+    deleteBoard: db.prepare('DELETE FROM task_boards WHERE id = ?'),
+    columns: db.prepare(
+      `SELECT col.*, (SELECT COUNT(*) FROM tasks t WHERE t.column_id = col.id) AS tasks
+       FROM task_columns col WHERE col.board_id = ? ORDER BY col.position, col.id`,
     ),
-    insertTask: db.prepare('INSERT INTO tasks (client_id, title, description, status, priority, assignee_id, due, created_by, created_by_id, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    column: db.prepare('SELECT col.*, b.client_id, b.name AS board_name FROM task_columns col JOIN task_boards b ON b.id = col.board_id WHERE col.id = ?'),
+    insertColumn: db.prepare('INSERT INTO task_columns (board_id, name, color, is_done, position) VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM task_columns WHERE board_id = ?))'),
+    updateColumn: db.prepare('UPDATE task_columns SET name = ?, color = ?, is_done = ? WHERE id = ?'),
+    setColumnPos: db.prepare('UPDATE task_columns SET position = ? WHERE id = ?'),
+    deleteColumn: db.prepare('DELETE FROM task_columns WHERE id = ?'),
+    columnTasks: db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE column_id = ?'),
+    boardTasks: db.prepare('SELECT COUNT(*) AS n FROM tasks t JOIN task_columns col ON col.id = t.column_id WHERE col.board_id = ?'),
+    adopt: db.prepare('UPDATE tasks SET column_id = ? WHERE column_id IS NULL AND client_id IS ?'),
+    markColumn: db.prepare(
+      "UPDATE tasks SET status = ?, done_at = CASE WHEN ? = 'done' THEN COALESCE(done_at, datetime('now')) ELSE NULL END, updated_at = datetime('now') WHERE column_id = ? AND status != ?",
+    ),
+    // задачи
+    task: db.prepare(`SELECT ${TASK_COLS} ${TASK_JOINS} WHERE t.id = ?`),
+    insertTask: db.prepare('INSERT INTO tasks (client_id, column_id, title, description, status, priority, assignee_id, due, created_by, created_by_id, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     updateTask: db.prepare(
-      "UPDATE tasks SET client_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, done_at = ?, updated_at = datetime('now') WHERE id = ?",
+      "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, done_at = ?, updated_at = datetime('now') WHERE id = ?",
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
     comments: db.prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY id'),
     addComment: db.prepare('INSERT INTO task_comments (task_id, kind, text, author) VALUES (?, ?, ?, ?)'),
   };
+
+  function tx(fn) {
+    db.exec('BEGIN');
+    try {
+      const r = fn();
+      db.exec('COMMIT');
+      return r;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
 
   // ---------- клиенты ----------
 
@@ -89,6 +143,151 @@ export function createCrm({ db }) {
     return getClient(id);
   }
 
+  // ---------- проекты, доски, колонки ----------
+
+  /** id проекта: число — клиент, null — «Общие задачи». */
+  const projectId = (v) => (v == null || v === 'none' ? null : Number(v));
+
+  function checkProject(clientId) {
+    if (clientId != null) getClient(clientId);
+    return clientId;
+  }
+
+  function addBoard(clientId, name) {
+    const { lastInsertRowid } = q.insertBoard.run(clientId, name, clientId);
+    for (const c of DEFAULT_COLUMNS) q.insertColumn.run(lastInsertRowid, c.name, c.color, Number(c.isDone), lastInsertRowid);
+    return Number(lastInsertRowid);
+  }
+
+  /** Доски проекта; у проекта всегда есть хотя бы одна. Задачи без колонки (клиента удалили,
+   *  задачу перенесли из другого места) попадают в первую колонку первой доски. */
+  function ensureBoards(clientId) {
+    let list = q.boards.all(clientId);
+    if (!list.length) {
+      addBoard(clientId, 'Задачи');
+      list = q.boards.all(clientId);
+    }
+    const first = q.columns.all(list[0].id)[0];
+    if (first) q.adopt.run(first.id, clientId);
+    return list;
+  }
+
+  function getBoard(id) {
+    const b = q.board.get(Number(id));
+    if (!b) throw new CrmError('Доска не найдена');
+    return b;
+  }
+
+  function getColumn(id) {
+    const c = q.column.get(Number(id));
+    if (!c) throw new CrmError('Колонка не найдена');
+    return c;
+  }
+
+  const boardWithColumns = (b) => ({ id: b.id, client_id: b.client_id, name: b.name, columns: q.columns.all(b.id) });
+
+  function projectBoards(key) {
+    const clientId = checkProject(projectId(key));
+    return tx(() => ensureBoards(clientId)).map(boardWithColumns);
+  }
+
+  /** Список проектов: клиенты в работе и «Общие задачи» — со счётчиками открытых, просроченных и моих. */
+  function projects(userId) {
+    const stats = db
+      .prepare(
+        `SELECT client_id, COUNT(*) AS open,
+                SUM(CASE WHEN due < date('now', '+3 hours') THEN 1 ELSE 0 END) AS overdue,
+                SUM(CASE WHEN assignee_id = ? THEN 1 ELSE 0 END) AS mine
+         FROM tasks WHERE status != 'done' GROUP BY client_id`,
+      )
+      .all(userId);
+    const by = new Map(stats.map((r) => [r.client_id ?? 'none', r]));
+    const counts = (key) => {
+      const r = by.get(key);
+      return { open: r?.open ?? 0, overdue: r?.overdue ?? 0, mine: r?.mine ?? 0 };
+    };
+    return [
+      ...q.clients.all(0).map((c) => ({ id: c.id, name: c.name, manager_name: c.manager_name, lead_id: c.lead_id, ...counts(c.id) })),
+      { id: 'none', name: 'Общие задачи', internal: true, manager_name: null, ...counts('none') },
+    ];
+  }
+
+  function createBoard({ clientId, name }) {
+    const cid = checkProject(projectId(clientId));
+    const title = text(name, 100);
+    if (!title) throw new CrmError('Назовите доску');
+    if (q.boards.all(cid).length >= LIMITS.boards) throw new CrmError(`В проекте не больше ${LIMITS.boards} досок`);
+    return boardWithColumns(getBoard(tx(() => addBoard(cid, title))));
+  }
+
+  /** Сдвиг доски или колонки на одно место: меняемся позициями с соседом. */
+  function shift(list, id, dir, setPos) {
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + Math.sign(dir);
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    list.forEach((x, k) => setPos.run(k, x.id));
+  }
+
+  function updateBoard(id, { name, move }) {
+    const b = getBoard(id);
+    tx(() => {
+      if (name !== undefined) {
+        const title = text(name, 100);
+        if (!title) throw new CrmError('Назовите доску');
+        q.renameBoard.run(title, b.id);
+      }
+      if (move) shift(q.boards.all(b.client_id), b.id, move, q.setBoardPos);
+    });
+    return boardWithColumns(getBoard(id));
+  }
+
+  function deleteBoard(id) {
+    const b = getBoard(id);
+    if (q.boards.all(b.client_id).length <= 1) throw new CrmError('Это единственная доска проекта');
+    if (q.boardTasks.get(b.id).n) throw new CrmError('На доске есть задачи — перенесите или удалите их');
+    q.deleteBoard.run(b.id);
+  }
+
+  function columnFields(v, cur = {}) {
+    const name = text(v.name ?? cur.name, 60);
+    if (!name) throw new CrmError('Назовите колонку');
+    const color = v.color ?? cur.color ?? 'gray';
+    if (!(color in COLUMN_COLORS)) throw new CrmError('Неизвестный цвет');
+    const isDone = v.isDone !== undefined ? Boolean(v.isDone) : Boolean(cur.is_done);
+    return { name, color, isDone };
+  }
+
+  function createColumn(boardId, v) {
+    const b = getBoard(boardId);
+    if (q.columns.all(b.id).length >= LIMITS.columns) throw new CrmError(`На доске не больше ${LIMITS.columns} колонок`);
+    const c = columnFields(v);
+    const { lastInsertRowid } = q.insertColumn.run(b.id, c.name, c.color, Number(c.isDone), b.id);
+    return q.columns.all(b.id).find((x) => x.id === Number(lastInsertRowid));
+  }
+
+  function updateColumn(id, v) {
+    const cur = getColumn(id);
+    const c = columnFields(v, cur);
+    tx(() => {
+      q.updateColumn.run(c.name, c.color, Number(c.isDone), cur.id);
+      // «Задачи здесь выполнены»: отметка колонки переносится на её задачи
+      if (c.isDone !== Boolean(cur.is_done)) {
+        const status = c.isDone ? 'done' : 'todo';
+        q.markColumn.run(status, status, cur.id, status);
+      }
+      if (v.move) shift(q.columns.all(cur.board_id), cur.id, v.move, q.setColumnPos);
+    });
+    return q.columns.all(cur.board_id).find((x) => x.id === cur.id);
+  }
+
+  function deleteColumn(id) {
+    const c = getColumn(id);
+    if (q.columns.all(c.board_id).length <= 1) throw new CrmError('Это единственная колонка доски');
+    if (q.columnTasks.get(c.id).n) throw new CrmError('В колонке есть задачи — перенесите их в другую');
+    q.deleteColumn.run(c.id);
+  }
+
   // ---------- задачи ----------
 
   function getTask(id) {
@@ -97,64 +296,93 @@ export function createCrm({ db }) {
     return t;
   }
 
+  /** Куда положить задачу: колонка, доска (её первая колонка) или проект (первая колонка первой доски). */
+  function placeTask({ columnId, boardId, clientId }) {
+    if (columnId != null) return getColumn(columnId);
+    if (boardId != null) {
+      const first = q.columns.all(getBoard(boardId).id)[0];
+      if (!first) throw new CrmError('На доске нет колонок');
+      return getColumn(first.id);
+    }
+    const cid = checkProject(projectId(clientId));
+    const board = ensureBoards(cid)[0];
+    return getColumn(q.columns.all(board.id)[0].id);
+  }
+
   function checkTask(v) {
     const title = text(v.title, 300);
     if (!title) throw new CrmError('Напишите, что нужно сделать');
-    if (!(v.status in TASK_STATUSES)) throw new CrmError('Неизвестный статус');
     if (v.due != null && !DATE_RE.test(v.due)) throw new CrmError('Срок — дата в формате ГГГГ-ММ-ДД');
-    if (v.clientId != null) getClient(v.clientId);
+    if (v.priority != null && !(v.priority in PRIORITIES)) throw new CrmError('Неизвестная важность');
     return {
-      clientId: v.clientId == null ? null : Number(v.clientId),
       title,
       description: text(v.description, 10000),
-      status: v.status,
-      priority: v.priority ? 1 : 0,
+      priority: Number(v.priority ?? 0),
       assigneeId: checkUser(v.assigneeId),
       due: v.due ?? null,
     };
   }
 
   function createTask(v, user) {
-    const t = checkTask({ status: 'todo', ...v });
-    const { lastInsertRowid } = q.insertTask.run(
-      t.clientId, t.title, t.description, t.status, t.priority, t.assigneeId, t.due, user.name, user.id, t.status === 'done' ? now() : null,
-    );
-    return getTask(lastInsertRowid);
+    const t = checkTask(v);
+    return tx(() => {
+      const col = placeTask(v);
+      const done = Boolean(col.is_done || v.done);
+      const { lastInsertRowid } = q.insertTask.run(
+        col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, user.name, user.id, done ? now() : null,
+      );
+      return getTask(lastInsertRowid);
+    });
   }
 
   function updateTask(id, patch, user) {
     const cur = getTask(id);
     const next = checkTask({
-      clientId: patch.clientId !== undefined ? patch.clientId : cur.client_id,
       title: patch.title ?? cur.title,
       description: patch.description !== undefined ? patch.description : cur.description,
-      status: patch.status ?? cur.status,
       priority: patch.priority !== undefined ? patch.priority : cur.priority,
       assigneeId: patch.assigneeId !== undefined ? patch.assigneeId : cur.assignee_id,
       due: patch.due !== undefined ? patch.due : cur.due,
     });
-    const doneAt = next.status === 'done' ? (cur.status === 'done' ? cur.done_at : now()) : null;
-    db.exec('BEGIN');
-    try {
-      q.updateTask.run(next.clientId, next.title, next.description, next.status, next.priority, next.assigneeId, next.due, doneAt, cur.id);
-      // лента изменений: статус, исполнитель, срок
-      if (next.status !== cur.status) q.addComment.run(cur.id, 'event', `${TASK_STATUSES[cur.status]} → ${TASK_STATUSES[next.status]}`, user.name);
+    tx(() => {
+      // перенос: в колонку, на доску или в другой проект
+      let col = cur.column_id ? getColumn(cur.column_id) : placeTask({ clientId: cur.client_id });
+      const from = col;
+      if (patch.columnId != null || patch.boardId != null) col = placeTask(patch);
+      else if (patch.clientId !== undefined && projectId(patch.clientId) !== cur.client_id) col = placeTask({ clientId: patch.clientId });
+      const moved = col.id !== from.id;
+
+      let done = cur.status === 'done';
+      if (moved && col.is_done) done = true;
+      else if (moved && from.is_done) done = false;
+      if (patch.done !== undefined) done = Boolean(patch.done);
+      const wasDone = cur.status === 'done';
+      const doneAt = done ? (wasDone ? cur.done_at : now()) : null;
+
+      q.updateTask.run(col.client_id, col.id, next.title, next.description, done ? 'done' : 'todo', next.priority, next.assigneeId, next.due, doneAt, cur.id);
+      // лента изменений: перенос, выполнение, исполнитель, срок
+      if (moved) {
+        const where = col.board_id !== from.board_id || col.client_id !== from.client_id ? `${col.board_name}: ${col.name}` : col.name;
+        q.addComment.run(cur.id, 'event', `${from.name} → ${where}`, user.name);
+      }
+      if (done !== wasDone) q.addComment.run(cur.id, 'event', done ? 'Выполнена' : 'Снова в работе', user.name);
       if (next.assigneeId !== cur.assignee_id) {
         const who = next.assigneeId ? q.user.get(next.assigneeId).name : null;
         q.addComment.run(cur.id, 'event', who ? `Исполнитель: ${who}` : 'Исполнитель снят', user.name);
       }
       if (next.due !== cur.due) q.addComment.run(cur.id, 'event', next.due ? `Срок: ${fmtDate(next.due)}` : 'Срок снят', user.name);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      if (next.priority !== cur.priority) q.addComment.run(cur.id, 'event', next.priority ? `Важность: ${PRIORITIES[next.priority]}` : 'Важность снята', user.name);
+    });
     return getTask(id);
   }
 
-  function listTasks({ clientId = null, assigneeId = null, mine = null, q: search = '' } = {}) {
-    const where = [`(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
+  function listTasks({ boardId = null, clientId = null, assigneeId = null, mine = null, q: search = '', open = false } = {}) {
+    const where = [open ? "t.status != 'done'" : `(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
     const params = [];
+    if (boardId) {
+      where.push('col.board_id = ?');
+      params.push(Number(boardId));
+    }
     if (clientId === 'none') where.push('t.client_id IS NULL');
     else if (clientId) {
       where.push('t.client_id = ?');
@@ -176,43 +404,26 @@ export function createCrm({ db }) {
     }
     return db
       .prepare(
-        `SELECT t.id, t.title, t.status, t.priority, t.due, t.client_id, t.assignee_id, t.updated_at, t.done_at,
+        `SELECT t.id, t.title, t.status, t.priority, t.due, t.client_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
                 c.name AS client_name, u.name AS assignee_name,
+                col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments
-         FROM tasks t LEFT JOIN clients c ON c.id = t.client_id LEFT JOIN admin_users u ON u.id = t.assignee_id
+         ${TASK_JOINS}
          WHERE ${where.join(' AND ')}
-         ORDER BY t.priority DESC, t.due IS NULL, t.due, t.id DESC LIMIT 500`,
+         ORDER BY t.status = 'done', t.priority DESC, t.due IS NULL, t.due, t.id DESC LIMIT 500`,
       )
       .all(...params);
   }
 
-  /** Доски: клиенты в работе и «Внутренние» (задачи без клиента) — со счётчиками по статусам. */
-  function boards(userId) {
-    const stats = db
-      .prepare(
-        `SELECT client_id, status, COUNT(*) AS n,
-                SUM(CASE WHEN status != 'done' AND due < date('now', '+3 hours') THEN 1 ELSE 0 END) AS overdue,
-                SUM(CASE WHEN status != 'done' AND assignee_id = ? THEN 1 ELSE 0 END) AS mine
-         FROM tasks WHERE status != 'done' OR done_at >= datetime('now', '-${DONE_DAYS} days')
-         GROUP BY client_id, status`,
-      )
-      .all(userId);
-    const empty = () => ({ counts: Object.fromEntries(Object.keys(TASK_STATUSES).map((s) => [s, 0])), overdue: 0, mine: 0 });
-    const byClient = new Map();
-    for (const r of stats) {
-      const key = r.client_id ?? 'none';
-      if (!byClient.has(key)) byClient.set(key, empty());
-      const b = byClient.get(key);
-      b.counts[r.status] = r.n;
-      b.overdue += r.overdue;
-      b.mine += r.mine;
-    }
-    const list = q.clients.all(0).map((c) => ({ id: c.id, name: c.name, manager_name: c.manager_name, lead_id: c.lead_id, ...(byClient.get(c.id) ?? empty()) }));
-    return [...list, { id: 'none', name: 'Внутренние задачи', internal: true, manager_name: null, ...(byClient.get('none') ?? empty()) }];
-  }
-
   return {
-    boards,
+    projects,
+    projectBoards,
+    createBoard,
+    updateBoard,
+    deleteBoard,
+    createColumn,
+    updateColumn,
+    deleteColumn,
     listClients: ({ archived = false } = {}) => q.clients.all(Number(archived)),
     getClient,
     createClient,

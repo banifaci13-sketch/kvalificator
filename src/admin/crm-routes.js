@@ -1,7 +1,8 @@
-// API раздела «Задачи»: клиенты агентства, задачи команды, комментарии.
+// API раздела «Задачи»: проекты (клиенты агентства и «Общие задачи»), их доски и колонки,
+// задачи команды и комментарии.
 // Подключается внутри авторизованной части админки (req.user уже есть).
 
-import { CrmError, TASK_STATUSES, PRIORITIES } from '../crm/store.js';
+import { CrmError, PRIORITIES, COLUMN_COLORS } from '../crm/store.js';
 import { leadValues } from '../docs/library.js';
 
 const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
@@ -27,11 +28,24 @@ const taskBody = {
   properties: {
     title: { type: 'string', maxLength: 300 },
     description: { type: ['string', 'null'], maxLength: 10000 },
-    status: { type: 'string', enum: Object.keys(TASK_STATUSES) },
-    priority: { type: 'integer', enum: [0, 1] },
+    done: { type: 'boolean' },
+    columnId: { type: 'integer' },
+    boardId: { type: 'integer' },
+    priority: { type: 'integer', enum: [0, 1, 2, 3, 4] },
     assigneeId: nullableId,
     clientId: nullableId,
     due: { type: ['string', 'null'], maxLength: 10 },
+  },
+};
+const projectParams = { type: 'object', properties: { key: { type: 'string', pattern: '^(\\d+|none)$' } } };
+const columnBody = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', maxLength: 60 },
+    color: { type: 'string', enum: Object.keys(COLUMN_COLORS) },
+    isDone: { type: 'boolean' },
+    move: { type: 'integer', enum: [-1, 1] },
   },
 };
 
@@ -44,12 +58,48 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
   // Команда — для выбора исполнителя и ответственного (без логинов и ролей)
   api.get('/admin/api/team', async () => ({
     team: auth.listUsers().filter((u) => !u.disabled).map((u) => ({ id: u.id, name: u.name })),
-    statuses: TASK_STATUSES,
     priorities: PRIORITIES,
+    colors: COLUMN_COLORS,
   }));
 
-  // Доски задач: клиенты в работе и «Внутренние»
-  api.get('/admin/api/boards', async (req) => ({ boards: crm.boards(req.user.id), statuses: TASK_STATUSES }));
+  // ---------- проекты, доски, колонки (как в YouGile) ----------
+
+  // Проекты: клиенты в работе и «Общие задачи»
+  api.get('/admin/api/projects', async (req) => ({ projects: crm.projects(req.user.id) }));
+
+  api.get('/admin/api/projects/:key/boards', { schema: { params: projectParams } }, async (req) => {
+    const key = req.params.key;
+    const project = key === 'none' ? { id: 'none', name: 'Общие задачи', internal: true } : crm.getClient(key);
+    return { project, boards: crm.projectBoards(key) };
+  });
+
+  api.post(
+    '/admin/api/boards',
+    { schema: { body: { type: 'object', required: ['name'], additionalProperties: false, properties: { name: { type: 'string', maxLength: 100 }, clientId: nullableId } } } },
+    async (req) => ({ board: crm.createBoard(req.body) }),
+  );
+
+  api.patch(
+    '/admin/api/boards/:id',
+    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', maxLength: 100 }, move: { type: 'integer', enum: [-1, 1] } } } } },
+    async (req) => ({ board: crm.updateBoard(req.params.id, req.body) }),
+  );
+
+  api.delete('/admin/api/boards/:id', { schema: { params: idParams } }, async (req) => {
+    crm.deleteBoard(req.params.id);
+    return { ok: true };
+  });
+
+  api.post('/admin/api/boards/:id/columns', { schema: { params: idParams, body: { ...columnBody, required: ['name'] } } }, async (req) => ({
+    column: crm.createColumn(req.params.id, req.body),
+  }));
+
+  api.patch('/admin/api/columns/:id', { schema: { params: idParams, body: columnBody } }, async (req) => ({ column: crm.updateColumn(req.params.id, req.body) }));
+
+  api.delete('/admin/api/columns/:id', { schema: { params: idParams } }, async (req) => {
+    crm.deleteColumn(req.params.id);
+    return { ok: true };
+  });
 
   // ---------- клиенты ----------
 
@@ -102,12 +152,12 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
       schema: {
         querystring: {
           type: 'object',
-          properties: { client: { type: 'string', pattern: '^(\\d+|none)$' }, assignee: { type: 'string', maxLength: 12 }, mine: { type: 'boolean' }, q: { type: 'string', maxLength: 100 } },
+          properties: { board: { type: 'integer' }, client: { type: 'string', pattern: '^(\\d+|none)$' }, assignee: { type: 'string', maxLength: 12 }, mine: { type: 'boolean' }, q: { type: 'string', maxLength: 100 } },
         },
       },
     },
     async (req) => ({
-      tasks: crm.listTasks({ clientId: req.query.client, assigneeId: req.query.assignee, mine: req.query.mine ? req.user.id : null, q: req.query.q?.trim() }),
+      tasks: crm.listTasks({ boardId: req.query.board, clientId: req.query.client, assigneeId: req.query.assignee, mine: req.query.mine ? req.user.id : null, q: req.query.q?.trim() }),
     }),
   );
 

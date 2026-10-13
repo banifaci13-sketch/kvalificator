@@ -1,7 +1,8 @@
-// Раздел «Задачи»: доска задач команды, клиенты агентства, карточка клиента.
+// Раздел «Задачи» по логике YouGile: проекты (клиенты и «Общие задачи») → доски → колонки.
+// Ещё «Мои задачи» со всех проектов, клиенты агентства и карточка клиента.
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 
@@ -21,6 +22,43 @@ function dueState(t) {
 }
 const initials = (name) => String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
+// Проект: id клиента или 'none' — «Общие задачи»
+const projectKey = (clientId) => (clientId == null ? 'none' : String(clientId));
+const loadBoards = (key) => api(`/admin/api/projects/${key}/boards`);
+
+let projectsCache = null;
+async function loadProjects() {
+  projectsCache = (await api('/admin/api/projects')).projects;
+  return projectsCache;
+}
+
+/** Последний открытый проект — чтобы раздел открывался там, где остановились. */
+const LAST = 'soroka-project';
+function lastProject() {
+  try {
+    return localStorage.getItem(LAST);
+  } catch {
+    return null;
+  }
+}
+function rememberProject(key) {
+  try {
+    localStorage.setItem(LAST, key);
+  } catch {
+    /* без хранилища раздел откроется на первом проекте */
+  }
+}
+
+/** Выбор колонки: доски проекта — группы, колонки — пункты. */
+function columnOptions(select, boards, current) {
+  fill(
+    select,
+    boards.map((b) =>
+      h('optgroup', { label: b.name }, b.columns.map((c) => h('option', { value: c.id, selected: c.id === current }, c.is_done ? `${c.name} ✓` : c.name))),
+    ),
+  );
+}
+
 // ---------- панель задачи ----------
 
 let panel = null;
@@ -33,16 +71,11 @@ function closeTask() {
 }
 window.addEventListener('hashchange', () => panel && closeTask());
 
-/** Открывает задачу (id) или форму новой (defaults). onChange — перерисовать то, что под панелью. */
+/** Открывает задачу (id) или форму новой (defaults: client_id, column_id, assignee_id). onChange — перерисовать то, что под панелью. */
 export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) {
   closeTask();
-  const { team: people, statuses } = await loadTeam();
-  let clients = [];
-  try {
-    clients = (await api('/admin/api/clients')).clients;
-  } catch {
-    /* без списка клиентов */
-  }
+  const { team: people } = await loadTeam();
+  const projects = projectsCache ?? (await loadProjects().catch(() => []));
   const body = h('div', { class: 'drawer-body' }, h('p', { class: 'muted' }, 'Загружаю…'));
   const heading = h('h2', { id: 'task-title' }, id ? `Задача #${id}` : 'Новая задача');
   const closeBtn = h('button', { type: 'button', class: 'close', 'aria-label': 'Закрыть', onclick: closeTask }, '×');
@@ -55,7 +88,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
 
   const task = id
     ? (await api(`/admin/api/tasks/${id}`).catch((err) => (fill(body, h('p', { class: 'error' }, err.message)), null)))?.task
-    : { title: '', description: '', status: 'todo', priority: 0, assignee_id: null, client_id: null, due: null, comments: [], ...defaults };
+    : { title: '', description: '', status: 'todo', priority: 0, assignee_id: null, client_id: null, column_id: null, due: null, comments: [], ...defaults };
   if (!task) return;
 
   const saved = h('span', { class: 'saved', role: 'status' });
@@ -67,6 +100,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
       changed = true;
       saved.textContent = 'Сохранено';
       setTimeout(() => (saved.textContent = ''), 1500);
+      done.checked = task.status === 'done';
       renderFeed();
     } catch (err) {
       toast(err.message);
@@ -74,32 +108,55 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   }
 
   const title = h('textarea', { class: 'textarea task-title', id: 't-title', rows: 2, maxlength: 300, placeholder: 'Что нужно сделать', onchange: (e) => patch({ title: e.target.value }) }, task.title);
-  const status = h('select', { class: 'select', id: 't-status', onchange: (e) => patch({ status: e.target.value }) }, Object.entries(statuses).map(([v, l]) => h('option', { value: v, selected: v === task.status }, l)));
+  const column = h('select', { class: 'select', id: 't-column', onchange: (e) => patch({ columnId: Number(e.target.value) }) });
+  async function fillColumns(key, current) {
+    try {
+      const { boards } = await loadBoards(key);
+      columnOptions(column, boards, current ?? boards[0]?.columns[0]?.id);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  const project = h(
+    'select',
+    {
+      class: 'select', id: 't-project',
+      onchange: async (e) => {
+        const key = e.target.value;
+        if (task.id) {
+          await patch({ clientId: key === 'none' ? null : Number(key) });
+          fillColumns(key, task.column_id);
+        } else fillColumns(key);
+      },
+    },
+    projects.map((p) => h('option', { value: String(p.id), selected: String(p.id) === projectKey(task.client_id) }, p.name)),
+  );
+  fillColumns(projectKey(task.client_id), task.column_id);
   const assignee = h(
     'select',
     { class: 'select', id: 't-assignee', onchange: (e) => patch({ assigneeId: e.target.value ? Number(e.target.value) : null }) },
     h('option', { value: '' }, 'Не назначен'),
     people.map((u) => h('option', { value: u.id, selected: u.id === task.assignee_id }, u.id === ctx.me.id ? `${u.name} (я)` : u.name)),
   );
-  const client = h(
-    'select',
-    { class: 'select', id: 't-client', onchange: (e) => patch({ clientId: e.target.value ? Number(e.target.value) : null }) },
-    h('option', { value: '' }, 'Без клиента'),
-    clients.map((c) => h('option', { value: c.id, selected: c.id === task.client_id }, c.name)),
-  );
   const due = h('input', { class: 'input', id: 't-due', type: 'date', value: task.due ?? '', onchange: (e) => patch({ due: e.target.value || null }) });
-  const urgent = h('input', { type: 'checkbox', id: 't-urgent', checked: Boolean(task.priority), onchange: (e) => patch({ priority: e.target.checked ? 1 : 0 }) });
+  const importance = h(
+    'select',
+    { class: 'select', id: 't-priority', onchange: (e) => patch({ priority: Number(e.target.value) }) },
+    Object.entries(PRIORITY).map(([v, l]) => h('option', { value: v, selected: Number(v) === Number(task.priority) }, v === '0' ? 'Не задана' : l)),
+  );
+  const done = h('input', { type: 'checkbox', id: 't-done', checked: task.status === 'done', onchange: (e) => patch({ done: e.target.checked }) });
   const description = h('textarea', { class: 'textarea', id: 't-desc', rows: 5, maxlength: 10000, placeholder: 'Подробности, ссылки, критерии готовности', onchange: (e) => patch({ description: e.target.value || null }) }, task.description ?? '');
 
   const fields = h(
     'div',
     { class: 'work' },
     h('div', { class: 'field full' }, h('label', { for: 't-title' }, 'Задача'), title),
-    h('div', { class: 'field' }, h('label', { for: 't-status' }, 'Статус'), status),
+    h('div', { class: 'field' }, h('label', { for: 't-project' }, 'Проект'), project),
+    h('div', { class: 'field' }, h('label', { for: 't-column' }, 'Доска и колонка'), column),
     h('div', { class: 'field' }, h('label', { for: 't-assignee' }, 'Исполнитель'), assignee),
-    h('div', { class: 'field' }, h('label', { for: 't-client' }, 'Клиент'), client),
     h('div', { class: 'field' }, h('label', { for: 't-due' }, 'Срок'), due),
-    h('div', { class: 'field full' }, h('label', { class: 'check' }, urgent, 'Срочно')),
+    h('div', { class: 'field' }, h('label', { for: 't-priority' }, 'Важность'), importance),
+    task.id ? h('div', { class: 'field task-flags' }, h('label', { class: 'check' }, done, 'Выполнена')) : null,
     h('div', { class: 'field full' }, h('label', { for: 't-desc' }, 'Описание'), description),
   );
 
@@ -126,8 +183,9 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
             const res = await api('/admin/api/tasks', {
               method: 'POST',
               body: {
-                title: title.value, description: description.value || null, status: status.value, priority: urgent.checked ? 1 : 0,
-                assigneeId: assignee.value ? Number(assignee.value) : null, clientId: client.value ? Number(client.value) : null, due: due.value || null,
+                title: title.value, description: description.value || null, priority: Number(importance.value),
+                assigneeId: assignee.value ? Number(assignee.value) : null, due: due.value || null,
+                ...(column.value ? { columnId: Number(column.value) } : { clientId: project.value === 'none' ? null : Number(project.value) }),
               },
             });
             changed = true;
@@ -199,163 +257,476 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   renderFeed();
 }
 
-// ---------- доска ----------
+// ---------- карточка задачи на доске ----------
 
-function card(t, onOpen, showClient = true) {
-  const state = dueState(t);
-  const el = h(
-    'button',
+/** Круглая галочка «выполнено», как в YouGile: отмечается прямо на карточке. */
+function doneToggle(t, onToggled) {
+  const isDone = t.status === 'done';
+  return h(
+    'span',
     {
-      type: 'button', class: `card task-card${t.priority ? ' urgent' : ''}`, draggable: 'true', dataset: { id: String(t.id) },
+      class: 'done-toggle', role: 'checkbox', tabindex: '0', 'aria-checked': String(isDone), 'aria-label': isDone ? 'Вернуть в работу' : 'Отметить выполненной',
+      title: isDone ? 'Вернуть в работу' : 'Выполнена',
+      onclick: async (e) => {
+        e.stopPropagation();
+        try {
+          await api(`/admin/api/tasks/${t.id}`, { method: 'PATCH', body: { done: !isDone } });
+          onToggled();
+        } catch (err) {
+          toast(err.message);
+        }
+      },
+      onkeydown: (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.click();
+        }
+      },
+    },
+  );
+}
+
+// ---------- стикеры на карточке: срок, ответственный, важность ----------
+
+const PRIORITY = { 0: '', 1: 'Низкая', 2: 'Средняя', 3: 'Высокая', 4: 'Критичная' };
+const addDays = (n) => {
+  const d = new Date(`${today()}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Маленькое всплывающее окно у стикера; закрывается щелчком мимо или Esc. */
+let openPop = null;
+function popover(anchor, build) {
+  openPop?.();
+  const box = h('div', { class: 'popover', role: 'dialog' });
+  const close = () => {
+    box.remove();
+    document.removeEventListener('mousedown', outside, true);
+    document.removeEventListener('keydown', esc, true);
+    if (openPop === close) openPop = null;
+  };
+  const outside = (e) => !box.contains(e.target) && !anchor.contains(e.target) && close();
+  const esc = (e) => e.key === 'Escape' && (e.stopPropagation(), close(), anchor.focus());
+  box.append(...[build(close)].flat());
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect();
+  const w = box.offsetWidth;
+  box.style.cssText = `top:${Math.min(r.bottom + 6, innerHeight - box.offsetHeight - 8)}px;left:${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
+  document.addEventListener('mousedown', outside, true);
+  document.addEventListener('keydown', esc, true);
+  openPop = close;
+  box.querySelector('button, input')?.focus();
+}
+
+function stickers(t, onChange) {
+  const save = async (body, close) => {
+    close();
+    try {
+      await api(`/admin/api/tasks/${t.id}`, { method: 'PATCH', body });
+      onChange();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  const sticker = (cls, label, content, build) => {
+    const btn = h('button', {
+      type: 'button', class: `sticker ${cls}`, title: label, 'aria-label': label,
+      onclick: (e) => {
+        e.stopPropagation();
+        popover(btn, build);
+      },
+    }, content);
+    btn.addEventListener('keydown', (e) => e.stopPropagation());
+    return btn;
+  };
+  const option = (label, active, onclick, extra = null) => h('button', { type: 'button', class: 'pop-item', 'aria-pressed': String(active), onclick }, extra, label);
+
+  const state = dueState(t);
+  const dueLabel = t.due ? (state === 'overdue' ? `просрочено, ${fmtDue(t.due)}` : state === 'today' ? 'сегодня' : fmtDue(t.due)) : null;
+  const due = sticker(`s-due ${state}${t.due ? '' : ' empty'}`, t.due ? `Срок: ${fmtDue(t.due)}` : 'Добавить срок', [icon('due'), dueLabel], (close) => {
+    const input = h('input', { class: 'input', type: 'date', value: t.due ?? '', 'aria-label': 'Срок' });
+    input.addEventListener('change', () => input.value && save({ due: input.value }, close));
+    return [
+      h('div', { class: 'pop-title' }, 'Срок'),
+      input,
+      h(
+        'div',
+        { class: 'pop-quick' },
+        [['Сегодня', 0], ['Завтра', 1], ['Через неделю', 7]].map(([l, n]) => h('button', { type: 'button', class: 'btn btn-s', onclick: () => save({ due: addDays(n) }, close) }, l)),
+      ),
+      t.due ? option('Убрать срок', false, () => save({ due: null }, close)) : null,
+    ].filter(Boolean);
+  });
+
+  const level = Number(t.priority) || 0;
+  const prio = sticker(`s-prio p${level}${level ? '' : ' empty'}`, level ? `Важность: ${PRIORITY[level]}` : 'Добавить важность', [icon('priority'), level ? PRIORITY[level] : null], (close) => [
+    h('div', { class: 'pop-title' }, 'Важность'),
+    ...[1, 2, 3, 4].map((n) => option(PRIORITY[n], n === level, () => save({ priority: n }, close), h('i', { class: `prio-dot p${n}` }))),
+    level ? option('Убрать важность', false, () => save({ priority: 0 }, close)) : null,
+  ]);
+
+  const who = sticker(
+    `s-who${t.assignee_name ? '' : ' empty'}`,
+    t.assignee_name ? `Ответственный: ${t.assignee_name}` : 'Назначить ответственного',
+    t.assignee_name ? h('span', { class: 'avatar' }, initials(t.assignee_name)) : icon('person'),
+    (close) => [
+      h('div', { class: 'pop-title' }, 'Ответственный'),
+      ...(team?.team ?? []).map((u) => option(u.id === ctx.me.id ? `${u.name} (я)` : u.name, u.id === t.assignee_id, () => save({ assigneeId: u.id }, close), h('span', { class: 'avatar' }, initials(u.name)))),
+      t.assignee_id ? option('Снять ответственного', false, () => save({ assigneeId: null }, close)) : null,
+    ],
+  );
+  return h(
+    'div',
+    { class: 'stickers' },
+    due,
+    prio,
+    t.comments ? h('span', { class: 'chip', title: 'Комментарии' }, `💬 ${t.comments}`) : null,
+    h('span', { class: 'spacer' }),
+    who,
+  );
+}
+
+function card(t, { onOpen, onChange, showProject = false }) {
+  const el = h(
+    'article',
+    {
+      class: `card task-card${t.status === 'done' ? ' is-done' : ''}`, draggable: 'true', tabindex: '0', dataset: { id: String(t.id) },
       onclick: () => onOpen(t.id),
+      onkeydown: (e) => e.key === 'Enter' && e.target === el && onOpen(t.id),
       ondragstart: (e) => {
         e.dataTransfer.setData('text/plain', String(t.id));
         el.classList.add('dragging');
       },
       ondragend: () => el.classList.remove('dragging'),
     },
-    t.priority ? h('span', { class: 'urgent-chip' }, 'Срочно') : null,
-    h('span', { class: 'task-name' }, t.title),
-    showClient && t.client_name ? h('span', { class: 'task-client' }, t.client_name) : null,
-    h(
-      'span',
-      { class: 'row' },
-      t.assignee_name ? h('span', { class: 'avatar', title: t.assignee_name, 'aria-label': `Исполнитель: ${t.assignee_name}` }, initials(t.assignee_name)) : h('span', { class: 'muted' }, 'не назначен'),
-      h('span', { class: 'card-meta' }, t.comments ? h('span', { title: 'Комментарии' }, `💬 ${t.comments}`) : null, t.due ? h('span', { class: `due ${state}` }, state === 'overdue' ? `просрочено, ${fmtDue(t.due)}` : state === 'today' ? 'сегодня' : fmtDue(t.due)) : null),
-    ),
+    h('div', { class: 'task-top' }, doneToggle(t, onChange), h('span', { class: 'task-name' }, t.title)),
+    showProject ? h('span', { class: 'task-client' }, t.client_name ?? 'Общие задачи', ' · ', t.board_name) : null,
+    stickers(t, onChange),
   );
   return el;
 }
 
-/** Канбан задач: доска клиента (fixedClient), «Внутренние» (fixedClient = 'none') или «Мои задачи» со всех досок. */
-async function kanban(params, { route, fixedClient = null, forceMine = false, title = 'Задачи', back = null, extra = null }) {
-  const { team: people, statuses } = await loadTeam().catch(() => ({ team: [], statuses: {} }));
-  const mine = forceMine || params.get('mine') === '1';
-  const f = { assignee: params.get('assignee') ?? '', client: fixedClient ?? params.get('client') ?? '', q: params.get('q') ?? '' };
-  const board = h('div', { class: 'board task-board' });
-  const go = (patch) => {
-    const p = new URLSearchParams({ ...(mine ? { mine: '1' } : {}), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) });
-    for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
-    navigate(route, p);
-  };
-  const clientSel = h('select', { class: 'select', 'aria-label': 'Клиент', onchange: (e) => go({ client: e.target.value }) }, h('option', { value: '' }, 'Все клиенты'));
-  const search = h('input', { class: 'input', type: 'search', placeholder: 'Поиск по задачам', value: f.q, 'aria-label': 'Поиск', onchange: (e) => go({ q: e.target.value.trim() }) });
-  const filters = h(
-    'div',
-    { class: 'filters' },
-    forceMine
-      ? null
-      : h(
-          'div',
-          { class: 'rating-filter', role: 'group', 'aria-label': 'Чьи задачи' },
-          h('button', { type: 'button', 'aria-pressed': String(!mine), onclick: () => go({ mine: '' }) }, 'Все'),
-          h('button', { type: 'button', 'aria-pressed': String(mine), onclick: () => go({ mine: '1', assignee: '' }) }, 'Мои'),
-        ),
-    mine
-      ? null
-      : h(
-          'select',
-          { class: 'select', 'aria-label': 'Исполнитель', onchange: (e) => go({ assignee: e.target.value }) },
-          h('option', { value: '' }, 'Все исполнители'),
-          h('option', { value: 'none', selected: f.assignee === 'none' }, 'Не назначены'),
-          people.map((u) => h('option', { value: u.id, selected: String(u.id) === f.assignee }, u.name)),
-        ),
-    fixedClient ? null : clientSel,
-    search,
+// ---------- проекты (как в YouGile): список слева, доски-вкладки, свои колонки ----------
+
+const DUE_FILTERS = { '': 'Любой срок', overdue: 'Просрочено', today: 'Сегодня', week: 'На неделе', none: 'Без срока' };
+function dueMatch(t, f) {
+  if (!f) return true;
+  if (f === 'none') return !t.due;
+  if (!t.due || t.status === 'done') return false;
+  const d = today();
+  if (f === 'overdue') return t.due < d;
+  if (f === 'today') return t.due === d;
+  const week = new Date(`${d}T12:00:00Z`);
+  week.setUTCDate(week.getUTCDate() + 7);
+  return t.due <= week.toISOString().slice(0, 10);
+}
+
+function menu(label, items, cls = '') {
+  const det = h('details', { class: `menu ${cls}` });
+  const close = () => det.removeAttribute('open');
+  det.append(
+    h('summary', { class: 'icon-btn', 'aria-label': label, title: label }, '⋮'),
+    h('div', { class: 'menu-list', role: 'menu' }, items.filter(Boolean).map((it) => (it instanceof Node ? it : h('button', { type: 'button', role: 'menuitem', class: it.danger ? 'danger' : '', onclick: () => (close(), it.onclick()) }, it.label)))),
   );
-  const newBtn = h('button', { type: 'button', class: 'btn btn-primary', onclick: () => openTask(null, { defaults: newDefaults(), onChange: load }) }, 'Новая задача');
-  const counter = h('span', { class: 'count' });
-  fill(
-    app,
-    shell(route, [
-      back ? h('a', { class: 'back-link', href: back }, 'Все доски') : null,
-      h('div', { class: 'page-head' }, h('h1', {}, title), counter, h('span', { class: 'spacer' }), extra, newBtn),
-      filters,
-      board,
-    ]),
+  det.addEventListener('click', (e) => e.stopPropagation());
+  return det;
+}
+
+function nameDialog({ title, label, value = '', submitLabel, onSubmit, extra = [] }) {
+  const input = h('input', { class: 'input', id: 'nd-name', required: true, maxlength: 100, value });
+  formDialog({ title, submitLabel, body: [h('div', { class: 'field' }, h('label', { for: 'nd-name' }, label), input), ...extra], onSubmit: () => onSubmit(input.value.trim()) });
+  input.select();
+}
+
+export async function renderProjects(params) {
+  await loadTeam().catch(() => {});
+  const projects = await loadProjects().catch(() => null);
+  if (!projects) return;
+  let key = params.get('project') ?? lastProject();
+  if (!projects.some((p) => String(p.id) === key)) key = String(projects[0].id);
+  rememberProject(key);
+  const current = projects.find((p) => String(p.id) === key);
+
+  const f = { mine: params.get('mine') === '1', assignee: params.get('assignee') ?? '', due: params.get('due') ?? '', prio: params.get('prio') ?? '', q: params.get('q') ?? '' };
+  const go = (patch) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
+    navigate('tasks', p);
+  };
+
+  // список проектов слева
+  const filterInput = h('input', { class: 'input', type: 'search', placeholder: 'Найти проект', 'aria-label': 'Найти проект' });
+  const item = (p) =>
+    h(
+      'a',
+      { class: `pm-project${p.internal ? ' internal' : ''}`, href: `#/tasks?project=${p.id}`, 'aria-current': String(p.id) === key ? 'page' : null, dataset: { name: p.name.toLowerCase() } },
+      h('span', { class: 'pm-name' }, p.name),
+      p.overdue ? h('span', { class: 'pm-overdue', title: `Просрочено: ${p.overdue}` }) : null,
+      h('span', { class: 'pm-count num', title: 'Открытые задачи' }, p.open || ''),
+    );
+  const clientsList = h('nav', { class: 'pm-list', 'aria-label': 'Проекты' }, projects.filter((p) => !p.internal).map(item));
+  filterInput.addEventListener('input', () => {
+    const v = filterInput.value.trim().toLowerCase();
+    for (const a of clientsList.children) a.hidden = Boolean(v) && !a.dataset.name.includes(v);
+  });
+  const side = h(
+    'aside',
+    { class: 'pm-side' },
+    h('div', { class: 'pm-side-head' }, h('h2', {}, 'Проекты'), h('button', { type: 'button', class: 'icon-btn', title: 'Новый проект', 'aria-label': 'Новый проект', onclick: newProject }, '+')),
+    filterInput,
+    clientsList,
+    h('div', { class: 'pm-list pm-pinned' }, projects.filter((p) => p.internal).map(item)),
   );
 
-  function newDefaults() {
-    return {
-      client_id: f.client && f.client !== 'none' ? Number(f.client) : null,
-      assignee_id: mine ? ctx.me.id : f.assignee && f.assignee !== 'none' ? Number(f.assignee) : null,
-    };
+  const tabs = h('div', { class: 'pm-tabs', role: 'tablist', 'aria-label': 'Доски проекта' });
+  const filters = h('div', { class: 'filters pm-filters' });
+  const board = h('div', { class: 'board task-board' }, h('p', { class: 'muted' }, 'Загружаю…'));
+  const people = h('div', { class: 'pm-people' });
+  const newBtn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Новая задача');
+  const head = h(
+    'div',
+    { class: 'page-head pm-head' },
+    h('h1', {}, current.name),
+    people,
+    h('span', { class: 'spacer' }),
+    current.internal ? null : h('a', { class: 'btn', href: `#/client?id=${current.id}` }, 'Карточка клиента'),
+    newBtn,
+  );
+  fill(app, shell('tasks', h('div', { class: 'pm' }, side, h('section', { class: 'pm-main' }, head, tabs, filters, board))));
+
+  let boards = [];
+  let active = null;
+  async function load() {
+    try {
+      boards = (await loadBoards(key)).boards;
+    } catch (err) {
+      if (err.status !== 401) fill(board, h('p', { class: 'error' }, err.message));
+      return;
+    }
+    active = boards.find((b) => String(b.id) === params.get('board')) ?? boards[0];
+    renderTabs();
+    renderFilters();
+    await loadTasks();
   }
 
-  if (!fixedClient) api('/admin/api/clients')
-    .then(({ clients }) => clientSel.append(...clients.map((c) => h('option', { value: c.id, selected: String(c.id) === f.client }, c.name))))
-    .catch(() => {});
+  function renderTabs() {
+    fill(
+      tabs,
+      boards.map((b, i) =>
+        h(
+          'div',
+          { class: 'pm-tab', 'aria-selected': String(b === active) },
+          h('a', { role: 'tab', href: `#/tasks?project=${key}&board=${b.id}`, 'aria-selected': String(b === active) }, b.name),
+          b === active
+            ? menu('Действия с доской', [
+                { label: 'Переименовать', onclick: () => nameDialog({ title: 'Доска', label: 'Название', value: b.name, submitLabel: 'Сохранить', onSubmit: async (name) => { await api(`/admin/api/boards/${b.id}`, { method: 'PATCH', body: { name } }); load(); } }) },
+                i > 0 ? { label: 'Сдвинуть левее', onclick: () => moveBoard(b, -1) } : null,
+                i < boards.length - 1 ? { label: 'Сдвинуть правее', onclick: () => moveBoard(b, 1) } : null,
+                boards.length > 1 ? { label: 'Удалить доску', danger: true, onclick: () => removeBoard(b) } : null,
+              ])
+            : null,
+        ),
+      ),
+      h('button', {
+        type: 'button', class: 'pm-add-board',
+        onclick: () => nameDialog({
+          title: 'Новая доска', label: 'Название', submitLabel: 'Создать доску',
+          extra: [h('p', { class: 'hint' }, 'Например: «Трафик», «Контент», «База знаний по проекту». Колонки можно переименовать и добавить свои.')],
+          onSubmit: async (name) => {
+            const res = await api('/admin/api/boards', { method: 'POST', body: { name, clientId: key === 'none' ? null : Number(key) } });
+            navigate('tasks', new URLSearchParams({ project: key, board: String(res.board.id) }));
+          },
+        }),
+      }, '+ Доска'),
+    );
+  }
 
-  async function load() {
-    const q = new URLSearchParams();
-    if (mine) q.set('mine', 'true');
+  async function moveBoard(b, move) {
+    try {
+      await api(`/admin/api/boards/${b.id}`, { method: 'PATCH', body: { move } });
+      load();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  async function removeBoard(b) {
+    if (!confirm(`Удалить доску «${b.name}»?`)) return;
+    try {
+      await api(`/admin/api/boards/${b.id}`, { method: 'DELETE' });
+      navigate('tasks', new URLSearchParams({ project: key }));
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function renderFilters() {
+    const { team: list } = await loadTeam().catch(() => ({ team: [] }));
+    fill(
+      filters,
+      h(
+        'div',
+        { class: 'rating-filter', role: 'group', 'aria-label': 'Чьи задачи' },
+        h('button', { type: 'button', 'aria-pressed': String(!f.mine), onclick: () => go({ mine: '' }) }, 'Все'),
+        h('button', { type: 'button', 'aria-pressed': String(f.mine), onclick: () => go({ mine: '1', assignee: '' }) }, 'Мои'),
+      ),
+      f.mine
+        ? null
+        : h(
+            'select',
+            { class: 'select', 'aria-label': 'Исполнитель', onchange: (e) => go({ assignee: e.target.value }) },
+            h('option', { value: '' }, 'Все исполнители'),
+            h('option', { value: 'none', selected: f.assignee === 'none' }, 'Не назначены'),
+            list.map((u) => h('option', { value: u.id, selected: String(u.id) === f.assignee }, u.name)),
+          ),
+      h('select', { class: 'select', 'aria-label': 'Срок', onchange: (e) => go({ due: e.target.value }) }, Object.entries(DUE_FILTERS).map(([v, l]) => h('option', { value: v, selected: v === f.due }, l))),
+      h(
+        'select',
+        { class: 'select', 'aria-label': 'Важность', onchange: (e) => go({ prio: e.target.value }) },
+        [['', 'Любая важность'], ['3', 'Высокая и критичная'], ['4', 'Критичная']].map(([v, l]) => h('option', { value: v, selected: v === f.prio }, l)),
+      ),
+      h('input', { class: 'input', type: 'search', placeholder: 'Поиск по задачам', value: f.q, 'aria-label': 'Поиск', onchange: (e) => go({ q: e.target.value.trim() }) }),
+    );
+  }
+
+  newBtn.addEventListener('click', () => openTask(null, { defaults: { client_id: current.internal ? null : current.id, column_id: active?.columns[0]?.id, assignee_id: f.mine ? ctx.me.id : null }, onChange: refresh }));
+
+  async function refresh() {
+    await loadProjects().catch(() => {});
+    load();
+  }
+
+  async function loadTasks() {
+    const q = new URLSearchParams({ board: String(active.id) });
+    if (f.mine) q.set('mine', 'true');
     if (f.assignee) q.set('assignee', f.assignee);
-    if (f.client) q.set('client', f.client);
     if (f.q) q.set('q', f.q);
     let tasks;
     try {
-      tasks = (await api(`/admin/api/tasks?${q}`)).tasks;
+      tasks = (await api(`/admin/api/tasks?${q}`)).tasks.filter((t) => dueMatch(t, f.due) && (!f.prio || t.priority >= Number(f.prio)));
     } catch {
       return;
     }
-    const open = tasks.filter((t) => t.status !== 'done');
-    const overdue = open.filter((t) => dueState(t) === 'overdue').length;
-    counter.textContent = `${open.length} ${plural(open.length, 'открытая', 'открытые', 'открытых')}${overdue ? `, просрочено ${overdue}` : ''}`;
-    const columns = {};
+    // кто работает в проекте — аватары в шапке, как в YouGile
+    const names = [...new Set(tasks.map((t) => t.assignee_name).filter(Boolean))];
+    fill(people, names.slice(0, 6).map((n) => h('span', { class: 'avatar', title: n }, initials(n))));
+
     fill(board);
-    for (const [status, label] of Object.entries(statuses)) {
-      const cards = h('div', { class: 'cards' });
-      const count = h('span', { class: 'num' });
-      const col = h('section', { class: 'column', 'aria-label': label }, h('header', {}, label, count), status === 'todo' ? quickAdd() : null, cards);
-      col.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        col.classList.add('drop-target');
-      });
-      col.addEventListener('dragleave', () => col.classList.remove('drop-target'));
-      col.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        col.classList.remove('drop-target');
-        const id = Number(e.dataTransfer.getData('text/plain'));
-        const el = board.querySelector(`.task-card[data-id="${id}"]`);
-        if (!el || el.parentElement === cards) return;
-        const from = el.parentElement;
-        cards.prepend(el);
-        recount();
-        try {
-          await api(`/admin/api/tasks/${id}`, { method: 'PATCH', body: { status } });
-          toast(`${label}: ${el.querySelector('.task-name').textContent}`);
-        } catch (err) {
-          from.prepend(el);
-          recount();
-          toast(err.message);
-        }
-      });
-      columns[status] = { cards, count };
-      board.append(col);
-    }
-    function recount() {
-      for (const { cards, count } of Object.values(columns)) count.textContent = cards.children.length;
-    }
-    for (const t of tasks) columns[t.status]?.cards.append(card(t, (id) => openTask(id, { onChange: load }), !fixedClient));
-    for (const { cards } of Object.values(columns)) if (!cards.children.length) cards.dataset.empty = '1';
-    recount();
+    active.columns.forEach((c, i) => board.append(column(c, i, tasks.filter((t) => t.column_id === c.id))));
+    board.append(h('button', {
+      type: 'button', class: 'column column-add',
+      onclick: () => {
+        let color = 'gray';
+        const swatches = colorPicker('gray', (c) => (color = c));
+        nameDialog({
+          title: 'Новая колонка', label: 'Название', submitLabel: 'Добавить колонку',
+          extra: [h('div', { class: 'field' }, h('span', { class: 'label' }, 'Цвет'), swatches)],
+          onSubmit: async (name) => {
+            await api(`/admin/api/boards/${active.id}/columns`, { method: 'POST', body: { name, color } });
+            load();
+          },
+        });
+      },
+    }, '+ Колонка'));
   }
 
-  function quickAdd() {
-    const input = h('input', { class: 'input', placeholder: 'Добавить задачу и Enter', 'aria-label': 'Новая задача', maxlength: 300 });
-    return h(
+  function column(c, index, tasks) {
+    const cards = h('div', { class: 'cards' });
+    const count = h('span', { class: 'num col-count' }, tasks.length);
+    const edit = () => {
+      let color = c.color;
+      const swatches = colorPicker(c.color, (v) => (color = v));
+      const isDone = h('input', { type: 'checkbox', id: 'nd-done', checked: Boolean(c.is_done) });
+      nameDialog({
+        title: 'Колонка', label: 'Название', value: c.name, submitLabel: 'Сохранить',
+        extra: [
+          h('div', { class: 'field' }, h('span', { class: 'label' }, 'Цвет'), swatches),
+          h('label', { class: 'check' }, isDone, 'Задачи в этой колонке — выполнены'),
+          h('p', { class: 'hint' }, 'Так обычно отмечают «Готово»: задачи здесь не считаются открытыми и просроченными.'),
+        ],
+        onSubmit: async (name) => {
+          await api(`/admin/api/columns/${c.id}`, { method: 'PATCH', body: { name, color, isDone: isDone.checked } });
+          load();
+        },
+      });
+    };
+    const shiftCol = async (move) => {
+      try {
+        await api(`/admin/api/columns/${c.id}`, { method: 'PATCH', body: { move } });
+        load();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    const col = h(
+      'section',
+      { class: `column col-${c.color}${c.is_done ? ' col-done' : ''}`, 'aria-label': c.name },
+      h(
+        'header',
+        {},
+        h('span', { class: 'col-name' }, c.name),
+        count,
+        menu('Действия с колонкой', [
+          { label: 'Изменить', onclick: edit },
+          index > 0 ? { label: 'Сдвинуть левее', onclick: () => shiftCol(-1) } : null,
+          index < active.columns.length - 1 ? { label: 'Сдвинуть правее', onclick: () => shiftCol(1) } : null,
+          active.columns.length > 1 ? {
+            label: 'Удалить колонку', danger: true,
+            onclick: async () => {
+              if (!confirm(`Удалить колонку «${c.name}»?`)) return;
+              try {
+                await api(`/admin/api/columns/${c.id}`, { method: 'DELETE' });
+                load();
+              } catch (err) {
+                toast(err.message);
+              }
+            },
+          } : null,
+        ]),
+      ),
+      quickAdd(c),
+      cards,
+    );
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      col.classList.add('drop-target');
+    });
+    col.addEventListener('dragleave', () => col.classList.remove('drop-target'));
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drop-target');
+      const id = Number(e.dataTransfer.getData('text/plain'));
+      const el = board.querySelector(`.task-card[data-id="${id}"]`);
+      if (!el || el.parentElement === cards) return;
+      cards.prepend(el);
+      try {
+        await api(`/admin/api/tasks/${id}`, { method: 'PATCH', body: { columnId: c.id } });
+        toast(`${c.name}: ${el.querySelector('.task-name').textContent}`);
+      } catch (err) {
+        toast(err.message);
+      }
+      loadTasks();
+    });
+    for (const t of tasks) cards.append(card(t, { onOpen: (id) => openTask(id, { onChange: refresh }), onChange: loadTasks }));
+    return col;
+  }
+
+  function quickAdd(c) {
+    const input = h('input', { class: 'input', placeholder: 'Название задачи и Enter', 'aria-label': `Новая задача в колонку «${c.name}»`, maxlength: 300 });
+    const form = h(
       'form',
       {
-        class: 'quick-add',
+        class: 'quick-add', hidden: true,
         onsubmit: async (e) => {
           e.preventDefault();
           if (!input.value.trim()) return;
-          const d = newDefaults();
           try {
-            await api('/admin/api/tasks', { method: 'POST', body: { title: input.value, clientId: d.client_id, assigneeId: d.assignee_id } });
-            input.value = '';
-            await load();
-            board.querySelector('.quick-add input')?.focus();
+            await api('/admin/api/tasks', { method: 'POST', body: { title: input.value, columnId: c.id, assigneeId: f.mine ? ctx.me.id : null } });
+            await loadTasks();
+            const again = board.querySelector(`.column[aria-label="${CSS.escape(c.name)}"] .quick-add`);
+            again?.removeAttribute('hidden');
+            again?.querySelector('input').focus();
           } catch (err) {
             toast(err.message);
           }
@@ -363,98 +734,126 @@ async function kanban(params, { route, fixedClient = null, forceMine = false, ti
       },
       input,
     );
+    input.addEventListener('keydown', (e) => e.key === 'Escape' && ((form.hidden = true), (btn.hidden = false)));
+    input.addEventListener('blur', () => !input.value && ((form.hidden = true), (btn.hidden = false)));
+    const btn = h('button', { type: 'button', class: 'add-task', onclick: () => ((btn.hidden = true), (form.hidden = false), input.focus()) }, '+ Добавить задачу');
+    return h('div', { class: 'col-add' }, btn, form);
+  }
+
+  async function newProject() {
+    const { team: list } = await loadTeam();
+    const name = h('input', { class: 'input', id: 'np-name', required: true, maxlength: 200, placeholder: 'ООО «Северный дом»' });
+    const manager = h('select', { class: 'select', id: 'np-manager' }, h('option', { value: '' }, 'Не выбран'), list.map((u) => h('option', { value: u.id, selected: u.id === ctx.me.id }, u.name)));
+    formDialog({
+      title: 'Новый проект',
+      submitLabel: 'Создать проект',
+      body: [
+        h('p', { class: 'muted' }, 'Проект — это клиент. Контакты и заметки можно добавить позже в карточке клиента.'),
+        h('div', { class: 'field' }, h('label', { for: 'np-name' }, 'Клиент'), name),
+        h('div', { class: 'field' }, h('label', { for: 'np-manager' }, 'Ответственный'), manager),
+      ],
+      onSubmit: async () => {
+        const { client } = await api('/admin/api/clients', { method: 'POST', body: { name: name.value, managerId: manager.value ? Number(manager.value) : null } });
+        navigate('tasks', new URLSearchParams({ project: String(client.id) }));
+      },
+    });
   }
 
   load();
 }
 
-// ---------- доски ----------
-
-const STATUS_CLASS = { todo: 's-todo', doing: 's-doing', review: 's-review', done: 's-done' };
-
-export async function renderBoards() {
-  const grid = h('div', { class: 'boards' }, h('p', { class: 'muted' }, 'Загружаю…'));
-  const newBtn = h('button', { type: 'button', class: 'btn btn-primary', onclick: newBoard }, 'Новая доска');
-  fill(app, shell('tasks', [h('div', { class: 'page-head' }, h('h1', {}, 'Доски'), h('span', { class: 'count' }, 'по клиентам'), h('span', { class: 'spacer' }), newBtn), grid]));
-
-  let data;
-  try {
-    data = await api('/admin/api/boards');
-  } catch (err) {
-    if (err.status !== 401) fill(grid, h('p', { class: 'error' }, err.message));
-    return;
-  }
-  const { boards, statuses } = data;
-  fill(
-    grid,
-    boards.map((b) => {
-      const open = b.counts.todo + b.counts.doing + b.counts.review;
-      const all = open + b.counts.done;
-      const href = `#/taskboard?client=${b.id}`;
-      return h(
-        'a',
-        { class: `board-card${b.internal ? ' internal' : ''}`, href },
-        h('h2', {}, b.name),
-        h('p', { class: 'board-meta' }, b.internal ? 'Задачи команды без клиента' : b.manager_name ? `Ответственный: ${b.manager_name}` : 'Ответственный не назначен'),
-        // полоса: сколько задач на каждом этапе воронки
-        h(
-          'div',
-          { class: 'board-bar', role: 'img', 'aria-label': Object.entries(statuses).map(([k, l]) => `${l}: ${b.counts[k]}`).join(', ') },
-          all ? Object.keys(statuses).map((k) => (b.counts[k] ? h('span', { class: STATUS_CLASS[k], style: `flex:${b.counts[k]}` }) : null)) : h('span', { class: 'empty-bar' }),
-        ),
-        h(
-          'ul',
-          { class: 'board-counts' },
-          Object.entries(statuses).map(([k, l]) => h('li', {}, h('i', { class: STATUS_CLASS[k], 'aria-hidden': 'true' }), `${l}: `, h('b', { class: 'num' }, b.counts[k]))),
-        ),
-        h(
-          'div',
-          { class: 'board-flags' },
-          open ? null : h('span', { class: 'muted' }, all ? 'Всё сделано' : 'Задач пока нет'),
-          b.overdue ? h('span', { class: 'due overdue' }, `просрочено ${b.overdue}`) : null,
-          b.mine ? h('span', { class: 'tag' }, `мои: ${b.mine}`) : null,
-        ),
-      );
+function colorPicker(current, onPick) {
+  const names = team?.colors ?? {};
+  const btns = Object.entries(names).map(([k, label]) =>
+    h('button', {
+      type: 'button', class: `swatch-btn col-${k}`, title: label, 'aria-label': label, 'aria-pressed': String(k === current),
+      onclick: () => {
+        btns.forEach((b) => b.setAttribute('aria-pressed', String(b === btns.find((x) => x.title === label))));
+        onPick(k);
+      },
     }),
   );
-
-  async function newBoard() {
-    const { team: people } = await loadTeam();
-    const name = h('input', { class: 'input', id: 'nb-name', required: true, maxlength: 200, placeholder: 'ООО «Северный дом»' });
-    const manager = h('select', { class: 'select', id: 'nb-manager' }, h('option', { value: '' }, 'Не выбран'), people.map((u) => h('option', { value: u.id, selected: u.id === ctx.me.id }, u.name)));
-    formDialog({
-      title: 'Новая доска',
-      submitLabel: 'Создать доску',
-      body: [
-        h('p', { class: 'muted' }, 'Доска — это клиент. Контакты и заметки можно добавить позже в карточке клиента.'),
-        h('div', { class: 'field' }, h('label', { for: 'nb-name' }, 'Клиент'), name),
-        h('div', { class: 'field' }, h('label', { for: 'nb-manager' }, 'Ответственный'), manager),
-      ],
-      onSubmit: async () => {
-        const { client } = await api('/admin/api/clients', { method: 'POST', body: { name: name.value, managerId: manager.value ? Number(manager.value) : null } });
-        navigate('taskboard', new URLSearchParams({ client: String(client.id) }));
-      },
-    });
-  }
+  return h('div', { class: 'swatches', role: 'group', 'aria-label': 'Цвет колонки' }, btns);
 }
 
-export async function renderTaskBoard(params) {
+// Старые ссылки «доска клиента» ведут в его проект
+export function renderTaskBoard(params) {
   const client = params.get('client');
-  if (!client) return navigate('tasks');
-  let title = 'Внутренние задачи';
-  let extra = null;
-  if (client !== 'none') {
-    try {
-      title = (await api(`/admin/api/clients/${Number(client)}`)).client.name;
-    } catch {
-      return navigate('tasks');
-    }
-    extra = h('a', { class: 'btn', href: `#/client?id=${client}` }, 'Карточка клиента');
-  }
-  return kanban(params, { route: 'taskboard', fixedClient: client, title, back: '#/tasks', extra });
+  navigate('tasks', client ? new URLSearchParams({ project: client }) : undefined);
 }
 
-export const renderMyTasks = (params) => kanban(params, { route: 'mytasks', forceMine: true, title: 'Мои задачи' });
+// ---------- мои задачи: со всех проектов, списком ----------
+
+export async function renderMyTasks(params) {
+  const showDone = params.get('done') === '1';
+  const list = h('div', { class: 'my-tasks' }, h('p', { class: 'muted' }, 'Загружаю…'));
+  const count = h('span', { class: 'count' });
+  const newBtn = h('button', { type: 'button', class: 'btn btn-primary', onclick: () => openTask(null, { defaults: { assignee_id: ctx.me.id }, onChange: load }) }, 'Новая задача');
+  fill(
+    app,
+    shell('mytasks', [
+      h('div', { class: 'page-head' }, h('h1', {}, 'Мои задачи'), count, h('span', { class: 'spacer' }), newBtn),
+      h(
+        'div',
+        { class: 'filters' },
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: showDone, onchange: (e) => navigate('mytasks', e.target.checked ? new URLSearchParams({ done: '1' }) : undefined) }), 'Показывать выполненные за 2 недели'),
+      ),
+      list,
+    ]),
+  );
+  await loadTeam().catch(() => {});
+  await loadProjects().catch(() => {});
+
+  async function load() {
+    let tasks;
+    try {
+      tasks = (await api('/admin/api/tasks?mine=true')).tasks;
+    } catch {
+      return;
+    }
+    if (!showDone) tasks = tasks.filter((t) => t.status !== 'done');
+    const open = tasks.filter((t) => t.status !== 'done');
+    const overdue = open.filter((t) => dueState(t) === 'overdue').length;
+    count.textContent = `${open.length} ${plural(open.length, 'открытая', 'открытые', 'открытых')}${overdue ? `, просрочено ${overdue}` : ''}`;
+    if (!tasks.length) {
+      fill(list, h('div', { class: 'panel empty' }, h('strong', {}, 'Задач на вас нет'), 'Новые задачи, где вы исполнитель, появятся здесь со всех проектов.'));
+      return;
+    }
+    const groups = new Map();
+    for (const t of tasks) {
+      const k = projectKey(t.client_id);
+      if (!groups.has(k)) groups.set(k, { name: t.client_name ?? 'Общие задачи', tasks: [] });
+      groups.get(k).tasks.push(t);
+    }
+    fill(
+      list,
+      [...groups.entries()].map(([k, g]) =>
+        h(
+          'section',
+          { class: 'panel my-group' },
+          h('h2', {}, h('a', { href: `#/tasks?project=${k}` }, g.name), ' ', h('span', { class: 'muted num' }, g.tasks.length)),
+          h(
+            'ul',
+            { class: 'my-list' },
+            g.tasks.map((t) => {
+              const state = dueState(t);
+              return h(
+                'li',
+                { class: t.status === 'done' ? 'is-done' : '' },
+                doneToggle(t, load),
+                h('button', { type: 'button', class: 'linkish task-link', onclick: () => openTask(t.id, { onChange: load }) }, t.title),
+                h('span', { class: `col-chip col-${t.column_color ?? 'gray'}` }, t.board_name, ' · ', t.column_name),
+                t.priority ? h('span', { class: `chip prio p${t.priority}` }, PRIORITY[t.priority]) : h('span'),
+                t.due ? h('span', { class: `chip due ${state}` }, state === 'overdue' ? `просрочено, ${fmtDue(t.due)}` : state === 'today' ? 'сегодня' : fmtDue(t.due)) : h('span'),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+  load();
+}
 
 // ---------- клиенты ----------
 
@@ -561,9 +960,9 @@ export async function renderClient(params) {
   const id = Number(params.get('id'));
   if (!id) return navigate('clients');
   fill(app, shell('client', h('p', { class: 'muted' }, 'Загружаю…')));
-  let data, people, statuses;
+  let data, people;
   try {
-    [data, { team: people, statuses }] = await Promise.all([api(`/admin/api/clients/${id}`), loadTeam()]);
+    [data, { team: people }] = await Promise.all([api(`/admin/api/clients/${id}`), loadTeam()]);
   } catch (err) {
     if (err.status !== 401) fill(app, shell('client', [h('p', { class: 'error' }, err.message), h('a', { href: '#/clients' }, 'Все клиенты')]));
     return;
@@ -601,7 +1000,7 @@ export async function renderClient(params) {
         name,
         saved,
         h('span', { class: 'spacer' }),
-        h('a', { class: 'btn', href: `#/taskboard?client=${id}` }, 'Доска задач'),
+        h('a', { class: 'btn', href: `#/tasks?project=${id}` }, 'Задачи проекта'),
         h('button', { type: 'button', class: 'btn', onclick: async () => { await save({ archived: !c.archived }); toast(c.archived ? 'Клиент в архиве' : 'Клиент снова в работе'); renderClient(params); } }, c.archived ? 'Вернуть из архива' : 'В архив'),
       ),
       h(
@@ -635,9 +1034,14 @@ export async function renderClient(params) {
     }
     data.tasks = null;
     const input = h('input', { class: 'input', placeholder: 'Новая задача по клиенту и Enter', 'aria-label': 'Новая задача', maxlength: 300 });
-    const groups = Object.entries(statuses)
-      .map(([s, label]) => [label, tasks.filter((t) => t.status === s)])
-      .filter(([, list]) => list.length);
+    // группы — колонки досок проекта; выполненные — отдельно в конце
+    const groupMap = new Map();
+    for (const t of tasks) {
+      const label = t.status === 'done' ? 'Выполнено' : t.board_name && t.board_name !== 'Задачи' ? `${t.board_name} · ${t.column_name}` : t.column_name ?? 'Задачи';
+      if (!groupMap.has(label)) groupMap.set(label, []);
+      groupMap.get(label).push(t);
+    }
+    const groups = [...groupMap.entries()].sort(([a], [b]) => (a === 'Выполнено') - (b === 'Выполнено'));
     fill(
       tasksBox,
       h('h2', {}, 'Задачи'),

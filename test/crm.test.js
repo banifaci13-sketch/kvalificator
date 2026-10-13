@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../src/storage/db.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openDb, SCHEMA_VERSION } from '../src/storage/db.js';
 import { createQualifier } from '../src/core/qualifier.js';
 import { buildServer } from '../src/http/server.js';
 import { loadConfig } from '../src/config.js';
@@ -50,7 +53,7 @@ test('клиент из заявки: название и контакт из о
   assert.equal((await oleg({ method: 'POST', url: '/admin/api/clients', payload: { fromLead: lead.id } })).statusCode, 400);
 });
 
-test('задачи: доска, исполнитель, статус, лента изменений, комментарии', async () => {
+test('задачи: колонки вместо статусов, выполнение, лента изменений, комментарии', async () => {
   const { as } = await setup();
   const anna = await as('anna');
   const oleg = await as('oleg');
@@ -64,32 +67,55 @@ test('задачи: доска, исполнитель, статус, лента
   const bad = await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'x', due: '13.10.2026' } });
   assert.match(bad.json().error, /ГГГГ-ММ-ДД/);
 
-  const task = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Собрать семантику', clientId: client.id, assigneeId: id('Олег'), due: '2026-10-20', priority: 1 } })).json().task;
+  // задача по клиенту без доски — в первую колонку первой доски проекта
+  const task = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Собрать семантику', clientId: client.id, assigneeId: id('Олег'), due: '2026-10-20', priority: 3 } })).json().task;
+  assert.equal((await anna({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { priority: 7 } })).statusCode, 400);
   assert.equal(task.status, 'todo');
   assert.equal(task.client_name, 'ООО Ромашка');
+  assert.deepEqual([task.board_name, task.column_name], ['Задачи', 'К выполнению']);
   await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Внутренняя задача' } });
 
   const mine = (await oleg({ url: '/admin/api/tasks?mine=true' })).json().tasks;
   assert.deepEqual(mine.map((t) => t.title), ['Собрать семантику']);
   assert.equal((await oleg({ url: `/admin/api/tasks?client=${client.id}` })).json().tasks.length, 1);
 
-  const moved = await oleg({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { status: 'doing' } });
+  const [board] = (await oleg({ url: `/admin/api/projects/${client.id}/boards` })).json().boards;
+  const col = Object.fromEntries(board.columns.map((c) => [c.name, c]));
+  assert.deepEqual(board.columns.map((c) => [c.name, c.is_done]), [['К выполнению', 0], ['В работе', 0], ['На проверке', 0], ['Готово', 1]]);
+
+  const moved = await oleg({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { columnId: col['В работе'].id } });
   assert.equal(moved.statusCode, 200);
-  await oleg({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { assigneeId: id('Ира'), status: 'review' } });
+  await oleg({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { assigneeId: id('Ира'), columnId: col['На проверке'].id, priority: 4 } });
   await ira({ method: 'POST', url: `/admin/api/tasks/${task.id}/comments`, payload: { text: 'Проверю до вечера' } });
-  const done = (await ira({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { status: 'done' } })).json().task;
-  assert.ok(done.done_at);
+  // галочка «выполнено» — задача остаётся в своей колонке
+  const checked = (await ira({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { done: true } })).json().task;
+  assert.equal(checked.status, 'done');
+  assert.equal(checked.column_name, 'На проверке');
+  assert.ok(checked.done_at);
+  await ira({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { done: false } });
+  // в колонку «Готово» — выполнена автоматически
+  const done = (await ira({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { columnId: col['Готово'].id } })).json().task;
+  assert.equal(done.status, 'done');
   const feed = done.comments.map((c) => `${c.author}: ${c.text}`);
   assert.deepEqual(feed, [
     'Олег: К выполнению → В работе',
     'Олег: В работе → На проверке',
     'Олег: Исполнитель: Ира',
+    'Олег: Важность: Критичная',
     'Ира: Проверю до вечера',
+    'Ира: Выполнена',
+    'Ира: Снова в работе',
     'Ира: На проверке → Готово',
+    'Ира: Выполнена',
   ]);
   const card = (await anna({ url: `/admin/api/clients/${client.id}` })).json();
   assert.equal(card.client.open_tasks ?? 0, 0);
   assert.equal(card.tasks[0].comments, 1);
+
+  // в другой проект — на его первую доску
+  const other = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Бета' } })).json().client;
+  const away = (await anna({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { clientId: other.id } })).json().task;
+  assert.deepEqual([away.client_name, away.column_name, away.status], ['Бета', 'К выполнению', 'todo']);
 
   // удалить — автор или администратор
   assert.equal((await oleg({ method: 'DELETE', url: `/admin/api/tasks/${task.id}` })).statusCode, 400);
@@ -98,30 +124,93 @@ test('задачи: доска, исполнитель, статус, лента
   assert.equal((await oleg({ method: 'DELETE', url: `/admin/api/clients/${client.id}` })).statusCode, 403);
   const archived = (await oleg({ method: 'PUT', url: `/admin/api/clients/${client.id}`, payload: { archived: true } })).json().client;
   assert.equal(archived.archived, 1);
-  assert.equal((await oleg({ url: '/admin/api/clients' })).json().clients.length, 0);
+  assert.deepEqual((await oleg({ url: '/admin/api/clients' })).json().clients.map((c) => c.name), ['Бета']);
 });
 
-test('доски: по клиенту и «Внутренние», счётчики по статусам, просрочка, мои', async () => {
+test('проекты: клиенты и «Общие задачи», доски-вкладки, свои колонки', async () => {
   const { as } = await setup();
   const anna = await as('anna');
   const team = (await anna({ url: '/admin/api/team' })).json().team;
   const annaId = team.find((u) => u.name === 'Анна').id;
   const a = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Альфа' } })).json().client;
   await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Бета' } });
-  const t1 = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Аудит', clientId: a.id, assigneeId: annaId, due: '2020-01-01' } })).json().task;
-  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Запуск', clientId: a.id, status: 'doing' } });
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Аудит', clientId: a.id, assigneeId: annaId, due: '2020-01-01' } });
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Запуск', clientId: a.id } });
   await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Обновить шаблоны КП' } });
-  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t1.id}`, payload: { status: 'review' } });
 
-  const boards = (await anna({ url: '/admin/api/boards' })).json().boards;
-  assert.deepEqual(boards.map((b) => b.name), ['Альфа', 'Бета', 'Внутренние задачи']);
-  const alpha = boards[0];
-  assert.deepEqual(alpha.counts, { todo: 0, doing: 1, review: 1, done: 0 });
-  assert.equal(alpha.overdue, 1);
-  assert.equal(alpha.mine, 1);
-  assert.equal(boards[2].counts.todo, 1);
+  const projects = (await anna({ url: '/admin/api/projects' })).json().projects;
+  assert.deepEqual(projects.map((p) => [p.name, p.open, p.overdue, p.mine]), [['Альфа', 2, 1, 1], ['Бета', 0, 0, 0], ['Общие задачи', 1, 0, 0]]);
 
-  const internal = (await anna({ url: '/admin/api/tasks?client=none' })).json().tasks;
-  assert.deepEqual(internal.map((t) => t.title), ['Обновить шаблоны КП']);
+  // вторая доска «Трафик» со своими колонками
+  const traffic = (await anna({ method: 'POST', url: '/admin/api/boards', payload: { clientId: a.id, name: 'Трафик' } })).json().board;
+  assert.equal(traffic.columns.length, 4);
+  const [todo, , review, ready] = traffic.columns;
+  const client = (await anna({ method: 'POST', url: `/admin/api/boards/${traffic.id}/columns`, payload: { name: 'На проверке у клиента', color: 'cyan' } })).json().column;
+  assert.equal(client.position, 4);
+  // переставить левее «Готово», переименовать, удалить пустую
+  await anna({ method: 'PATCH', url: `/admin/api/columns/${client.id}`, payload: { move: -1 } });
+  await anna({ method: 'PATCH', url: `/admin/api/columns/${review.id}`, payload: { name: 'На проверке в Сороке' } });
+  assert.equal((await anna({ method: 'PATCH', url: `/admin/api/columns/${review.id}`, payload: { color: '#ff0000' } })).statusCode, 400);
+  let boards = (await anna({ url: `/admin/api/projects/${a.id}/boards` })).json().boards;
+  assert.deepEqual(boards.map((b) => b.name), ['Задачи', 'Трафик']);
+  assert.deepEqual(boards[1].columns.map((c) => c.name), ['К выполнению', 'В работе', 'На проверке в Сороке', 'На проверке у клиента', 'Готово']);
+
+  // задача на доску — в первую колонку; доску с задачами и колонку с задачами не удалить
+  const t = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'РК по Самаре', boardId: traffic.id } })).json().task;
+  assert.deepEqual([t.board_name, t.column_name], ['Трафик', 'К выполнению']);
+  assert.match((await anna({ method: 'DELETE', url: `/admin/api/columns/${todo.id}` })).json().error, /перенесите/);
+  assert.match((await anna({ method: 'DELETE', url: `/admin/api/boards/${traffic.id}` })).json().error, /перенесите или удалите/);
+  assert.equal((await anna({ url: `/admin/api/tasks?board=${traffic.id}` })).json().tasks.length, 1);
+
+  // колонка «выполнено»: отметка переносится на задачи в ней
+  await anna({ method: 'PATCH', url: `/admin/api/columns/${todo.id}`, payload: { isDone: true } });
+  assert.equal((await anna({ url: `/admin/api/tasks/${t.id}` })).json().task.status, 'done');
+  await anna({ method: 'PATCH', url: `/admin/api/columns/${todo.id}`, payload: { isDone: false } });
+  assert.equal((await anna({ url: `/admin/api/tasks/${t.id}` })).json().task.status, 'todo');
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t.id}`, payload: { columnId: ready.id } });
+  assert.equal((await anna({ method: 'DELETE', url: `/admin/api/columns/${todo.id}` })).statusCode, 200);
+  // доску-вкладку переставить первой
+  await anna({ method: 'PATCH', url: `/admin/api/boards/${traffic.id}`, payload: { move: -1, name: 'Трафик и реклама' } });
+  boards = (await anna({ url: `/admin/api/projects/${a.id}/boards` })).json().boards;
+  assert.deepEqual(boards.map((b) => b.name), ['Трафик и реклама', 'Задачи']);
+
+  // «Общие задачи» — тоже проект со своей доской
+  const internal = (await anna({ url: '/admin/api/projects/none/boards' })).json();
+  assert.equal(internal.project.name, 'Общие задачи');
+  assert.deepEqual((await anna({ url: '/admin/api/tasks?client=none' })).json().tasks.map((x) => x.title), ['Обновить шаблоны КП']);
   assert.equal((await anna({ url: '/admin/api/tasks?client=abc' })).statusCode, 400);
+  assert.equal((await anna({ url: '/admin/api/projects/abc/boards' })).statusCode, 400);
+
+  // единственную доску проекта не удалить
+  const [only] = (await anna({ url: '/admin/api/projects/none/boards' })).json().boards;
+  assert.match((await anna({ method: 'DELETE', url: `/admin/api/boards/${only.id}` })).json().error, /единственная/);
+});
+
+test('обновление базы: старые статусы задач становятся колонками доски «Задачи»', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'crm-')), 'old.db');
+  const fresh = openDb(path);
+  // состояние до досок: колонок и досок ещё нет, у задач — статусы
+  fresh.raw.exec(`DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
+    CREATE TABLE tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL, title TEXT NOT NULL, description TEXT,
+      status TEXT NOT NULL DEFAULT 'todo', priority INTEGER NOT NULL DEFAULT 0, assignee_id INTEGER REFERENCES admin_users(id), due TEXT,
+      created_by TEXT, created_by_id INTEGER REFERENCES admin_users(id), created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')), done_at TEXT);
+    INSERT INTO clients (name) VALUES ('Альфа');
+    INSERT INTO tasks (client_id, title, status, priority) VALUES (1, 'А', 'doing', 1), (1, 'Б', 'review', 0), (NULL, 'В', 'todo', 0), (1, 'Г', 'done', 0);
+    PRAGMA user_version = ${SCHEMA_VERSION - 1};`);
+  fresh.close();
+
+  const db = openDb(path);
+  const rows = db.raw
+    .prepare(`SELECT t.title, t.status, t.priority, col.name AS col, b.name AS board, b.client_id FROM tasks t JOIN task_columns col ON col.id = t.column_id JOIN task_boards b ON b.id = col.board_id ORDER BY t.id`)
+    .all()
+    .map((r) => ({ ...r }));
+  assert.deepEqual(rows, [
+    { title: 'А', status: 'todo', priority: 3, col: 'В работе', board: 'Задачи', client_id: 1 },
+    { title: 'Б', priority: 0, status: 'todo', col: 'На проверке', board: 'Задачи', client_id: 1 },
+    { title: 'В', priority: 0, status: 'todo', col: 'К выполнению', board: 'Задачи', client_id: null },
+    { title: 'Г', priority: 0, status: 'done', col: 'Готово', board: 'Задачи', client_id: 1 },
+  ]);
+  db.close();
 });

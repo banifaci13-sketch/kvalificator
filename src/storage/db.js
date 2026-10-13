@@ -256,6 +256,41 @@ const MIGRATIONS = [
   // Данные сотрудника: должность и телефон (видны коллегам в задачах и встречах)
   `ALTER TABLE admin_users ADD COLUMN position TEXT;
    ALTER TABLE admin_users ADD COLUMN phone TEXT;`,
+
+  // Задачи как в YouGile: проект (клиент или «Общие задачи») → доски → свои колонки.
+  // Старые статусы переезжают в колонки доски «Задачи» каждого проекта; «срочно» — важность «высокая».
+  `CREATE TABLE task_boards (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     client_id   INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+     name        TEXT NOT NULL,
+     position    INTEGER NOT NULL DEFAULT 0,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX task_boards_client ON task_boards (client_id, position);
+   CREATE TABLE task_columns (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     board_id    INTEGER NOT NULL REFERENCES task_boards(id) ON DELETE CASCADE,
+     name        TEXT NOT NULL,
+     color       TEXT NOT NULL DEFAULT 'gray',
+     position    INTEGER NOT NULL DEFAULT 0,
+     is_done     INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX task_columns_board ON task_columns (board_id, position);
+   ALTER TABLE tasks ADD COLUMN column_id INTEGER REFERENCES task_columns(id) ON DELETE SET NULL;
+   CREATE INDEX tasks_column ON tasks (column_id);
+   INSERT INTO task_boards (client_id, name) SELECT DISTINCT client_id, 'Задачи' FROM tasks;
+   INSERT INTO task_columns (board_id, name, color, position, is_done)
+     SELECT b.id, c.name, c.color, c.pos, c.done FROM task_boards b,
+       (SELECT 'К выполнению' AS name, 'gray' AS color, 0 AS pos, 0 AS done
+        UNION ALL SELECT 'В работе', 'orange', 1, 0
+        UNION ALL SELECT 'На проверке', 'violet', 2, 0
+        UNION ALL SELECT 'Готово', 'green', 3, 1) c;
+   UPDATE tasks SET column_id = (
+     SELECT col.id FROM task_columns col JOIN task_boards b ON b.id = col.board_id
+     WHERE b.client_id IS tasks.client_id
+       AND col.position = CASE tasks.status WHEN 'doing' THEN 1 WHEN 'review' THEN 2 WHEN 'done' THEN 3 ELSE 0 END);
+   UPDATE tasks SET status = 'todo' WHERE status != 'done';
+   UPDATE tasks SET priority = 3 WHERE priority = 1;`,
 ];
 
 /** Номер текущей версии схемы базы. */

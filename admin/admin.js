@@ -3,7 +3,7 @@
 
 import { renderDocs, renderDoc, renderTemplates, leadDocuments, formDialog } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
-import { renderBoards, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
+import { renderProjects, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
 import { renderIntegrations } from './integrations.js';
 
@@ -135,7 +135,7 @@ const routes = {
   plans: renderPlans,
   plan: renderPlan,
   benchmarks: renderBenchmarks,
-  tasks: renderBoards,
+  tasks: renderProjects,
   taskboard: renderTaskBoard,
   mytasks: renderMyTasks,
   clients: renderClients,
@@ -166,7 +166,7 @@ const SECTION_TABS = {
     ['integrations', 'Подключения'],
   ],
   tasks: [
-    ['tasks', 'Доски'],
+    ['tasks', 'Проекты'],
     ['mytasks', 'Мои задачи'],
     ['clients', 'Клиенты'],
   ],
@@ -220,6 +220,9 @@ const ICONS = {
   dark: 'M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.5 6.5 0 0 0 10 10z',
   system: 'M3 4h18v12H3zM8 20h8M12 16v4',
   logout: 'M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3',
+  due: 'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4',
+  priority: 'M5 20v-4M10 20v-8M15 20V8M20 20V4',
+  person: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1',
 };
 function icon(name) {
   return s('svg', { class: 'icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' }, s('path', { d: ICONS[name] }));
@@ -1262,6 +1265,6 @@ function logo() {
   return h('span', { class: 'wordmark' }, 'SOROKA MARKETING');
 }
 
-export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx };
+export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon };
 
 boot();
