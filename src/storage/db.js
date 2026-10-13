@@ -67,6 +67,10 @@ const MIGRATIONS = [
      expires_at TEXT NOT NULL,
      created_at TEXT NOT NULL DEFAULT (datetime('now'))
    );`,
+
+  // Роли сотрудников: первый заведённый сотрудник становится администратором
+  `ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'manager';
+   UPDATE admin_users SET role = 'admin' WHERE id = (SELECT MIN(id) FROM admin_users);`,
 ];
 
 function migrate(db) {

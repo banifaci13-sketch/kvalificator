@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { LEAD_STATUSES, leadsToCsv } from './reports.js';
 import { createYandexOAuth } from './yandex.js';
+import { AuthError, ROLES } from './auth.js';
 
 const SESSION_COOKIE = 'kval_admin';
 const STATE_COOKIE = 'kval_oauth_state';
@@ -97,16 +98,16 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       schema: {
         body: {
           type: 'object',
-          required: ['email', 'password'],
+          required: ['login', 'password'],
           additionalProperties: false,
-          properties: { email: { type: 'string', maxLength: 200 }, password: { type: 'string', maxLength: 200 } },
+          properties: { login: { type: 'string', maxLength: 200 }, password: { type: 'string', maxLength: 200 } },
         },
       },
       config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
     },
     async (req, reply) => {
-      const token = auth.login(req.body.email, req.body.password);
-      if (!token) return reply.code(401).send({ error: 'Неверная почта или пароль' });
+      const token = auth.login(req.body.login, req.body.password);
+      if (!token) return reply.code(401).send({ error: 'Неверный логин или пароль' });
       setSession(reply, token);
       return { ok: true };
     },
@@ -151,9 +152,14 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
   app.register(async (api) => {
     api.addHook('preHandler', requireUser);
+    api.setErrorHandler((err, req, reply) => {
+      if (err instanceof AuthError) return reply.code(400).send({ error: err.message });
+      throw err;
+    });
 
     api.get('/admin/api/me', async (req) => ({
       user: req.user,
+      roles: ROLES,
       statuses: LEAD_STATUSES,
       scenario: scenarioSource.get(),
       links: {
@@ -203,6 +209,85 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         return { lead, events: db.leadEvents(lead.id) };
       },
     );
+
+    // ---------- сотрудники ----------
+
+    api.post(
+      '/admin/api/me/password',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            required: ['next'],
+            additionalProperties: false,
+            properties: { current: { type: 'string', maxLength: 200 }, next: { type: 'string', minLength: 10, maxLength: 200 } },
+          },
+        },
+        config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+      },
+      async (req) => {
+        auth.changeOwnPassword(req.user.id, req.body.current ?? '', req.body.next, req.cookies[SESSION_COOKIE]);
+        return { ok: true };
+      },
+    );
+
+    api.register(async (staff) => {
+      staff.addHook('preHandler', async (req, reply) => {
+        if (req.user.role !== 'admin') return reply.code(403).send({ error: 'Доступно только администратору' });
+      });
+      const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
+
+      staff.get('/admin/api/users', async () => ({ users: auth.listUsers(), roles: ROLES }));
+
+      staff.post(
+        '/admin/api/users',
+        {
+          schema: {
+            body: {
+              type: 'object',
+              required: ['login'],
+              additionalProperties: false,
+              properties: {
+                login: { type: 'string', maxLength: 64 },
+                name: { type: 'string', maxLength: 100 },
+                role: { type: 'string', enum: Object.keys(ROLES) },
+              },
+            },
+          },
+        },
+        async (req) => {
+          const { user, password } = auth.addUser(req.body.login, req.body.name, { role: req.body.role ?? 'manager' });
+          req.log.info({ by: req.user.login, login: user.login }, 'Добавлен сотрудник');
+          return { user, password };
+        },
+      );
+
+      staff.post('/admin/api/users/:id/reset-password', { schema: { params: idParams } }, async (req) => {
+        const password = auth.resetPassword(req.params.id);
+        req.log.info({ by: req.user.login, id: req.params.id }, 'Сброшен пароль сотрудника');
+        return { password };
+      });
+
+      staff.patch(
+        '/admin/api/users/:id',
+        {
+          schema: {
+            params: idParams,
+            body: {
+              type: 'object',
+              minProperties: 1,
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', maxLength: 100 },
+                role: { type: 'string', enum: Object.keys(ROLES) },
+                disabled: { type: 'boolean' },
+              },
+            },
+          },
+        },
+        async (req) => ({ user: auth.updateUser(req.params.id, req.body) }),
+      );
+    });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 

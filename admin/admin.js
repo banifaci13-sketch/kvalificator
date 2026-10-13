@@ -119,7 +119,7 @@ const statusChip = (status) => h('span', { class: 'status', dataset: { s: status
 
 // ---------- маршруты ----------
 
-const routes = { leads: renderLeads, board: renderBoard, stats: renderStats, test: renderTest };
+const routes = { leads: renderLeads, board: renderBoard, stats: renderStats, test: renderTest, staff: renderStaff, account: renderAccount };
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
@@ -147,7 +147,7 @@ window.addEventListener('hashchange', () => {
 async function boot() {
   try {
     const me = await api('/admin/api/me');
-    Object.assign(ctx, { me: me.user, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat });
+    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat });
     renderRoute();
   } catch (err) {
     if (err.status !== 401) app.replaceChildren(h('p', { class: 'page error' }, err.message));
@@ -160,7 +160,8 @@ function shell(active, content) {
     ['board', 'Воронка'],
     ['stats', 'Сводка'],
     ['test', 'Тест'],
-  ];
+    ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
+  ].filter(Boolean);
   return [
     h(
       'header',
@@ -174,7 +175,7 @@ function shell(active, content) {
       h(
         'div',
         { class: 'user' },
-        h('span', { class: 'name' }, ctx.me.name),
+        h('a', { class: 'name', href: '#/account', title: 'Мой пароль' }, ctx.me.name),
         h('button', { type: 'button', onclick: logout }, 'Выйти'),
       ),
     ),
@@ -205,7 +206,7 @@ async function renderLogin() {
   const methods = await fetch('/admin/api/auth').then((r) => r.json()).catch(() => ({ yandex: false }));
   const error = new URLSearchParams(location.search).get('error');
   const errorEl = h('p', { class: 'error', role: 'alert', hidden: !error }, error ?? '');
-  const email = h('input', { class: 'input', id: 'email', type: 'email', autocomplete: 'username', required: true });
+  const email = h('input', { class: 'input', id: 'login', type: 'text', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true });
   const password = h('input', { class: 'input', id: 'password', type: 'password', autocomplete: 'current-password', required: true });
   const submit = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Войти');
 
@@ -216,7 +217,7 @@ async function renderLogin() {
         e.preventDefault();
         submit.disabled = true;
         try {
-          await api('/admin/api/login', { method: 'POST', body: { email: email.value, password: password.value } });
+          await api('/admin/api/login', { method: 'POST', body: { login: email.value, password: password.value } });
           history.replaceState(null, '', '/admin/' + location.hash);
           await boot();
         } catch (err) {
@@ -226,7 +227,7 @@ async function renderLogin() {
         }
       },
     },
-    h('div', { class: 'field' }, h('label', { for: 'email' }, 'Почта'), email),
+    h('div', { class: 'field' }, h('label', { for: 'login' }, 'Логин'), email),
     h('div', { class: 'field' }, h('label', { for: 'password' }, 'Пароль'), password),
     submit,
   );
@@ -829,6 +830,177 @@ function niceTicks(max) {
   for (let t = 0; t <= max + stepInt - 1; t += stepInt) ticks.push(t);
   if (ticks.at(-1) < max) ticks.push(ticks.at(-1) + stepInt);
   return ticks;
+}
+
+// ---------- сотрудники (только администратор) ----------
+
+/** Пароль показывается один раз: блок с кнопкой «Скопировать». */
+function passwordNotice(login, password, note) {
+  const copy = h('button', { type: 'button', class: 'btn', onclick: async () => {
+    try {
+      await navigator.clipboard.writeText(`Логин: ${login}\nПароль: ${password}\nВход: ${location.origin}/admin/`);
+      copy.textContent = 'Скопировано';
+    } catch {
+      copy.textContent = 'Выделите и скопируйте вручную';
+    }
+  } }, 'Скопировать логин и пароль');
+  return h(
+    'div',
+    { class: 'secret', role: 'status' },
+    h('p', {}, note),
+    h('dl', {}, h('dt', {}, 'Логин'), h('dd', { class: 'mono' }, login), h('dt', {}, 'Пароль'), h('dd', { class: 'mono' }, password)),
+    h('p', { class: 'muted' }, 'Пароль больше нигде не показывается. Если потеряется — сбросьте и выдайте новый.'),
+    copy,
+  );
+}
+
+async function renderStaff() {
+  if (ctx.me.role !== 'admin') return navigate('leads');
+  const notice = h('div');
+  const tbody = h('tbody');
+  const login = h('input', { class: 'input', id: 'new-login', required: true, maxlength: 64, autocapitalize: 'none', spellcheck: 'false', placeholder: 'anna или anna@soroka-marketing.ru' });
+  const name = h('input', { class: 'input', id: 'new-name', maxlength: 100, placeholder: 'Анна Иванова' });
+  const role = h('select', { class: 'select', id: 'new-role' }, Object.entries(ctx.roles).map(([v, label]) => h('option', { value: v, selected: v === 'manager' }, label)));
+  const error = h('p', { class: 'error', role: 'alert', hidden: true });
+  const submit = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Создать доступ');
+
+  const form = h(
+    'form',
+    {
+      class: 'panel staff-form',
+      onsubmit: async (e) => {
+        e.preventDefault();
+        submit.disabled = true;
+        error.hidden = true;
+        try {
+          const res = await api('/admin/api/users', { method: 'POST', body: { login: login.value.trim(), name: name.value.trim(), role: role.value } });
+          notice.replaceChildren(passwordNotice(res.user.login, res.password, `Доступ для «${res.user.name}» создан.`));
+          form.reset();
+          load();
+        } catch (err) {
+          error.textContent = err.message;
+          error.hidden = false;
+        } finally {
+          submit.disabled = false;
+        }
+      },
+    },
+    h('h2', {}, 'Новый сотрудник'),
+    h('div', { class: 'staff-fields' },
+      h('div', { class: 'field' }, h('label', { for: 'new-login' }, 'Логин'), login),
+      h('div', { class: 'field' }, h('label', { for: 'new-name' }, 'Имя'), name),
+      h('div', { class: 'field' }, h('label', { for: 'new-role' }, 'Роль'), role),
+    ),
+    error,
+    h('div', { class: 'work-actions' }, submit, h('span', { class: 'muted' }, 'Пароль сгенерируется автоматически')),
+  );
+
+  app.replaceChildren(
+    ...shell('staff', [
+      h('div', { class: 'page-head' }, h('h1', {}, 'Сотрудники')),
+      notice,
+      form,
+      h('div', { class: 'table-wrap' },
+        h('table', { class: 'staff' },
+          h('thead', {}, h('tr', {}, ['Логин', 'Имя', 'Роль', 'Доступ', 'Добавлен', ''].map((t) => h('th', { scope: 'col' }, t)))),
+          tbody,
+        ),
+      ),
+    ]),
+  );
+
+  async function load() {
+    let data;
+    try {
+      data = await api('/admin/api/users');
+    } catch {
+      return;
+    }
+    tbody.replaceChildren(
+      ...data.users.map((u) => {
+        const self = u.id === ctx.me.id;
+        const act = async (fn) => {
+          try {
+            await fn();
+            load();
+          } catch (err) {
+            toast(err.message);
+          }
+        };
+        const roleSelect = h('select', {
+          class: 'select', 'aria-label': `Роль ${u.login}`, disabled: self,
+          onchange: (e) => act(() => api(`/admin/api/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } })),
+        }, Object.entries(ctx.roles).map(([v, label]) => h('option', { value: v, selected: v === u.role }, label)));
+        return h(
+          'tr',
+          { class: u.disabled ? 'disabled' : '' },
+          h('td', { class: 'mono' }, u.login, self ? h('span', { class: 'muted' }, ' (вы)') : null),
+          h('td', {}, u.name),
+          h('td', {}, roleSelect),
+          h('td', {}, u.disabled ? h('span', { class: 'status', dataset: { s: 'lost' } }, 'Отключён') : h('span', { class: 'status', dataset: { s: 'won' } }, 'Активен')),
+          h('td', { class: 'num nowrap' }, fmtDateTime(u.created_at)),
+          h('td', { class: 'row-actions' },
+            h('button', {
+              type: 'button', class: 'btn',
+              onclick: () => {
+                if (!confirm(`Сбросить пароль ${u.login}? Старый перестанет работать, сотрудник выйдет со всех устройств.`)) return;
+                act(async () => {
+                  const res = await api(`/admin/api/users/${u.id}/reset-password`, { method: 'POST', body: {} });
+                  notice.replaceChildren(passwordNotice(u.login, res.password, `Новый пароль для «${u.name}».`));
+                  scrollTo({ top: 0 });
+                });
+              },
+            }, 'Сбросить пароль'),
+            self ? null : h('button', {
+              type: 'button', class: 'btn',
+              onclick: () => act(() => api(`/admin/api/users/${u.id}`, { method: 'PATCH', body: { disabled: !u.disabled } })),
+            }, u.disabled ? 'Включить' : 'Отключить'),
+          ),
+        );
+      }),
+    );
+  }
+  load();
+}
+
+// ---------- мой пароль ----------
+
+function renderAccount() {
+  const current = h('input', { class: 'input', id: 'cur', type: 'password', autocomplete: 'current-password' });
+  const next = h('input', { class: 'input', id: 'next', type: 'password', autocomplete: 'new-password', minlength: 10, required: true });
+  const repeat = h('input', { class: 'input', id: 'repeat', type: 'password', autocomplete: 'new-password', minlength: 10, required: true });
+  const msg = h('p', { role: 'status' });
+  const submit = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Сменить пароль');
+  const form = h(
+    'form',
+    {
+      class: 'panel account-form',
+      onsubmit: async (e) => {
+        e.preventDefault();
+        msg.className = 'error';
+        if (next.value !== repeat.value) return (msg.textContent = 'Новые пароли не совпадают');
+        submit.disabled = true;
+        try {
+          await api('/admin/api/me/password', { method: 'POST', body: { current: current.value, next: next.value } });
+          form.reset();
+          msg.className = 'saved';
+          msg.textContent = 'Пароль изменён. На других устройствах нужно войти заново.';
+        } catch (err) {
+          msg.textContent = err.status === 429 ? 'Слишком много попыток. Подождите 15 минут.' : err.message;
+        } finally {
+          submit.disabled = false;
+        }
+      },
+    },
+    h('h2', {}, 'Мой пароль'),
+    h('p', { class: 'muted' }, `Логин: ${ctx.me.login}`),
+    h('div', { class: 'field' }, h('label', { for: 'cur' }, 'Текущий пароль'), current),
+    h('div', { class: 'field' }, h('label', { for: 'next' }, 'Новый пароль, минимум 10 символов'), next),
+    h('div', { class: 'field' }, h('label', { for: 'repeat' }, 'Новый пароль ещё раз'), repeat),
+    msg,
+    submit,
+  );
+  app.replaceChildren(...shell('account', [h('div', { class: 'page-head' }, h('h1', {}, 'Учётная запись')), form]));
 }
 
 // ---------- тестовый режим ----------

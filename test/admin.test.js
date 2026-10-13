@@ -19,7 +19,7 @@ async function setup({ env = {}, notifier } = {}) {
   const config = loadConfig({ DB_PATH: ':memory:', ...env });
   const db = openDb(':memory:');
   const auth = createAuth(db.raw);
-  auth.addUser('anna@soroka-marketing.ru', 'Анна', PASSWORD);
+  auth.addUser('anna@soroka-marketing.ru', 'Анна', { password: PASSWORD, role: 'admin' });
   const qualifier = createQualifier({ db, scenarioSource: staticSource(), rules, notifier, log: silentLog });
   const app = await buildServer({
     config, qualifier, logger: false,
@@ -29,7 +29,7 @@ async function setup({ env = {}, notifier } = {}) {
 }
 
 async function login(app) {
-  const res = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { email: 'Anna@soroka-marketing.ru', password: PASSWORD } });
+  const res = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'Anna@soroka-marketing.ru', password: PASSWORD } });
   assert.equal(res.statusCode, 200);
   const cookie = res.cookies.find((c) => c.name === 'kval_admin');
   assert.equal(cookie.httpOnly, true);
@@ -51,9 +51,9 @@ async function makeLead(qualifier, patch = {}, meta = {}) {
 test('без входа данные недоступны, неверный пароль — 401', async () => {
   const { app } = await setup();
   assert.equal((await app.inject({ url: '/admin/api/leads' })).statusCode, 401);
-  const bad = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { email: 'anna@soroka-marketing.ru', password: 'wrong-password' } });
+  const bad = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'anna@soroka-marketing.ru', password: 'wrong-password' } });
   assert.equal(bad.statusCode, 401);
-  const nobody = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { email: 'x@y.ru', password: PASSWORD } });
+  const nobody = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'x@y.ru', password: PASSWORD } });
   assert.equal(nobody.statusCode, 401);
 });
 
@@ -171,7 +171,7 @@ test('вход через Яндекс ID: по добавленной почт�
   const token = auth.loginWithYandex(colleague, { allowedDomains: ['soroka-marketing.ru'] });
   assert.equal(auth.userByToken(token).name, 'Олег');
 
-  auth.setDisabled('oleg@soroka-marketing.ru', true);
+  auth.setDisabledByLogin('oleg@soroka-marketing.ru', true);
   assert.equal(auth.userByToken(token), null);
   assert.equal(auth.loginWithYandex(colleague, { allowedDomains: ['soroka-marketing.ru'] }), null);
 });
@@ -215,6 +215,85 @@ test('миграция старой базы без потери данных', 
   const lead = db.getLead(1);
   assert.equal(lead.rating, 4);
   assert.equal(lead.is_test, 0);
-  assert.equal(db.raw.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(db.raw.prepare('PRAGMA user_version').get().user_version, 3);
+  db.close();
+});
+
+test('администратор заводит сотрудника: пароль генерируется и показывается один раз', async () => {
+  const { app } = await setup();
+  const headers = await login(app);
+  const res = await app.inject({ method: 'POST', url: '/admin/api/users', headers, payload: { login: 'Ivan', name: 'Иван', role: 'manager' } });
+  assert.equal(res.statusCode, 200, res.body);
+  const { user, password } = res.json();
+  assert.equal(user.login, 'ivan');
+  assert.match(password, /^[A-Za-z2-9]{14}$/);
+  assert.ok(!JSON.stringify((await app.inject({ url: '/admin/api/users', headers })).json()).includes(password));
+
+  const dup = await app.inject({ method: 'POST', url: '/admin/api/users', headers, payload: { login: 'ivan' } });
+  assert.equal(dup.statusCode, 400);
+  assert.match(dup.json().error, /уже есть/);
+
+  const ivanLogin = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'IVAN', password } });
+  assert.equal(ivanLogin.statusCode, 200);
+});
+
+test('менеджеру раздел «Сотрудники» недоступен', async () => {
+  const { app, auth } = await setup();
+  const { password } = auth.addUser('manager1', 'Менеджер');
+  const res = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'manager1', password } });
+  const headers = { cookie: `kval_admin=${res.cookies.find((c) => c.name === 'kval_admin').value}` };
+  assert.equal((await app.inject({ url: '/admin/api/users', headers })).statusCode, 403);
+  assert.equal((await app.inject({ method: 'POST', url: '/admin/api/users', headers, payload: { login: 'hacker' } })).statusCode, 403);
+  assert.equal((await app.inject({ url: '/admin/api/leads', headers })).statusCode, 200);
+});
+
+test('сброс пароля: старый не работает, сессии сотрудника завершены', async () => {
+  const { app, auth } = await setup();
+  const { user, password } = auth.addUser('olga', 'Ольга');
+  const first = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'olga', password } });
+  const olgaCookie = { cookie: `kval_admin=${first.cookies.find((c) => c.name === 'kval_admin').value}` };
+  const headers = await login(app);
+  const res = await app.inject({ method: 'POST', url: `/admin/api/users/${user.id}/reset-password`, headers, payload: {} });
+  const fresh = res.json().password;
+  assert.notEqual(fresh, password);
+  assert.equal((await app.inject({ url: '/admin/api/me', headers: olgaCookie })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'olga', password } })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'olga', password: fresh } })).statusCode, 200);
+});
+
+test('отключённый сотрудник теряет доступ; последнего администратора отключить нельзя', async () => {
+  const { app, auth } = await setup();
+  const headers = await login(app);
+  const { user } = auth.addUser('petr', 'Пётр');
+  const off = await app.inject({ method: 'PATCH', url: `/admin/api/users/${user.id}`, headers, payload: { disabled: true } });
+  assert.equal(off.json().user.disabled, true);
+  const me = (await app.inject({ url: '/admin/api/me', headers })).json().user;
+  const self = await app.inject({ method: 'PATCH', url: `/admin/api/users/${me.id}`, headers, payload: { role: 'manager' } });
+  assert.equal(self.statusCode, 400);
+  assert.match(self.json().error, /администратор/);
+});
+
+test('смена своего пароля требует текущий', async () => {
+  const { app } = await setup();
+  const headers = await login(app);
+  const bad = await app.inject({ method: 'POST', url: '/admin/api/me/password', headers, payload: { current: 'wrong-password', next: 'new-password-123' } });
+  assert.equal(bad.statusCode, 400);
+  const ok = await app.inject({ method: 'POST', url: '/admin/api/me/password', headers, payload: { current: PASSWORD, next: 'new-password-123' } });
+  assert.equal(ok.statusCode, 200);
+  assert.equal((await app.inject({ url: '/admin/api/me', headers })).statusCode, 200);
+  assert.equal((await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'anna@soroka-marketing.ru', password: 'new-password-123' } })).statusCode, 200);
+});
+
+test('после обновления первый сотрудник старой базы становится администратором', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
+  const fresh = openDb(path);
+  // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
+  fresh.raw.exec(`ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
+    INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
+  fresh.close();
+
+  const db = openDb(path);
+  const users = createAuth(db.raw).listUsers();
+  assert.deepEqual(users.map((u) => [u.login, u.role]), [['owner@soroka.ru', 'admin'], ['second', 'manager']]);
   db.close();
 });

@@ -1,14 +1,19 @@
 // Сотрудники агентства и их сессии в админке.
-// Пароли — scrypt с солью; в базе хранится только хеш токена сессии.
+// Логин — латиница, цифры или e-mail; пароли — scrypt с солью; в базе хранится только хеш токена сессии.
+// Роли: admin — управляет сотрудниками; manager — работает с лидами.
 
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 
 const SESSION_DAYS = 30;
 const SCRYPT = { N: 16384, r: 8, p: 1 };
 const MIN_PASSWORD = 10;
+const LOGIN_RE = /^[a-z0-9][a-z0-9._@+-]{2,63}$/;
+export const ROLES = { admin: 'Администратор', manager: 'Менеджер' };
+
+export class AuthError extends Error {}
 
 export function hashPassword(password) {
-  if (String(password).length < MIN_PASSWORD) throw new Error(`Пароль — минимум ${MIN_PASSWORD} символов`);
+  if (String(password).length < MIN_PASSWORD) throw new AuthError(`Пароль — минимум ${MIN_PASSWORD} символов`);
   const salt = randomBytes(16);
   const hash = scryptSync(password, salt, 64, SCRYPT);
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${hash.toString('base64')}`;
@@ -25,37 +30,62 @@ export function verifyPassword(password, stored) {
   return timingSafeEqual(actual, expected);
 }
 
+// Без похожих символов (0/O, 1/l/I), чтобы пароль было легко передать сотруднику
+const PASSWORD_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** 14 символов из 56 — около 81 бита энтропии. */
+export function generatePassword(length = 14) {
+  return Array.from({ length }, () => PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)]).join('');
+}
+
+export function normalizeLogin(login) {
+  const value = String(login ?? '').trim().toLowerCase();
+  if (!LOGIN_RE.test(value)) throw new AuthError('Логин — от 3 до 64 символов: латиница, цифры, точка, дефис, @');
+  return value;
+}
+
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 // Хеш-заглушка, чтобы вход несуществующего пользователя занимал столько же времени
 const DUMMY_HASH = hashPassword('dummy-password-for-timing');
 
+const publicUser = (u) =>
+  u && {
+    id: u.id,
+    login: u.email,
+    name: u.name,
+    role: u.role,
+    disabled: Boolean(u.disabled),
+    created_at: u.created_at,
+    hasPassword: Boolean(u.password_hash),
+    hasYandex: Boolean(u.yandex_id),
+  };
+
 export function createAuth(db) {
+  // В базе колонка называется email: логином может быть и почта, и короткое имя
   const q = {
-    userByEmail: db.prepare('SELECT * FROM admin_users WHERE email = ?'),
+    userByLogin: db.prepare('SELECT * FROM admin_users WHERE email = ?'),
     userById: db.prepare('SELECT * FROM admin_users WHERE id = ?'),
-    listUsers: db.prepare(
-      `SELECT id, email, name, disabled, created_at, password_hash IS NOT NULL AS has_password,
-              yandex_id IS NOT NULL AS has_yandex
-       FROM admin_users ORDER BY id`,
-    ),
+    listUsers: db.prepare('SELECT * FROM admin_users ORDER BY disabled, id'),
     countUsers: db.prepare('SELECT COUNT(*) AS n FROM admin_users'),
-    insertUser: db.prepare('INSERT INTO admin_users (email, name, password_hash, yandex_id) VALUES (?, ?, ?, ?)'),
+    countAdmins: db.prepare("SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin' AND disabled = 0"),
+    insertUser: db.prepare('INSERT INTO admin_users (email, name, password_hash, yandex_id, role) VALUES (?, ?, ?, ?, ?)'),
     userByYandex: db.prepare('SELECT * FROM admin_users WHERE yandex_id = ?'),
     linkYandex: db.prepare('UPDATE admin_users SET yandex_id = ?, name = ? WHERE id = ?'),
-    setPassword: db.prepare('UPDATE admin_users SET password_hash = ? WHERE email = ?'),
-    setDisabled: db.prepare('UPDATE admin_users SET disabled = ? WHERE email = ?'),
+    setPassword: db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?'),
+    setDisabled: db.prepare('UPDATE admin_users SET disabled = ? WHERE id = ?'),
+    setRole: db.prepare('UPDATE admin_users SET role = ? WHERE id = ?'),
+    setName: db.prepare('UPDATE admin_users SET name = ? WHERE id = ?'),
     insertSession: db.prepare(
       `INSERT INTO admin_sessions (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', '+${SESSION_DAYS} days'))`,
     ),
     sessionUser: db.prepare(
-      `SELECT u.id, u.email, u.name FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+      `SELECT u.* FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > datetime('now') AND u.disabled = 0`,
     ),
     deleteSession: db.prepare('DELETE FROM admin_sessions WHERE token_hash = ?'),
-    deleteUserSessions: db.prepare(
-      'DELETE FROM admin_sessions WHERE user_id = (SELECT id FROM admin_users WHERE email = ?)',
-    ),
+    deleteUserSessions: db.prepare('DELETE FROM admin_sessions WHERE user_id = ?'),
+    deleteOtherSessions: db.prepare('DELETE FROM admin_sessions WHERE user_id = ? AND token_hash != ?'),
     purgeExpired: db.prepare("DELETE FROM admin_sessions WHERE expires_at <= datetime('now')"),
   };
 
@@ -66,52 +96,123 @@ export function createAuth(db) {
     return token;
   }
 
+  function mustGet(id) {
+    const user = q.userById.get(id);
+    if (!user) throw new AuthError('Сотрудник не найден');
+    return user;
+  }
+
+  function byLogin(login) {
+    const user = q.userByLogin.get(normalizeLogin(login));
+    if (!user) throw new AuthError('Сотрудник не найден');
+    return user;
+  }
+
+  /** Нельзя оставить систему без активного администратора. */
+  function assertKeepsAdmin(user, change) {
+    const losesAdmin = user.role === 'admin' && !user.disabled && (change.role === 'manager' || change.disabled === true);
+    if (losesAdmin && q.countAdmins.get().n <= 1) throw new AuthError('Нужен хотя бы один активный администратор');
+  }
+
   return {
     sessionDays: SESSION_DAYS,
     hasUsers: () => q.countUsers.get().n > 0,
-    listUsers: () => q.listUsers.all(),
+    listUsers: () => q.listUsers.all().map(publicUser),
+    getUser: (id) => publicUser(q.userById.get(id)),
 
-    /** Без пароля сотрудник входит только через Яндекс ID. */
-    addUser(email, name, password = null) {
-      const normalized = String(email).trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+$/.test(normalized)) throw new Error('Некорректный e-mail');
-      if (q.userByEmail.get(normalized)) throw new Error('Такой пользователь уже есть');
-      q.insertUser.run(normalized, String(name ?? '').trim() || normalized, password ? hashPassword(password) : null, null);
+    /**
+     * Новый сотрудник. password: строка — задать; true — сгенерировать; null — без пароля (только Яндекс ID).
+     * Возвращает { user, password } — сгенерированный пароль показывается один раз.
+     */
+    addUser(login, name, { password = true, role = 'manager' } = {}) {
+      const value = normalizeLogin(login);
+      if (!(role in ROLES)) throw new AuthError('Неизвестная роль');
+      if (q.userByLogin.get(value)) throw new AuthError('Такой логин уже есть');
+      const plain = password === true ? generatePassword() : password;
+      const { lastInsertRowid } = q.insertUser.run(
+        value,
+        String(name ?? '').trim().slice(0, 100) || value,
+        plain ? hashPassword(plain) : null,
+        null,
+        role,
+      );
+      return { user: publicUser(q.userById.get(lastInsertRowid)), password: plain || null };
     },
 
-    setPassword(email, password) {
-      if (q.setPassword.run(hashPassword(password), email).changes === 0) throw new Error('Пользователь не найден');
-      q.deleteUserSessions.run(email);
+    /** Новый случайный пароль; все сессии сотрудника завершаются. */
+    resetPassword(id) {
+      mustGet(id);
+      const password = generatePassword();
+      q.setPassword.run(hashPassword(password), id);
+      q.deleteUserSessions.run(id);
+      return password;
     },
 
-    setDisabled(email, disabled) {
-      if (q.setDisabled.run(disabled ? 1 : 0, email).changes === 0) throw new Error('Пользователь не найден');
-      if (disabled) q.deleteUserSessions.run(email);
+    /** Смена своего пароля: остальные устройства выходят, текущая сессия остаётся. */
+    changeOwnPassword(id, current, next, currentToken) {
+      const user = mustGet(id);
+      if (user.password_hash && !verifyPassword(current, user.password_hash)) throw new AuthError('Текущий пароль неверный');
+      q.setPassword.run(hashPassword(next), id);
+      q.deleteOtherSessions.run(id, sha256(currentToken ?? ''));
+    },
+
+    updateUser(id, change) {
+      const user = mustGet(id);
+      assertKeepsAdmin(user, change);
+      if (change.role !== undefined) {
+        if (!(change.role in ROLES)) throw new AuthError('Неизвестная роль');
+        q.setRole.run(change.role, id);
+      }
+      if (change.name !== undefined) q.setName.run(String(change.name).trim().slice(0, 100) || user.email, id);
+      if (change.disabled !== undefined) {
+        q.setDisabled.run(change.disabled ? 1 : 0, id);
+        if (change.disabled) q.deleteUserSessions.run(id);
+      }
+      return publicUser(q.userById.get(id));
+    },
+
+    // Для консольной команды scripts/admin.js
+    setPasswordByLogin(login, password) {
+      const user = byLogin(login);
+      q.setPassword.run(hashPassword(password), user.id);
+      q.deleteUserSessions.run(user.id);
+    },
+    setDisabledByLogin(login, disabled) {
+      const user = byLogin(login);
+      assertKeepsAdmin(user, { disabled });
+      q.setDisabled.run(disabled ? 1 : 0, user.id);
+      if (disabled) q.deleteUserSessions.run(user.id);
+    },
+    setRoleByLogin(login, role) {
+      const user = byLogin(login);
+      if (!(role in ROLES)) throw new AuthError('Неизвестная роль');
+      assertKeepsAdmin(user, { role });
+      q.setRole.run(role, user.id);
     },
 
     /** Возвращает токен сессии или null. */
-    login(email, password) {
-      const user = q.userByEmail.get(String(email).trim());
+    login(login, password) {
+      const user = q.userByLogin.get(String(login ?? '').trim().toLowerCase());
       const ok = verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
       if (!user || !ok || user.disabled) return null;
       return startSession(user.id);
     },
 
     /**
-     * Вход через Яндекс ID. Пускаем, если e-mail сотрудника заранее добавлен в админку
-     * или его домен в allowedDomains (тогда учётная запись создаётся автоматически).
+     * Вход через Яндекс ID (если настроен). Пускаем, если почта сотрудника заведена логином
+     * или её домен в allowedDomains (тогда учётная запись создаётся автоматически).
      */
     loginWithYandex(profile, { allowedDomains = [] } = {}) {
       const emails = [profile.default_email, ...(profile.emails ?? [])].filter(Boolean).map((e) => e.toLowerCase());
       const name = profile.real_name || profile.display_name || profile.login || emails[0];
       let user = q.userByYandex.get(String(profile.id));
       if (!user) {
-        user = emails.map((e) => q.userByEmail.get(e)).find(Boolean);
+        user = emails.map((e) => q.userByLogin.get(e)).find(Boolean);
         if (!user) {
           const email = emails.find((e) => allowedDomains.includes(e.split('@')[1]));
           if (!email) return null;
-          q.insertUser.run(email, name, null, String(profile.id));
-          user = q.userByEmail.get(email);
+          q.insertUser.run(email, name, null, String(profile.id), 'manager');
+          user = q.userByLogin.get(email);
         } else {
           q.linkYandex.run(String(profile.id), user.name || name, user.id);
         }
@@ -120,7 +221,7 @@ export function createAuth(db) {
       return startSession(user.id);
     },
 
-    userByToken: (token) => (token ? q.sessionUser.get(sha256(token)) ?? null : null),
+    userByToken: (token) => (token ? publicUser(q.sessionUser.get(sha256(token))) ?? null : null),
     logout: (token) => token && q.deleteSession.run(sha256(token)),
   };
 }

@@ -46,7 +46,7 @@ if [[ $write_env == yes ]]; then
   DOMAIN=$(ask "Домен, на котором будет работать квалификатор (например kval.soroka-marketing.ru)")
   [[ -n "$DOMAIN" ]] || die "Домен обязателен"
   SITE=$(ask "Сайт, на который ставится виджет" "https://soroka-marketing.ru")
-  ADMIN_EMAIL=$(ask "Ваша почта для входа в админку")
+  ADMIN_LOGIN=$(ask "Логин администратора админки (латиница или e-mail)" "admin")
   PRIVACY=$(ask "Ссылка на политику обработки персональных данных" "$SITE/privacy")
   TG_TOKEN=$(ask "Токен Telegram-бота от @BotFather")
   TG_CHAT=$(ask "ID чата менеджеров в Telegram")
@@ -117,11 +117,11 @@ done
 echo "  ✓ сервер работает"
 
 # ---------- 6. Первый сотрудник ----------
-if [[ -n "${ADMIN_EMAIL:-}" ]]; then
-  say "Создаю доступ в админку для $ADMIN_EMAIL"
+if [[ -n "${ADMIN_LOGIN:-}" ]]; then
+  say "Создаю администратора $ADMIN_LOGIN"
   # Без терминала команда сама генерирует пароль и печатает его один раз
-  if docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/admin.js add "$ADMIN_EMAIL" "$ADMIN_EMAIL" --password </dev/null; then
-    warn "Сохраните пароль выше: он показывается один раз. Сменить: docker compose exec app node scripts/admin.js passwd $ADMIN_EMAIL"
+  if docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/admin.js add "$ADMIN_LOGIN" "Администратор" --admin </dev/null; then
+    warn "Сохраните пароль выше: он показывается один раз. Новый пароль: docker compose exec app node scripts/admin.js passwd $ADMIN_LOGIN"
   fi
 fi
 
@@ -146,6 +146,6 @@ cat <<DONE
     <script src="https://$DOMAIN/widget.js" defer></script>
 
   Обновление:          sudo bash deploy/update.sh
-  Сотрудники:          docker compose exec app node scripts/admin.js list
+  Сотрудники:          раздел «Сотрудники» в админке или docker compose exec app node scripts/admin.js list
   Тестовая карточка:   docker compose exec app node scripts/check.js --send-test
 DONE

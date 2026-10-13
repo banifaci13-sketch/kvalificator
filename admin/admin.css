@@ -296,6 +296,26 @@ details.table-view table { border-collapse: collapse; margin-top: 8px; width: 10
 details.table-view th, details.table-view td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 details.table-view th:first-child, details.table-view td:first-child { text-align: left; }
 
+/* ---------- сотрудники ---------- */
+.staff-form, .account-form { margin-bottom: 16px; max-width: 980px; }
+.account-form { max-width: 480px; }
+.staff-fields { display: grid; grid-template-columns: 1fr 1fr 220px; gap: 12px; }
+table.staff { width: 100%; border-collapse: collapse; min-width: 860px; }
+.staff th { text-align: left; font-size: 13px; font-weight: 600; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.staff td { padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: middle; }
+.staff tbody tr:last-child td { border-bottom: 0; }
+.staff tr.disabled td { color: var(--muted); }
+.staff tbody tr { cursor: default; }
+.row-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.secret { max-width: 980px; margin-bottom: 16px; padding: 16px 20px; background: var(--surface); border: 2px solid var(--accent); border-radius: var(--radius-m); }
+.secret p { margin: 0 0 10px; }
+.secret dl { display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; margin: 0 0 12px; font-size: 17px; }
+.secret dt { color: var(--muted); }
+.secret dd { margin: 0; font-weight: 700; user-select: all; }
+.user a.name { color: var(--on-brand-muted); text-decoration: none; }
+.user a.name:hover { color: var(--on-brand); text-decoration: underline; }
+
 /* ---------- тестовый режим ---------- */
 .test-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; max-width: 980px; }
 .test-grid .panel p { margin: 0 0 16px; color: var(--muted); }
@@ -311,7 +331,10 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
 @media (max-width: 720px) {
   .topbar { gap: 8px; padding: 0 12px; }
   .brand .product, .brand .wordmark { display: none; }
-  .nav a { padding: 0 8px; font-size: 14px; }
+  .nav { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { padding: 0 8px; font-size: 14px; white-space: nowrap; }
+  .user { margin-left: 0; flex: none; }
   .user button { padding: 6px 8px; font-size: 13px; }
   /* Таблица лидов превращается в список карточек */
   .table-wrap { background: transparent; border: 0; overflow: visible; }
@@ -334,6 +357,13 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
   .page { padding: 16px; }
   .filters .input, .filters .select, .filters .date { width: 100%; }
   .work { grid-template-columns: 1fr; }
+  .staff-fields { grid-template-columns: 1fr; }
+  table.staff, .staff tbody { display: block; min-width: 0; }
+  .staff thead { display: none; }
+  .staff tbody tr { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 12px; margin-bottom: 8px; }
+  .staff td { padding: 0; border: 0; }
+  .staff td:nth-child(5) { display: none; }
+  .row-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
   .timeline li { grid-template-columns: 1fr; gap: 0; }
   dl.answers { grid-template-columns: 1fr; }
   dl.answers dt { border-bottom: 0; padding-bottom: 0; }

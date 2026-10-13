@@ -59,16 +59,16 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-/** Первый сотрудник из ADMIN_EMAIL / ADMIN_PASSWORD — только если в базе ещё никого нет. */
+/** Первый администратор из ADMIN_EMAIL / ADMIN_PASSWORD — только если в базе ещё никого нет. */
 function bootstrapAdmin() {
   if (auth.hasUsers()) return;
   const { bootstrapEmail: email, bootstrapPassword: password } = config.admin;
   if (!email) {
-    log.warn('В админке нет сотрудников: задайте ADMIN_EMAIL (и ADMIN_PASSWORD) или выполните npm run admin -- add');
+    log.warn('В админке нет сотрудников: выполните npm run admin -- add <логин> <имя> --admin');
     return;
   }
-  auth.addUser(email, email, password || null);
-  log.info({ email }, 'Создан первый сотрудник админки');
+  auth.addUser(email, email, { password: password || null, role: 'admin' });
+  log.info({ login: email }, 'Создан первый администратор админки');
 }
 
 async function initTelegramBot() {
