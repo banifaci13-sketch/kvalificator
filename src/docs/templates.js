@@ -17,6 +17,16 @@ export const SLIDE_TYPES = {
 const nf = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 export const fmtNumber = (v) => (typeof v === 'number' ? nf.format(v).replace(/ /g, ' ') : String(v ?? ''));
 export const fmtMoney = (v, currency = '₽') => (typeof v === 'number' ? `${fmtNumber(Math.round(v))} ${currency}` : String(v ?? ''));
+/** Крупные суммы для карточек KPI: 3 998 550 → «4 млн ₽», 650 000 → «650 тыс. ₽». */
+export function fmtMoneyShort(v, currency = '₽') {
+  if (typeof v !== 'number') return String(v ?? '');
+  const abs = Math.abs(v);
+  const short = (n, unit) => `${fmtNumber(+n.toFixed(Math.abs(n) >= 100 ? 0 : 1))} ${unit} ${currency}`;
+  if (abs >= 1e9) return short(v / 1e9, 'млрд');
+  if (abs >= 1e6) return short(v / 1e6, 'млн');
+  if (abs >= 1e5) return short(v / 1e3, 'тыс.');
+  return fmtMoney(v, currency);
+}
 
 export function renderSlide(slide, ctx) {
   const type = SLIDE_TYPES[slide.type];
@@ -74,6 +84,9 @@ const BUILDERS = {
     const { L } = ctx;
     const kpis = slide.kpis.slice(0, 4);
     const cols = L.cols(kpis.length);
+    // четыре карточки или длинные значения («3 998 550 ₽») — кегль меньше, иначе цифры не влезут
+    const longest = Math.max(...kpis.map((k) => String(k.value ?? '').length));
+    const style = kpis.length >= 4 || longest > (kpis.length === 3 ? 7 : 10) ? 'kpiSmall' : 'kpi';
     const y = 352;
     const out = [contentTitle(slide, L)];
     if (slide.lead) out.push(text('lead', { x: L.M, y: 256, w: L.CW, h: 56 }, 'lead', slide.lead, { color: 'steel' }));
@@ -81,7 +94,7 @@ const BUILDERS = {
       const { x, w } = cols[i];
       out.push({ kind: 'rect', name: `kpi-${i}-card`, x, y, w, h: 480, fill: 'mist', radius: 16 });
       out.push({ kind: 'rect', name: `kpi-${i}-mark`, x: x + 40, y: y + 48, w: 48, h: 8, fill: 'accent', radius: 4 });
-      out.push(text(`kpi-${i}-value`, { x: x + 40, y: y + 80, w: w - 80, h: 128 }, 'kpi', k.value));
+      out.push(text(`kpi-${i}-value`, { x: x + 40, y: y + 80, w: w - 80, h: 128 }, style, k.value));
       out.push(text(`kpi-${i}-label`, { x: x + 40, y: y + 216, w: w - 80, h: 120 }, 'body', k.label));
       if (k.delta) out.push(text(`kpi-${i}-delta`, { x: x + 40, y: y + 352, w: w - 80, h: 88 }, 'small', k.delta, { color: 'steel' }));
     });

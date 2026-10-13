@@ -4,11 +4,14 @@
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { randomBytes } from 'node:crypto';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { LEAD_STATUSES, leadsToCsv } from './reports.js';
 import { createYandexOAuth } from './yandex.js';
 import { AuthError, ROLES } from './auth.js';
 import { docsRoutes } from './docs-routes.js';
+import { mediaplanRoutes } from './mediaplan-routes.js';
 
 const SESSION_COOKIE = 'kval_admin';
 const STATE_COOKIE = 'kval_oauth_state';
@@ -39,7 +42,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -57,6 +60,10 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     decorateReply: false,
     index: 'index.html',
   });
+
+  // Расчёт медиаплана — один модуль для сервера и браузера: цифры в админке и в Excel совпадают
+  const calcModule = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../mediaplan/calc.js'), 'utf8');
+  app.get('/admin/lib/mediaplan-calc.js', (req, reply) => reply.header('content-type', 'text/javascript; charset=utf-8').header('cache-control', 'no-cache').send(calcModule));
 
   app.addHook('onSend', async (req, reply, payload) => {
     if (req.url.startsWith('/admin')) {
@@ -294,6 +301,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     });
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });
+    if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 

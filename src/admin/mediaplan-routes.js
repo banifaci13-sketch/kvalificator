@@ -1,0 +1,99 @@
+// API раздела «Медиапланы»: планы, нормативы агентства, Excel, вставка в презентацию.
+// Подключается внутри авторизованной части админки (req.user уже есть).
+
+import { DocError, slugify } from '../docs/library.js';
+import { mediaplanXlsx } from '../mediaplan/xlsx.js';
+import { MODELS } from '../mediaplan/calc.js';
+import { LIMITS } from '../mediaplan/store.js';
+
+const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
+const planBody = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', maxLength: 200 },
+    client: { type: 'string', maxLength: 200 },
+    leadId: { type: 'integer' },
+    spec: { type: 'object' },
+  },
+};
+const benchmarkBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['channel', 'note'],
+  properties: {
+    channel: { type: 'string', maxLength: 120 },
+    model: { type: 'string', enum: MODELS.map(([id]) => id) },
+    cpc: { type: ['number', 'null'] },
+    cpm: { type: ['number', 'null'] },
+    ctr: { type: ['number', 'null'] },
+    cr: { type: ['number', 'null'] },
+    note: { type: 'string', maxLength: 500 },
+  },
+};
+
+export async function mediaplanRoutes(api, { mediaplans }) {
+  api.setErrorHandler((err, req, reply) => {
+    if (err instanceof DocError) return reply.code(400).send({ error: err.message });
+    throw err;
+  });
+
+  const adminOnly = async (req, reply) => {
+    if (req.user.role !== 'admin') return reply.code(403).send({ error: 'Нормативы меняет администратор' });
+  };
+
+  api.get('/admin/api/mediaplans', async () => ({ mediaplans: mediaplans.list(), models: MODELS, limits: LIMITS }));
+
+  api.post('/admin/api/mediaplans', { schema: { body: planBody } }, async (req) => {
+    const { title, client, leadId, spec } = req.body;
+    return { mediaplan: mediaplans.create({ title, client, leadId, spec }, req.user.name) };
+  });
+
+  api.get('/admin/api/mediaplans/:id', { schema: { params: idParams } }, async (req) => ({ mediaplan: mediaplans.get(req.params.id) }));
+
+  api.put('/admin/api/mediaplans/:id', { schema: { params: idParams, body: planBody }, bodyLimit: 200 * 1024 }, async (req) => ({
+    mediaplan: mediaplans.update(req.params.id, req.body, req.user.name),
+  }));
+
+  api.delete('/admin/api/mediaplans/:id', { schema: { params: idParams } }, async (req) => {
+    mediaplans.remove(req.params.id);
+    return { ok: true };
+  });
+
+  api.get('/admin/api/mediaplans/:id/xlsx', { schema: { params: idParams } }, async (req, reply) => {
+    const plan = mediaplans.get(req.params.id);
+    const buf = await mediaplanXlsx(plan, { benchmarks: mediaplans.usedBenchmarks(plan), author: req.user.name });
+    return reply
+      .header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('content-disposition', `attachment; filename="${slugify(plan.title)}.xlsx"; filename*=UTF-8''${encodeURIComponent(`${plan.title}.xlsx`)}`)
+      .send(buf);
+  });
+
+  api.post(
+    '/admin/api/mediaplans/:id/to-document',
+    {
+      schema: {
+        params: idParams,
+        body: { type: 'object', additionalProperties: false, properties: { scenario: { type: 'integer', minimum: 0 }, documentId: { type: 'integer' } } },
+      },
+    },
+    async (req) => ({ document: mediaplans.toDocument(req.params.id, req.body, req.user) }),
+  );
+
+  // ---------- нормативы агентства ----------
+
+  api.get('/admin/api/benchmarks', async () => ({ benchmarks: mediaplans.benchmarks() }));
+
+  api.post('/admin/api/benchmarks', { preHandler: adminOnly, schema: { body: benchmarkBody } }, async (req) => ({
+    benchmark: mediaplans.saveBenchmark(req.body, req.user.name),
+  }));
+
+  api.put('/admin/api/benchmarks/:id', { preHandler: adminOnly, schema: { params: idParams, body: benchmarkBody } }, async (req) => ({
+    benchmark: mediaplans.saveBenchmark({ ...req.body, id: req.params.id }, req.user.name),
+  }));
+
+  api.delete('/admin/api/benchmarks/:id', { preHandler: adminOnly, schema: { params: idParams } }, async (req) => {
+    mediaplans.removeBenchmark(req.params.id);
+    return { ok: true };
+  });
+}

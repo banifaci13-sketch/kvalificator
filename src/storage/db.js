@@ -107,6 +107,32 @@ const MIGRATIONS = [
      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX document_exports_doc ON document_exports (document_id);`,
+
+  // Медиапланы и нормативы агентства по каналам (средние ставки, CTR, конверсия — из прошлых кампаний)
+  `CREATE TABLE mediaplans (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     title       TEXT NOT NULL,
+     client      TEXT,
+     lead_id     INTEGER REFERENCES leads(id),
+     spec        TEXT NOT NULL,
+     created_by  TEXT,
+     updated_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX mediaplans_lead ON mediaplans (lead_id);
+   CREATE TABLE mp_benchmarks (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     channel     TEXT NOT NULL,
+     model       TEXT NOT NULL DEFAULT 'cpc',
+     cpc         REAL,
+     cpm         REAL,
+     ctr         REAL,
+     cr          REAL,
+     note        TEXT NOT NULL,
+     updated_by  TEXT,
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );`,
 ];
 
 /** Номер текущей версии схемы базы. */

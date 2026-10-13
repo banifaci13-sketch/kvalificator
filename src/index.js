@@ -12,6 +12,7 @@ import { createAuth } from './admin/auth.js';
 import { createReports } from './admin/reports.js';
 import { loadBrand } from './brand/index.js';
 import { createDocLibrary } from './docs/library.js';
+import { createMediaplans } from './mediaplan/store.js';
 import { closeBrowser } from './docs/browser.js';
 import { dirname, resolve } from 'node:path';
 
@@ -33,6 +34,7 @@ bootstrapAdmin();
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
 const brand = loadBrand();
+const library = createDocLibrary({ db: db.raw, brand, templatesDir: resolve(config.root, 'templates/decks'), dataDir: dirname(config.dbPath) });
 for (const p of brand.logo.problems) log.warn(`Логотип: ${p}`);
 const app = await buildServer({
   config,
@@ -45,7 +47,8 @@ const app = await buildServer({
     db,
     scenarioSource,
     brand,
-    library: createDocLibrary({ db: db.raw, brand, templatesDir: resolve(config.root, 'templates/decks'), dataDir: dirname(config.dbPath) }),
+    library,
+    mediaplans: createMediaplans({ db: db.raw, library }),
   },
 });
 
