@@ -4,7 +4,7 @@
 
 import { bestMatch } from './commands.js';
 import { SECTIONS } from './phrases.js';
-import { emptyPlan } from '../mediaplan/calc.js';
+import { emptyPlan, emptyRow } from '../mediaplan/calc.js';
 import { LEAD_STATUSES } from '../admin/reports.js';
 
 const MSK = 3 * 3600e3;
@@ -267,11 +267,35 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       const months = Math.min(36, Math.max(1, cmd.months || 3));
       const spec = { ...emptyPlan(cmd.kind), months };
       if (cmd.kind === 'ecom') spec.settings = { ...spec.settings, vat: 22, budgetWithVat: true };
+      if (cmd.fee != null) spec.settings = { ...spec.settings, agencyFee: cmd.fee };
+      if (cmd.vat != null) spec.settings = { ...spec.settings, vat: cmd.vat || null };
+      // каналы из фразы; ставки, CTR и конверсия — из нормативов агентства, если канал там есть
+      const benchmarks = mediaplans.benchmarks();
+      const notes = [];
+      const rows = (cmd.channels ?? []).map((c) => {
+        const b = c.name ? benchmarkFor(c.name, benchmarks) : null;
+        const row = emptyRow(b);
+        row.channel = b?.channel ?? c.name;
+        if (c.budget != null) row.budget = cmd.budgetTotal ? Math.round(c.budget / months) : c.budget;
+        if (c.name) notes.push(b ? `«${row.channel}» — ставки и конверсия из нормативов` : `«${row.channel}» — в нормативах нет, ставки впишите сами`);
+        return row;
+      });
+      if (rows.length) spec.scenarios = [{ ...spec.scenarios[0], rows }];
       const client = cmd.client?.name ?? cmd.clientName ?? '';
       const title = cmd.title || `Медиаплан${client ? ` — ${client}` : ''} на ${n(months, 'месяц', 'месяца', 'месяцев')}`;
       const plan = mediaplans.create({ title, client, spec }, user.name);
+      const money = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+      const lines = [`Создал медиаплан «${plan.title}»${cmd.kind === 'ecom' ? ' для интернет-магазина (воронка корзина → продажа, бюджет с НДС)' : ''}.`];
+      if (rows.length) {
+        lines.push(...rows.map((r) => `• ${r.channel || 'Канал'}${r.budget != null ? ` — ${money(r.budget)} в месяц` : ''}`));
+        if (cmd.budgetTotal) lines.push(`Бюджет на весь период разделил на ${n(months, 'месяц', 'месяца', 'месяцев')}.`);
+        else if (rows.some((r) => r.budget != null)) lines.push('Бюджет считаю в месяц, без НДС — поправьте в плане, если иначе.');
+        if (cmd.budgetSplit) lines.push('Общий бюджет разделил поровну между площадками.');
+        lines.push(...notes.map((x) => `${x}.`));
+      } else lines.push('Каналы добавьте из нормативов — расчёт и Excel соберутся сами.');
+      if (cmd.fee != null) lines.push(`Комиссия агентства — ${cmd.fee}%.`);
       return {
-        reply: `Создал медиаплан «${plan.title}»${cmd.kind === 'ecom' ? ' для интернет-магазина (воронка корзина → продажа, бюджет с НДС)' : ''}. Каналы добавьте из нормативов — расчёт и Excel соберутся сами.`,
+        reply: lines.join('\n'),
         actions: [{ type: 'plan', id: plan.id, title: plan.title, href: `#/plan?id=${plan.id}` }],
         navigate: `#/plan?id=${plan.id}`,
       };
@@ -391,7 +415,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     },
   };
 
-  /** Справка — из того, что реально умеет ассистент на этом сервере. */
+    /** Справка — из того, что реально умеет ассистент на этом сервере. */
   function help() {
     const g = [];
     g.push('Что я умею (пишите обычной фразой):');
@@ -409,4 +433,14 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
   }
 
   return { ...actions, help, sections: SECTIONS };
+}
+
+/** Норматив для канала: «Яндекс Директ» найдёт «Яндекс Директ — Поиск», если такой один. */
+function benchmarkFor(name, list) {
+  const norm = (x) => x.toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
+  const want = norm(name);
+  const exact = list.find((b) => norm(b.channel) === want);
+  if (exact) return exact;
+  const starts = list.filter((b) => norm(b.channel).startsWith(want) || want.startsWith(norm(b.channel)));
+  return starts.length === 1 ? starts[0] : null;
 }

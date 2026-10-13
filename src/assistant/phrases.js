@@ -203,7 +203,7 @@ export function parsePhrase(message, { clients = [], team = [], now = new Date()
     const ecom = /(интернет-?магазин|e-?com|ecom|еком|магазин|маркетплейс)/i.test(rest);
     const client = clientIn(rest, clients);
     const title = /(?:«([^»]+)»|"([^"]+)")/.exec(rest);
-    return { intent: 'mediaplan_create', client, clientName: client?.name ?? clientNameFrom(rest), months: months ? Number(months[1]) : qtr ?? 3, kind: ecom ? 'ecom' : 'leads', title: title ? title[1] ?? title[2] : null };
+    return { intent: 'mediaplan_create', client, clientName: client?.name ?? clientNameFrom(rest.replace(/[.;].*$/, '')), months: months ? Number(months[1]) : qtr ?? 3, kind: ecom ? 'ecom' : 'leads', title: title ? title[1] ?? title[2] : null, ...planDetails(rest) };
   }
   if ((m = /^(?:открой|найди|покажи)\s+(?:последний\s+)?медиаплан\S*\s*(.*)$/i.exec(text))) return { intent: 'mediaplan_open', query: strip(m[1].replace(/^(?:для|по)\s+/i, '')) };
 
@@ -237,6 +237,86 @@ export function parsePhrase(message, { clients = [], team = [], now = new Date()
   if ((m = /^(?:открой|покажи|найди)?\s*регламент\S*\s+(?:по|про|о|об)?\s*(.+)$/i.exec(text))) return { intent: 'kb_open', query: strip(m[1]) };
 
   return null;
+}
+
+// ---------- медиаплан: каналы, бюджеты, комиссия, НДС ----------
+
+// как называют площадки → как они записываются в медиаплане (порядок важен: частное раньше общего)
+export const CHANNELS = [
+  [/рся|рекламн\S* сет\S* яндекс/i, 'Яндекс Директ — РСЯ'],
+  [/(?:поиск\S*\s+(?:в\s+)?(?:яндекс\S*\s*)?директ\S*|директ\S*\s+поиск\S*)/i, 'Яндекс Директ — Поиск'],
+  [/яндекс\S*\s*маркет\S*/i, 'Яндекс Маркет'],
+  [/яндекс\S*\s*(?:бизнес|карт)\S*/i, 'Яндекс Бизнес'],
+  [/(?:я(?:ндекс\S*)?\.?\s*)?директ\S*|yandex\s*direct/i, 'Яндекс Директ'],
+  [/vk\s*(?:ads|реклам\S*)|вк\s*реклам\S*|вконтакт\S*|(?:^|[^a-zа-яё])(?:vk|вк)(?:[^a-zа-яё]|$)/i, 'VK Реклама'],
+  [/telegram\s*ads|телеграм\S*|telegram/i, 'Telegram Ads'],
+  [/sber\s*ads|сбер\s*ads|сбер\S*\s*реклам\S*|сберэдс/i, 'SberAds'],
+  [/my\s*target|майтаргет/i, 'myTarget'],
+  [/авито/i, 'Авито'],
+  [/ozon|озон/i, 'Ozon'],
+  [/wildberries|вайлдберр\S*|(?:^|[^a-zа-яё])(?:wb|вб)(?:[^a-zа-яё]|$)/i, 'Wildberries'],
+  [/2\s*гис|2gis/i, '2ГИС'],
+  [/google|гугл/i, 'Google Ads'],
+  [/(?:^|[^a-zа-яё])(?:seo|сео)(?:[^a-zа-яё]|$)/i, 'SEO'],
+];
+
+/** Сумма в рублях: «300000», «300 000», «300к», «1,5 млн», «300 тыс. руб.». */
+const MONEY = /(\d{1,3}(?:[\s ]\d{3})+|\d+(?:[.,]\d+)?)\s*(млн|миллион\S*|тыс\S*|т\.р\.?|к(?![а-яё])|k(?![a-z]))?\s*(?:₽|р(?:уб\S*)?\.?(?![а-яё]))?/gi;
+function moneyIn(text) {
+  const out = [];
+  for (const m of String(text).matchAll(MONEY)) {
+    const unit = (m[2] ?? '').toLowerCase();
+    let v = Number(m[1].replace(/[\s ]/g, '').replace(',', '.'));
+    if (/^(млн|миллион)/.test(unit)) v *= 1e6;
+    else if (/^(тыс|т\.р|к|k)/.test(unit)) v *= 1e3;
+    const tail = text.slice(m.index + m[0].length, m.index + m[0].length + 12);
+    const isMoney = unit || /₽|р/.test(m[0].slice(m[1].length)) || v >= 10000;
+    // «на 3 месяца», «15%», «22 НДС» — не бюджет
+    if (!isMoney || /^\s*(?:%|мес|месяц|дн|недел|ндс)/i.test(tail)) continue;
+    out.push({ value: Math.round(v), at: m.index });
+  }
+  return out;
+}
+
+/** Каналы, бюджеты и настройки медиаплана из фразы. */
+export function planDetails(text) {
+  const t = String(text ?? '');
+  const found = [];
+  let rest = t;
+  for (const [re, name] of CHANNELS) {
+    const g = new RegExp(re.source, 'gi');
+    for (const m of rest.matchAll(g)) {
+      if (!found.some((f) => f.name === name)) found.push({ name, at: m.index });
+      rest = rest.slice(0, m.index) + ' '.repeat(m[0].length) + rest.slice(m.index + m[0].length);
+    }
+  }
+  found.sort((a, b) => a.at - b.at);
+  const money = moneyIn(t.replace(/(\d{1,2})\s*%/g, ' '));
+  const total = /(?:на\s+(?:весь\s+)?(?:период|квартал|полгода|год)|всего|общ\S*\s+бюджет|за\s+(?:весь\s+)?период|на\s+\d+\s+месяц\S*\s*$)/i.test(t) && !/в\s*мес|\/\s*мес|ежемесячн|в\s+месяц/i.test(t);
+  let channels = found.map((f) => ({ name: f.name, budget: null }));
+  let split = false;
+  if (money.length && channels.length) {
+    if (money.length === channels.length) channels.forEach((c, i) => (c.budget = money[i].value));
+    else if (money.length === 1) {
+      split = channels.length > 1 && !/кажд/i.test(t);
+      channels.forEach((c) => (c.budget = split ? Math.round(money[0].value / channels.length) : money[0].value));
+    } else {
+      // бюджет — к ближайшему упоминанию площадки
+      for (const c of found) {
+        const near = money.reduce((best, x) => (Math.abs(x.at - c.at) < Math.abs(best.at - c.at) ? x : best), money[0]);
+        channels.find((x) => x.name === c.name).budget = near.value;
+      }
+    }
+  } else if (money.length && !channels.length) channels = [{ name: '', budget: money[0].value }];
+  const fee = /(?:комисси\S*|ак|агентск\S*)\s*(?:агентства\s*)?[—:-]?\s*(\d{1,2}(?:[.,]\d+)?)\s*%/i.exec(t);
+  const vat = /без\s+ндс/i.test(t) ? 'none' : /(?:с\s+ндс|ндс\s*(\d{1,2})|(\d{1,2})\s*%?\s*ндс)/i.exec(t);
+  return {
+    channels,
+    budgetTotal: total,
+    budgetSplit: split,
+    fee: fee ? Number(fee[1].replace(',', '.')) : null,
+    vat: vat === 'none' ? 0 : vat ? Number(vat[1] ?? vat[2] ?? 22) : null,
+  };
 }
 
 /** Период для заявок: «сегодня», «неделю», «месяц», «вчера». */

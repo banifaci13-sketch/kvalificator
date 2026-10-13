@@ -183,3 +183,20 @@ test('живая речь: обращения, «пожалуйста», нео�
     }
   }
 });
+
+test('медиаплан из фразы: площадки, бюджеты, комиссия, НДС', () => {
+  const a = parse('сделай медиаплан для клиента таллер. источник яндекс директ. бюджет 300000 рублей');
+  assert.equal(a.intent, 'mediaplan_create');
+  assert.equal(a.client?.id, 1);
+  assert.deepEqual(a.channels, [{ name: 'Яндекс Директ', budget: 300000 }]);
+  const b = parse('создай медиаплан для Ромашки на 6 месяцев: директ 300к и вк 150 тыс в месяц, комиссия 15%, с НДС');
+  assert.deepEqual(b.channels, [{ name: 'Яндекс Директ', budget: 300000 }, { name: 'VK Реклама', budget: 150000 }]);
+  assert.deepEqual([b.months, b.fee, b.vat, b.budgetTotal], [6, 15, 22, false]);
+  const c = parse('сделай МП для Таллера на квартал: РСЯ, поиск в директе и телеграм, общий бюджет 900 000 на весь период');
+  assert.deepEqual(c.channels.map((x) => x.name), ['Яндекс Директ — РСЯ', 'Яндекс Директ — Поиск', 'Telegram Ads']);
+  assert.equal(c.budgetTotal, true);
+  assert.equal(c.budgetSplit, true);
+  assert.deepEqual(c.channels.map((x) => x.budget), [300000, 300000, 300000]);
+  const d = parse('создай медиаплан для Медлайн, авито 1,5 млн');
+  assert.deepEqual(d.channels, [{ name: 'Авито', budget: 1500000 }]);
+});

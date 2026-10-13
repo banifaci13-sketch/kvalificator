@@ -10,6 +10,7 @@ export { AnswerError };
 export class SessionError extends Error {}
 
 export function createQualifier({ db, scenarioSource, rules, notifier, log = console }) {
+  const leadHooks = [];
   let engineFor = null;
   let engine = null;
   const getEngine = () => {
@@ -83,6 +84,14 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
     const lead = db.completeSession(session, state, result);
     log.info({ leadId: lead.id, rating: lead.rating, channel: lead.channel }, 'Новый лид');
     void deliver(lead);
+    // подписчики на новые заявки (например, задача «Связаться» по горячей заявке); их ошибки не мешают клиенту
+    for (const fn of leadHooks) {
+      try {
+        fn(lead);
+      } catch (err) {
+        log.error({ err, leadId: lead.id }, 'Обработчик новой заявки упал');
+      }
+    }
 
     const reply = { type: 'done', text: scenario.outro[outroKey(lead.rating)] };
     const hint = scenario.budgetHints?.[state.answers.service];
@@ -134,7 +143,7 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
     return { ok: db.assignLead(leadId, assignee), lead: db.getLead(leadId) };
   }
 
-  return { startSession, getSession, resume, answer, claimHandoff, activeSession, takeLead, retryUndelivered };
+  return { startSession, getSession, resume, answer, claimHandoff, activeSession, takeLead, retryUndelivered, onLead: (fn) => leadHooks.push(fn) };
 }
 
 function safeEqual(a, b) {

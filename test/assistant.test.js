@@ -218,6 +218,13 @@ test('ассистент выполняет действия по раздела
   assert.equal(s.mediaplans.get(mp.actions[0].id).spec.months, 6);
   assert.match(mp.navigate, /^#\/plan\?id=\d+$/);
 
+  s.mediaplans.saveBenchmark({ channel: 'Яндекс Директ', model: 'cpc', cpc: 45, ctr: 5, cr: 3, note: 'Средние за 2026 год' }, 'Анна Сорокина');
+  const mp2 = await say('сделай медиаплан для клиента таллер. источник яндекс директ и авито. бюджет 300000 и 100000 рублей');
+  assert.match(mp2.reply, /Яндекс Директ — 300\s000 ₽ в месяц/);
+  assert.match(mp2.reply, /«Авито» — в нормативах нет/);
+  const rows = s.mediaplans.get(mp2.actions[0].id).spec.scenarios[0].rows;
+  assert.deepEqual(rows.map((r) => [r.channel, r.budget, r.cpc]), [['Яндекс Директ', 300000, 45], ['Авито', 100000, null]]);
+
   const kp = await say('создай КП для Таллера');
   assert.match(kp.reply, /Создал «Коммерческое предложение — Таллер»/);
   const doc = s.library.getDocument(kp.actions[0].id);

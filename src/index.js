@@ -15,6 +15,7 @@ import { createDocLibrary } from './docs/library.js';
 import { createMedia } from './docs/media.js';
 import { createMediaplans } from './mediaplan/store.js';
 import { createFiles } from './files/store.js';
+import { createHotLeads } from './crm/hot-leads.js';
 import { createCrm } from './crm/store.js';
 import { createCalendar } from './calendar/store.js';
 import { createVideo } from './calendar/video.js';
@@ -40,6 +41,9 @@ const auth = createAuth(db.raw);
 bootstrapAdmin();
 const calendar = createCalendar({ db: db.raw });
 const crm = createCrm({ db: db.raw });
+// горячая заявка — сразу задача «Связаться» за 15 минут
+const hotLeads = createHotLeads({ db: db.raw, crm });
+qualifier.onLead((lead) => hotLeads.onLead(lead));
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
 const brand = loadBrand();
