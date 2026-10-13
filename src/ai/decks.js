@@ -12,6 +12,7 @@ import { AiError, extractJson } from './client.js';
 
 export const KINDS = {
   kp: 'Коммерческое предложение',
+  mediaplan: 'Медиаплан (презентация)',
   strategy: 'Стратегия продвижения',
   report: 'Отчёт клиенту',
   pitch: 'Презентация агентства',

@@ -1,7 +1,7 @@
 // Раздел «Документы»: список, создание из шаблона, редактор слайдов с превью, проверка и выгрузка; шаблоны.
 // Формы редактора строятся по описанию полей с сервера (/admin/api/slide-types).
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog, suggestInput } from './admin.js';
 
 const FORMATS = [
   ['pptx', 'PowerPoint'],
@@ -394,29 +394,63 @@ function createPanel(templates, preselect, onCancel) {
     }
     submit.disabled = false;
     submit.textContent = 'Собрать черновик';
-    const kind = h('select', { class: 'select', id: 'ai-kind' }, Object.entries(aiInfo.kinds).map(([k, l]) => h('option', { value: k }, l)));
+    const kind = h('select', { class: 'select', id: 'ai-kind', onchange: () => ((kindTouched = true), mpHint()) }, Object.entries(aiInfo.kinds).map(([k, l]) => h('option', { value: k }, l)));
+    let kindTouched = false;
+    // вид документа — по словам из брифа, пока сотрудник не выбрал его сам
+    const KIND_WORDS = [['mediaplan', /медиаплан|(^|[^а-яё])мп([^а-яё]|$)|распределени\S* бюджета/i], ['report', /отч[её]т/i], ['strategy', /стратеги/i], ['kp', /(^|[^а-яё])кп([^а-яё]|$)|коммерческ\S* предложени/i], ['pitch', /презентаци\S* агентства|о нас/i]];
+    const mpNote = h('div', { class: 'ai-notice field full', hidden: true });
+    function mpHint() {
+      mpNote.hidden = kind.value !== 'mediaplan';
+      if (mpNote.hidden) return;
+      fill(
+        mpNote,
+        h('p', {}, 'Цифры медиаплана — бюджет, клики, заявки, CPL — точнее посчитать в калькуляторе: по нормативам агентства, с Excel и готовым слайдом. ИИ цифры не придумывает — в презентации оставит заготовки.'),
+        h('button', {
+          type: 'button', class: 'btn btn-s btn-primary',
+          onclick: async () => {
+            const { emptyPlan } = await import('/admin/lib/mediaplan-calc.js');
+            const name = client.value.trim();
+            try {
+              const { mediaplan } = await api('/admin/api/mediaplans', { method: 'POST', body: { title: name ? `Медиаплан — ${name}` : 'Медиаплан', client: name, spec: { ...emptyPlan(), months: 3 } } });
+              navigate('plan', new URLSearchParams({ id: String(mediaplan.id) }));
+            } catch (err) {
+              toast(err.message);
+            }
+          },
+        }, 'Посчитать в калькуляторе'),
+      );
+    }
     const count = h('select', { class: 'select', id: 'ai-count' }, [6, 8, 10, 12].map((n) => h('option', { value: n, selected: n === 8 }, `${n} слайдов`)));
     const lead = h('select', { class: 'select', id: 'ai-lead' }, h('option', { value: '' }, 'Без заявки'));
     const brief = h('textarea', {
       class: 'textarea', id: 'ai-brief', rows: 7, maxlength: 6000,
       placeholder: 'Пишите как коллеге: что за бизнес и задача, что предлагаем (каналы, услуги), что уже известно — бюджет, текущие заявки, цели, сроки. Можно и пожелания к документу: «акцент на маркетплейсы», «без SEO», «сделай слайд про риски».',
     });
-    const clientList = h('datalist', { id: 'ai-clients' });
-    const client = h('input', { class: 'input', id: 'ai-client', maxlength: 200, list: 'ai-clients', placeholder: 'Например, Юнистрим', autocomplete: 'off' });
-    api('/admin/api/clients').then((d) => fill(clientList, (d.clients ?? []).map((c) => h('option', { value: c.name })))).catch(() => {});
+    let clientNames = [];
+    const client = suggestInput(h('input', { class: 'input', id: 'ai-client', maxlength: 200, placeholder: 'Например, Юнистрим' }), () => clientNames);
+    api('/admin/api/clients').then((d) => (clientNames = (d.clients ?? []).map((c) => c.name))).catch(() => {});
     // клиент из списка, упомянутый в брифе, — подставим сами, если поле пустое
+    brief.addEventListener('input', () => {
+      if (kindTouched) return;
+      const hit = KIND_WORDS.find(([k, re]) => aiInfo.kinds[k] && re.test(brief.value));
+      if (hit && kind.value !== hit[0]) {
+        kind.value = hit[0];
+        mpHint();
+      }
+    });
     brief.addEventListener('blur', () => {
       if (client.value.trim()) return;
       const text = brief.value.toLowerCase();
-      const hit = [...clientList.options].map((o) => o.value).find((name) => name.length > 2 && text.includes(name.toLowerCase().replace(/^(ооо|ип|ао|пао|зао)\s+/, '').replace(/[«»"]/g, '')));
+      const hit = clientNames.find((name) => name.length > 2 && text.includes(name.toLowerCase().replace(/^(ооо|ип|ао|пао|зао)\s+/, '').replace(/[«»"]/g, '')));
       if (hit) client.value = hit;
     });
     const title = h('input', { class: 'input', id: 'ai-title', maxlength: 200, placeholder: 'Предложит ИИ' });
     fill(
       fields,
-      h('div', { class: 'field' }, h('label', { for: 'ai-kind' }, 'Что готовим'), kind),
+      h('div', { class: 'field' }, h('label', { for: 'ai-kind' }, 'Что готовим'), kind, h('span', { class: 'hint' }, 'Подберём сами по тексту задания, если не выбрать.')),
       h('div', { class: 'field' }, h('label', { for: 'ai-lead' }, 'Заявка клиента'), lead, h('span', { class: 'hint' }, 'Ответы квалификатора уйдут в ИИ без названия компании и контактов.')),
-      h('div', { class: 'field' }, h('label', { for: 'ai-client' }, 'Клиент'), client, clientList, h('span', { class: 'hint' }, 'Подставим в документ сами; в ИИ название не уходит.')),
+      h('div', { class: 'field' }, h('label', { for: 'ai-client' }, 'Клиент'), client, h('span', { class: 'hint' }, 'Подставим в документ сами; в ИИ название не уходит.')),
+      mpNote,
       h('div', { class: 'field full' }, h('label', { for: 'ai-brief' }, 'Задание для ИИ (бриф)'), brief, h('span', { class: 'hint' }, 'ИИ строит документ по этому тексту. Чем конкретнее задача, тем точнее черновик; цифр, которых здесь нет, он не придумает — оставит «[заполнить]».')),
       h('div', { class: 'field' }, h('label', { for: 'ai-count' }, 'Объём'), count),
       h('div', { class: 'field' }, h('label', { for: 'ai-title' }, 'Название документа'), title),

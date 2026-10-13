@@ -304,6 +304,188 @@ function icon(name) {
 function initials(name = '') {
   return String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 }
+// ---------- выпадающие списки в стиле кабинета ----------
+// Системное окно <select> браузера не стилизуется, поэтому на компьютере открываем своё:
+// значение по-прежнему хранит настоящий <select> (формы, обработчики change, доступность),
+// а список рисуем сами. На телефонах остаётся системный выбор — он там удобнее.
+
+let closeSelectPop = null;
+function openSelectPop(select) {
+  closeSelectPop?.();
+  const items = [];
+  const list = h('div', { class: 'select-pop', role: 'listbox', tabindex: '-1', 'aria-label': select.getAttribute('aria-label') ?? select.labels?.[0]?.textContent ?? 'Выбор' });
+  const addOption = (o) => {
+    const el = h('div', { class: 'select-opt', role: 'option', 'aria-selected': String(o.selected), 'aria-disabled': o.disabled ? 'true' : null, dataset: { i: String(o.index) } }, h('span', { class: 'select-opt-text' }, o.textContent), o.selected ? h('span', { class: 'select-check', 'aria-hidden': 'true' }, '✓') : null);
+    items.push(el);
+    list.append(el);
+  };
+  for (const child of select.children) {
+    if (child.tagName === 'OPTGROUP') {
+      list.append(h('div', { class: 'select-group' }, child.label));
+      for (const o of child.children) if (!o.hidden) addOption(o);
+    } else if (!child.hidden) addOption(child);
+  }
+  let active = Math.max(0, items.findIndex((el) => el.getAttribute('aria-selected') === 'true'));
+  const mark = () => items.forEach((el, i) => el.classList.toggle('active', i === active));
+  const pick = (el) => {
+    if (!el || el.getAttribute('aria-disabled')) return;
+    const idx = Number(el.dataset.i);
+    close();
+    if (select.selectedIndex !== idx) {
+      select.selectedIndex = idx;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    select.focus();
+  };
+  list.addEventListener('mousedown', (e) => e.preventDefault());
+  list.addEventListener('click', (e) => pick(e.target.closest('.select-opt')));
+  list.addEventListener('mousemove', (e) => {
+    const el = e.target.closest('.select-opt');
+    if (el && !el.getAttribute('aria-disabled')) {
+      active = items.indexOf(el);
+      mark();
+    }
+  });
+  let typed = '';
+  let typedAt = 0;
+  const onKey = (e) => {
+    const step = (d) => {
+      let i = active;
+      do i += d;
+      while (items[i]?.getAttribute('aria-disabled'));
+      if (items[i]) active = i;
+      mark();
+      items[active]?.scrollIntoView({ block: 'nearest' });
+    };
+    if (e.key === 'ArrowDown') step(1);
+    else if (e.key === 'ArrowUp') step(-1);
+    else if (e.key === 'Home') ((active = 0), step(0));
+    else if (e.key === 'End') ((active = items.length - 1), step(0));
+    else if (e.key === 'Enter' || e.key === ' ') pick(items[active]);
+    else if (e.key === 'Escape' || e.key === 'Tab') {
+      close();
+      if (e.key === 'Escape') select.focus();
+      if (e.key === 'Tab') return;
+    } else if (e.key.length === 1) {
+      typed = Date.now() - typedAt > 700 ? e.key.toLowerCase() : typed + e.key.toLowerCase();
+      typedAt = Date.now();
+      const i = items.findIndex((el) => el.textContent.toLowerCase().startsWith(typed));
+      if (i >= 0) ((active = i), step(0));
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const outside = (e) => !list.contains(e.target) && e.target !== select && close();
+  function close() {
+    list.remove();
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('mousedown', outside, true);
+    window.removeEventListener('resize', close);
+    document.removeEventListener('scroll', reposition, true);
+    select.removeAttribute('data-open');
+    if (closeSelectPop === close) closeSelectPop = null;
+  }
+  function reposition(e) {
+    if (e && list.contains(e.target)) return;
+    const r = select.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight) return close();
+    const below = innerHeight - r.bottom - 8;
+    const above = r.top - 8;
+    const want = Math.min(list.scrollHeight, 320);
+    const up = below < Math.min(want, 200) && above > below;
+    const max = Math.max(120, Math.min(320, up ? above : below));
+    list.style.cssText = `left:${Math.max(8, Math.min(r.left, innerWidth - Math.max(r.width, 200) - 8))}px;min-width:${Math.max(r.width, 180)}px;max-height:${max}px;${up ? `bottom:${innerHeight - r.top + 4}px` : `top:${r.bottom + 4}px`}`;
+  }
+  // внутри модального окна список должен быть в том же слое, иначе он окажется под ним
+  (select.closest('dialog[open]') ?? document.body).append(list);
+  select.setAttribute('data-open', '');
+  reposition();
+  mark();
+  items[active]?.scrollIntoView({ block: 'nearest' });
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', outside, true);
+  window.addEventListener('resize', close);
+  document.addEventListener('scroll', reposition, true);
+  closeSelectPop = close;
+}
+const fineSelect = (t) => t instanceof HTMLSelectElement && !t.multiple && t.size <= 1 && !t.disabled && !matchMedia('(pointer: coarse)').matches;
+document.addEventListener('mousedown', (e) => {
+  if (!fineSelect(e.target) || e.button !== 0) return;
+  e.preventDefault();
+  e.target.focus();
+  if (e.target.hasAttribute('data-open')) closeSelectPop?.();
+  else openSelectPop(e.target);
+});
+document.addEventListener('keydown', (e) => {
+  if (!fineSelect(e.target) || e.target.hasAttribute('data-open')) return;
+  if (e.key === ' ' || e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown') || e.key === 'F4') {
+    e.preventDefault();
+    openSelectPop(e.target);
+  }
+});
+
+/**
+ * Поле с подсказками (вместо системного <datalist>): список вариантов под полем,
+ * фильтруется по введённому тексту; можно выбрать мышью или стрелками и Enter.
+ */
+function suggestInput(input, getOptions) {
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-expanded', 'false');
+  let pop = null;
+  let active = -1;
+  const close = () => {
+    pop?.remove();
+    pop = null;
+    input.setAttribute('aria-expanded', 'false');
+  };
+  const open = () => {
+    const q = input.value.trim().toLowerCase().replace(/ё/g, 'е');
+    const all = [...new Set(getOptions().filter(Boolean))];
+    const list = all.filter((x) => !q || x.toLowerCase().replace(/ё/g, 'е').includes(q)).slice(0, 30);
+    if (!list.length || (list.length === 1 && list[0] === input.value)) return close();
+    pop?.remove();
+    active = -1;
+    pop = h('div', { class: 'select-pop suggest-pop', role: 'listbox' }, list.map((x) => h('div', { class: 'select-opt', role: 'option', 'aria-selected': String(x === input.value), dataset: { v: x } }, h('span', { class: 'select-opt-text' }, x))));
+    pop.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const el = e.target.closest('.select-opt');
+      if (el) choose(el.dataset.v);
+    });
+    (input.closest('dialog[open]') ?? document.body).append(pop);
+    const r = input.getBoundingClientRect();
+    pop.style.cssText = `left:${r.left}px;top:${r.bottom + 4}px;min-width:${r.width}px;max-height:${Math.max(140, Math.min(300, innerHeight - r.bottom - 12))}px`;
+    input.setAttribute('aria-expanded', 'true');
+  };
+  const choose = (v) => {
+    input.value = v;
+    close();
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  input.addEventListener('focus', open);
+  input.addEventListener('input', open);
+  input.addEventListener('blur', () => setTimeout(close, 100));
+  input.addEventListener('keydown', (e) => {
+    if (!pop) return;
+    const items = [...pop.children];
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items.forEach((el, i) => el.classList.toggle('active', i === active));
+      items[active].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault();
+      choose(items[active].dataset.v);
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      close();
+    }
+  });
+  return input;
+}
+
 /** Кнопки в строке таблицы: скопировать и удалить. Щелчок по ним не открывает строку. */
 function rowActions({ name, onCopy, onDelete, deleteTitle = 'Удалить', deleteIcon = 'trash' }) {
   const btn = (title, iconName, fn, cls = '') =>
@@ -1672,6 +1854,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, confirmDialog, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
+export { h, api, app, shell, toast, confirmDialog, suggestInput, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
 
 boot();
