@@ -9,7 +9,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEAD_STATUSES, leadsToCsv } from './reports.js';
 import { createYandexOAuth } from './yandex.js';
-import { AuthError, ROLES } from './auth.js';
+import { AuthError, ROLES, AVATAR_MAX } from './auth.js';
 import { docsRoutes } from './docs-routes.js';
 import { chromiumPath } from '../docs/browser.js';
 import { mediaplanRoutes } from './mediaplan-routes.js';
@@ -18,12 +18,14 @@ import { calendarRoutes } from './calendar-routes.js';
 import { aiRoutes } from './ai-routes.js';
 import { DEFAULT_PREFS, PrefsError, checkPrefsPatch } from './prefs.js';
 import { assistantRoutes } from './assistant-routes.js';
+import { createNotifications } from '../notify/store.js';
 import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
 import { createSearch } from '../assistant/search.js';
 import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
+const OVERDUE_SQL = "(t.due || ' ' || COALESCE(t.due_time, '23:59')) < strftime('%Y-%m-%d %H:%M', 'now', '+3 hours')";
 const STATE_COOKIE = 'kval_oauth_state';
 const CHANNELS = ['web', 'telegram', 'max'];
 
@@ -54,6 +56,9 @@ function toFilter(query) {
 
 export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
+  // уведомления в кабинете: задачи шлют их сами, встречам — через маршруты календаря
+  const notify = createNotifications({ db: db.raw });
+  crm?.useNotify?.(notify);
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
       ? createYandexOAuth({
@@ -203,6 +208,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         telegramTest: config.telegram.botUsername ? `https://t.me/${config.telegram.botUsername}?start=test` : null,
       },
       testChat: Boolean(config.telegram.testChatId),
+      avatars: auth.avatars(),
     }));
 
     api.get('/admin/api/leads', { schema: { querystring: leadQuery } }, async (req) => ({
@@ -272,6 +278,25 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       },
     );
 
+    // Фото профиля: картинка приходит «как есть» в теле запроса, браузер заранее обрезает её до квадрата
+    await api.register(async (r) => {
+      r.addContentTypeParser(['image/jpeg', 'image/png'], { parseAs: 'buffer', bodyLimit: AVATAR_MAX }, (req, body, done) => done(null, body));
+      r.put('/admin/api/me/avatar', { bodyLimit: AVATAR_MAX, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
+        if (!Buffer.isBuffer(req.body)) throw new AuthError('Нужна картинка JPG или PNG');
+        return { avatar: auth.setAvatar(req.user.id, req.body) };
+      });
+    });
+    api.delete('/admin/api/me/avatar', async (req) => {
+      auth.removeAvatar(req.user.id);
+      return { avatar: null };
+    });
+    api.get('/admin/api/users/:id/avatar', { schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } } }, async (req, reply) => {
+      const a = auth.getAvatar(req.params.id);
+      if (!a) return reply.code(404).send({ error: 'Фото нет' });
+      // адрес меняется вместе с фото (?v=версия), поэтому браузер может держать его в кэше
+      return reply.header('content-type', a.mime).header('cache-control', 'private, max-age=31536000, immutable').send(Buffer.from(a.data));
+    });
+
     // Личные настройки внешнего вида кабинета — каждый меняет свои
     api.patch(
       '/admin/api/me/prefs',
@@ -281,7 +306,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
             type: 'object',
             minProperties: 1,
             additionalProperties: false,
-            properties: Object.fromEntries(Object.keys(DEFAULT_PREFS).map((k) => [k, { type: 'string', maxLength: 32 }])),
+            properties: Object.fromEntries(Object.keys(DEFAULT_PREFS).map((k) => [k, { type: 'string', maxLength: k === 'nav' ? 200 : 32 }])),
           },
         },
       },
@@ -411,7 +436,88 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans, brand });
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
-    if (calendar) await api.register(calendarRoutes, { calendar, video, config });
+
+    // ---------- уведомления (колокольчик) ----------
+    api.get('/admin/api/notifications', async (req) => ({ items: notify.list(req.user.id), unread: notify.unread(req.user.id) }));
+    api.post(
+      '/admin/api/notifications/read',
+      { schema: { body: { type: 'object', additionalProperties: false, properties: { id: { type: 'integer' } } } } },
+      async (req) => {
+        notify.read(req.user.id, req.body?.id ?? null);
+        return { unread: notify.unread(req.user.id) };
+      },
+    );
+
+    // ---------- «Мой день»: всё на сегодня одним запросом ----------
+    // «Главная»: сводка дня — горящие задачи, встречи, свежие заявки, уведомления, нагрузка команды
+    const home = {
+      doneWeek: db.raw.prepare("SELECT COUNT(*) AS n FROM tasks WHERE assignee_id = ? AND status = 'done' AND done_at >= datetime('now', '-7 days')"),
+      delegated: db.raw.prepare(
+        `SELECT t.id, t.title, t.due, t.due_time, t.client_id, t.priority, t.assignee_id, u.name AS assignee_name,
+                (t.due IS NOT NULL AND ${OVERDUE_SQL}) AS overdue
+         FROM tasks t JOIN admin_users u ON u.id = t.assignee_id
+         WHERE t.created_by_id = ? AND t.assignee_id != t.created_by_id AND t.status != 'done'
+         ORDER BY overdue DESC, t.due IS NULL, t.due, t.id DESC LIMIT 6`,
+      ),
+      team: db.raw.prepare(
+        `SELECT u.id, u.name, u.position,
+                COUNT(t.id) AS open,
+                COALESCE(SUM(t.due IS NOT NULL AND ${OVERDUE_SQL}), 0) AS overdue,
+                (SELECT COUNT(*) FROM tasks d WHERE d.assignee_id = u.id AND d.status = 'done' AND d.done_at >= datetime('now', '-7 days')) AS done_week
+         FROM admin_users u LEFT JOIN tasks t ON t.assignee_id = u.id AND t.status != 'done'
+         WHERE u.disabled = 0 GROUP BY u.id ORDER BY overdue DESC, open DESC, u.name`,
+      ),
+    };
+    api.get('/admin/api/home', async (req) => {
+      const msk = new Date(Date.now() + 3 * 3600e3);
+      const today = msk.toISOString().slice(0, 10);
+      const nowMsk = msk.toISOString().slice(0, 16).replace('T', ' ');
+      const plus = (n) => new Date(Date.parse(`${today}T12:00:00Z`) + n * 86400e3).toISOString().slice(0, 10);
+      const open = crm ? crm.listTasks({ mine: req.user.id, open: true }) : [];
+      const late = (t) => t.due && `${t.due} ${t.due_time ?? '23:59'}` < nowMsk;
+      const tasks = {
+        overdue: open.filter(late),
+        today: open.filter((t) => t.due === today && !late(t)),
+        week: open.filter((t) => t.due > today && t.due <= plus(7)),
+        nodue: open.filter((t) => !t.due).length,
+      };
+      // «Горит»: просрочено, на сегодня, важное на ближайшие три дня и критичное без срока
+      const hot = open
+        .filter((t) => late(t) || t.due === today || (t.priority >= 3 && t.due && t.due <= plus(3)) || (t.priority === 4 && !t.due))
+        .sort((x, y) => Number(!!late(y)) - Number(!!late(x)) || (x.due ?? '9999').localeCompare(y.due ?? '9999') || (x.due_time ?? '99').localeCompare(y.due_time ?? '99') || y.priority - x.priority)
+        .slice(0, 12);
+      const meetings = calendar
+        ? calendar
+            .list({ from: `${today}T00:00:00+03:00`, to: `${plus(2)}T00:00:00+03:00`, userId: req.user.id })
+            .filter((m) => !m.cancelled)
+            .map((m) => ({ id: m.id, title: m.title, starts_at: m.starts_at, duration: m.duration, client_name: m.client_name, link: m.link, format: m.format }))
+        : [];
+      // свежие заявки за 3 дня, ещё никем не взятые
+      const leads = reports
+        .allLeads({ from: plus(-2) }, 50)
+        .filter((l) => l.status === 'new' && !l.meta?.test)
+        .sort((a, b) => b.rating - a.rating || b.id - a.id)
+        .slice(0, 6)
+        .map((l) => ({ id: l.id, rating: l.rating, company: l.answers?.company?.raw ?? l.answers?.company ?? null, created_at: l.created_at, channel: l.channel }));
+      // «Продолжить работу»: документы и медиапланы, которые человек правил последними
+      const mineWork = (rows, kind) => rows.filter((r) => r.updated_by === req.user.name || r.created_by === req.user.name).slice(0, 4).map((r) => ({ kind, id: r.id, title: r.title, updated_at: r.updated_at }));
+      const recent = [...(library ? mineWork(library.listDocuments(), 'doc') : []), ...(mediaplans ? mineWork(mediaplans.list(), 'plan') : [])]
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .slice(0, 5);
+      return {
+        today,
+        stats: { open: open.length, overdue: tasks.overdue.length, doneWeek: home.doneWeek.get(req.user.id).n, meetings: meetings.filter((m) => new Date(Date.parse(m.starts_at) + 3 * 3600e3).toISOString().slice(0, 10) === today).length, leads: leads.length },
+        hot,
+        tasks,
+        meetings,
+        leads,
+        recent,
+        delegated: home.delegated.all(req.user.id).map((t) => ({ ...t, overdue: !!t.overdue })),
+        team: req.user.role === 'admin' ? home.team.all().filter((u) => u.open || u.done_week) : null,
+        notifications: notify.list(req.user.id, 6).filter((n) => !n.read_at),
+      };
+    });
+    if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
 
     // ИИ-ассистент в боковой панели: поручения, помощь по регламентам, поиск в интернете

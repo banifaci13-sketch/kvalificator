@@ -297,7 +297,7 @@ test('после обновления первый сотрудник старо
   const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
   const fresh = openDb(path);
   // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
-  fresh.raw.exec(`ALTER TABLE admin_users DROP COLUMN prefs; ALTER TABLE admin_users DROP COLUMN position; ALTER TABLE admin_users DROP COLUMN phone; DROP TABLE media; DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
+  fresh.raw.exec(`DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; ALTER TABLE admin_users DROP COLUMN prefs; ALTER TABLE admin_users DROP COLUMN position; ALTER TABLE admin_users DROP COLUMN phone; DROP TABLE media; DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
     ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
     INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
   fresh.close();
@@ -362,7 +362,7 @@ test('внешний вид кабинета: у каждого свои нас�
   const oleg = { cookie: `kval_admin=${(await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'oleg', password: PASSWORD } })).cookies.find((c) => c.name === 'kval_admin').value}` };
 
   const me = (await app.inject({ url: '/admin/api/me', headers: anna })).json().user;
-  assert.deepEqual(me.prefs, { theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'docs', assistantName: '', address: 'vy', webSearch: 'on' });
+  assert.deepEqual(me.prefs, { theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'home', assistantName: '', nav: '', address: 'vy', webSearch: 'on' });
 
   const res = await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { theme: 'dark', accent: 'violet', background: 'aurora', start: 'tasks' } });
   assert.equal(res.statusCode, 200, res.body);
@@ -374,8 +374,41 @@ test('внешний вид кабинета: у каждого свои нас�
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { color: 'red' } })).json().prefs.accent, 'violet');
 
   const after = (await app.inject({ url: '/admin/api/me', headers: anna })).json().user.prefs;
-  assert.deepEqual(after, { theme: 'dark', accent: 'violet', background: 'aurora', density: 'compact', sidebar: 'full', start: 'tasks', assistantName: '', address: 'vy', webSearch: 'on' });
+  assert.deepEqual(after, { theme: 'dark', accent: 'violet', background: 'aurora', density: 'compact', sidebar: 'full', start: 'tasks', assistantName: '', nav: '', address: 'vy', webSearch: 'on' });
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { assistantName: 'Сара' } })).json().prefs.assistantName, 'Сара');
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { assistantName: '<script>' } })).statusCode, 400);
+  // порядок меню: свои разделы и спрятанные
+  assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { nav: 'tasks,home,-templates' } })).json().prefs.nav, 'tasks,home,-templates');
+  assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { nav: 'tasks,secret' } })).statusCode, 400);
   assert.equal((await app.inject({ url: '/admin/api/me', headers: oleg })).json().user.prefs.accent, 'soroka', 'у коллеги свои настройки');
+});
+
+test('фото профиля: загрузить, показать коллегам, удалить', async () => {
+  const { app, auth } = await setup();
+  auth.addUser('oleg', 'Олег', { password: PASSWORD, role: 'manager' });
+  const login = async (l) => ({ cookie: `kval_admin=${(await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: l, password: PASSWORD } })).cookies.find((c) => c.name === 'kval_admin').value}` });
+  const anna = await login('anna@soroka-marketing.ru');
+  const oleg = await login('oleg');
+  // PNG 2×2 — заголовок IHDR, остального для проверки размера достаточно
+  const png = Buffer.alloc(64);
+  png.writeUInt32BE(0x89504e47, 0);
+  png.writeUInt32BE(2, 16);
+  png.writeUInt32BE(2, 20);
+
+  assert.equal((await app.inject({ method: 'PUT', url: '/admin/api/me/avatar', headers: { ...anna, 'content-type': 'image/png' }, payload: Buffer.from('not an image') })).statusCode, 400);
+  const res = await app.inject({ method: 'PUT', url: '/admin/api/me/avatar', headers: { ...anna, 'content-type': 'image/png' }, payload: png });
+  assert.equal(res.statusCode, 200, res.body);
+  const ver = res.json().avatar;
+  const me = (await app.inject({ url: '/admin/api/me', headers: oleg })).json();
+  const annaId = Object.keys(me.avatars)[0];
+  assert.equal(me.avatars[annaId], ver, 'коллеги знают, у кого есть фото');
+  const img = await app.inject({ url: `/admin/api/users/${annaId}/avatar?v=${ver}`, headers: oleg });
+  assert.equal(img.statusCode, 200);
+  assert.equal(img.headers['content-type'], 'image/png');
+  assert.equal(img.rawPayload.length, 64);
+  assert.equal((await app.inject({ url: `/admin/api/users/${annaId}/avatar` })).statusCode, 401, 'без входа фото не отдаём');
+
+  await app.inject({ method: 'DELETE', url: '/admin/api/me/avatar', headers: anna });
+  assert.deepEqual((await app.inject({ url: '/admin/api/me', headers: oleg })).json().avatars, {});
+  assert.equal((await app.inject({ url: `/admin/api/users/${annaId}/avatar`, headers: oleg })).statusCode, 404);
 });

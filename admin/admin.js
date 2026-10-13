@@ -8,6 +8,7 @@ import { renderCalendar, notificationsPanel } from './calendar.js';
 import { renderIntegrations } from './integrations.js';
 import { assistantEntry } from './assistant.js';
 import { renderKb } from './kb.js';
+import { renderHome, bellButton } from './home.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -131,6 +132,7 @@ const statusChip = (status) => h('span', { class: 'status', dataset: { s: status
 // ---------- маршруты ----------
 
 const routes = {
+  home: renderHome,
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
@@ -184,7 +186,7 @@ const PAGE_SECTION = { doc: 'docs', plan: 'plans', client: 'tasks', taskboard: '
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
-  return { name: routes[name] ? name : 'docs', params: new URLSearchParams(query) };
+  return { name: routes[name] ? name : 'home', params: new URLSearchParams(query) };
 }
 
 function navigate(name, params) {
@@ -208,7 +210,7 @@ window.addEventListener('hashchange', () => {
 async function boot() {
   try {
     const me = await api('/admin/api/me');
-    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat });
+    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat, avatars: me.avatars ?? {} });
     if (me.user.prefs) window.sorokaTheme?.apply(me.user.prefs);
     // без адреса раздела — стартовый раздел из личных настроек
     if (!location.hash.replace(/^#\/?/, '') && me.user.prefs?.start) return navigate(me.user.prefs.start);
@@ -220,6 +222,12 @@ async function boot() {
 
 // Значки разделов: простые контуры 24×24, цвет берут от текста
 const ICONS = {
+  home: 'M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  up: 'M12 19V5M6 11l6-6 6 6',
+  down: 'M12 5v14M6 13l6 6 6-6',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   docs: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6',
   templates: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   plans: 'M3 21h18M6 17v-5M11 17V5M16 17V9M21 17v-3',
@@ -241,7 +249,15 @@ function icon(name) {
   return s('svg', { class: 'icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' }, s('path', { d: ICONS[name] }));
 }
 function initials(name = '') {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+  return String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+}
+/** Кружок сотрудника: фото профиля, если загружено, иначе инициалы. */
+function userAvatar(u, cls = '') {
+  const ver = u?.id != null ? ctx.avatars?.[u.id] : null;
+  if (!ver) return h('span', { class: `avatar ${cls}`, title: u?.name ?? null }, initials(u?.name));
+  const img = h('img', { class: `avatar avatar-img ${cls}`, src: `/admin/api/users/${u.id}/avatar?v=${ver}`, alt: '', title: u.name ?? null, loading: 'lazy' });
+  img.addEventListener('error', () => img.replaceWith(h('span', { class: `avatar ${cls}` }, initials(u.name))), { once: true });
+  return img;
 }
 
 const THEMES = [
@@ -283,7 +299,7 @@ function meLink(current) {
   return h(
     'a',
     { class: 'me-link', href: '#/account', title: 'Учётная запись', 'aria-current': current ? 'page' : null },
-    h('span', { class: 'avatar' }, initials(ctx.me.name)),
+    userAvatar(ctx.me),
     h('span', { class: 'me-text' }, h('span', { class: 'name' }, ctx.me.name), ctx.me.position ? h('span', { class: 'me-pos' }, ctx.me.position) : null),
   );
 }
@@ -293,32 +309,94 @@ function refreshMe() {
   el?.replaceWith(meLink(el.getAttribute('aria-current') === 'page'));
 }
 
+// Разделы меню по умолчанию. Свой порядок и спрятанные разделы каждый задаёт шестерёнкой под меню
+// (настройка nav: «home,tasks,-templates»; минус — раздел спрятан; новые разделы встают в конец).
+const NAV = [
+  ['home', 'Главная'],
+  ['docs', 'Документы'],
+  ['templates', 'Шаблоны'],
+  ['plans', 'Медиапланы'],
+  ['tasks', 'Задачи'],
+  ['calendar', 'Календарь'],
+  ['leads', 'Квалификатор'],
+  ['kb', 'Регламенты'],
+  ['staff', 'Сотрудники'],
+];
+function navItems(pref = ctx.me.prefs?.nav ?? '') {
+  const known = new Map(NAV.filter(([id]) => id !== 'staff' || ctx.me.role === 'admin').map(([id, label]) => [id, label]));
+  const out = [];
+  for (const raw of String(pref).split(',').map((x) => x.trim()).filter(Boolean)) {
+    const hidden = raw.startsWith('-');
+    const id = hidden ? raw.slice(1) : raw;
+    if (!known.has(id) || out.some((it) => it.id === id)) continue;
+    out.push({ id, label: known.get(id), hidden });
+  }
+  for (const [id, label] of known) if (!out.some((it) => it.id === id)) out.push({ id, label, hidden: false });
+  return out;
+}
+
+function navDialog() {
+  let items = navItems();
+  const list = h('ul', { class: 'nav-edit' });
+  const draw = () =>
+    fill(
+      list,
+      items.map((it, i) =>
+        h(
+          'li',
+          { class: it.hidden ? 'is-hidden' : '' },
+          h('span', { class: 'nav-edit-icon' }, icon(it.id)),
+          h('span', { class: 'nav-edit-label' }, it.label),
+          h('button', { type: 'button', class: 'icon-btn', title: 'Выше', 'aria-label': `${it.label}: выше`, disabled: i === 0, onclick: () => move(i, -1) }, icon('up')),
+          h('button', { type: 'button', class: 'icon-btn', title: 'Ниже', 'aria-label': `${it.label}: ниже`, disabled: i === items.length - 1, onclick: () => move(i, 1) }, icon('down')),
+          h('label', { class: 'switch', title: it.hidden ? 'Показать в меню' : 'Спрятать из меню' }, h('input', { type: 'checkbox', checked: !it.hidden, 'aria-label': `Показывать «${it.label}»`, onchange: (e) => ((it.hidden = !e.target.checked), draw()) }), h('span', {})),
+        ),
+      ),
+    );
+  const move = (i, d) => {
+    const next = [...items];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    items = next;
+    draw();
+    list.children[i + d]?.querySelector(d < 0 ? 'button[title="Выше"]' : 'button[title="Ниже"]')?.focus();
+  };
+  draw();
+  formDialog({
+    title: 'Меню',
+    submitLabel: 'Сохранить',
+    body: [
+      h('p', { class: 'muted' }, 'Порядок разделов и что показывать. Спрятанный раздел остаётся доступен по ссылке; вернуть его можно здесь же.'),
+      list,
+      h('button', { type: 'button', class: 'linkish small', onclick: () => ((items = navItems('')), draw()) }, 'Вернуть как было'),
+    ],
+    onSubmit: async () => {
+      if (items.every((it) => it.hidden)) throw new Error('Оставьте в меню хотя бы один раздел');
+      const def = navItems('');
+      const same = items.every((it, i) => it.id === def[i].id && !it.hidden);
+      await savePrefs({ nav: same ? '' : items.map((it) => (it.hidden ? `-${it.id}` : it.id)).join(',') });
+      renderRoute();
+    },
+  });
+}
+
 function shell(active, content) {
   const section =
     PAGE_SECTION[active] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === active)) ?? active;
   const tabs = SECTION_TABS[section] && !PAGE_SECTION[active] ? SECTION_TABS[section] : null;
-  const nav = [
-    ['docs', 'Документы'],
-    ['templates', 'Шаблоны'],
-    ['plans', 'Медиапланы'],
-    ['tasks', 'Задачи'],
-    ['calendar', 'Календарь'],
-    ['leads', 'Квалификатор'],
-    ['kb', 'Регламенты'],
-    ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
-  ].filter(Boolean);
+  const nav = navItems().filter((it) => !it.hidden).map((it) => [it.id, it.label]);
   return [
     h(
       'aside',
       // В редакторах документа и медиаплана панель сворачивается до значков — больше места под работу
       { class: `sidebar${active === 'doc' || active === 'plan' ? ' compact' : ''}` },
-      h('a', { class: 'brand', href: '#/docs' }, logo(), h('span', { class: 'product' }, 'Ассистент')),
+      h('div', { class: 'side-head' }, h('a', { class: 'brand', href: '#/home' }, logo(), h('span', { class: 'product' }, 'Ассистент')), bellButton()),
       h(
         'nav',
         { class: 'nav', 'aria-label': 'Разделы' },
         nav.map(([id, label]) =>
           h('a', { href: `#/${id}`, title: label, 'aria-current': id === section ? 'page' : null }, icon(id), h('span', { class: 'nav-label' }, label)),
         ),
+        h('button', { type: 'button', class: 'nav-gear', title: 'Настроить меню', 'aria-label': 'Настроить меню: порядок и видимость разделов', onclick: navDialog }, icon('gear')),
       ),
       assistantEntry(),
       h(
@@ -1208,6 +1286,7 @@ const APPEARANCE = {
     ['icons', 'Только значки', 'Узкая панель — больше места под работу'],
   ],
   start: [
+    ['home', 'Главная'],
     ['docs', 'Документы'],
     ['tasks', 'Задачи — проекты'],
     ['mytasks', 'Мои задачи'],
@@ -1306,13 +1385,88 @@ function renderAppearance() {
         h('span', { class: 'spacer' }),
         h('button', {
           type: 'button', class: 'btn',
-          onclick: () => set({ theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'docs', assistantName: '', address: 'vy', webSearch: 'on' }),
+          onclick: () => set({ theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'home', assistantName: '', nav: '', address: 'vy', webSearch: 'on' }),
         }, 'Вернуть как было'),
       ),
       h('p', { class: 'lead-text' }, 'Настройки только ваши: коллеги их не видят. Они сохраняются в профиле и действуют на любом устройстве, где вы вошли.'),
       body,
     ]),
   );
+}
+
+/**
+ * Фото профиля. Браузер сам разворачивает снимок по EXIF, вырезает квадрат по центру и сжимает
+ * до 256×256 JPEG — на сервер уходит около 20 КБ, а не исходные мегабайты с телефона.
+ */
+async function squareAvatar(file) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    throw new Error('Не получилось открыть файл — нужна картинка JPG, PNG или WebP');
+  }
+  const side = Math.min(bmp.width, bmp.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 256, 256);
+  return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('Не удалось подготовить фото'))), 'image/jpeg', 0.88));
+}
+
+function avatarPicker() {
+  const box = h('div', { class: 'avatar-picker' });
+  const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic', hidden: true, onchange: (e) => upload(e.target.files?.[0]) });
+  const apply = (ver) => {
+    if (ver) ctx.avatars[ctx.me.id] = ver;
+    else delete ctx.avatars[ctx.me.id];
+    ctx.me.avatar = ver;
+    refreshMe();
+    draw();
+  };
+  async function upload(f) {
+    if (!f) return;
+    if (f.size > 25 * 1024 * 1024) return toast('Файл больше 25 МБ');
+    try {
+      const blob = await squareAvatar(f);
+      const res = await fetch('/admin/api/me/avatar', { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: blob, credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? 'Не удалось загрузить фото');
+      apply(data.avatar);
+      toast('Фото обновлено');
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      file.value = '';
+    }
+  }
+  const draw = () =>
+    fill(
+      box,
+      userAvatar(ctx.me, 'avatar-xl'),
+      h(
+        'div',
+        { class: 'avatar-actions' },
+        h('button', { type: 'button', class: 'btn btn-s', onclick: () => file.click() }, ctx.avatars?.[ctx.me.id] ? 'Сменить фото' : 'Загрузить фото'),
+        ctx.avatars?.[ctx.me.id]
+          ? h('button', {
+              type: 'button', class: 'linkish small',
+              onclick: async () => {
+                try {
+                  await api('/admin/api/me/avatar', { method: 'DELETE' });
+                  apply(null);
+                } catch (err) {
+                  toast(err.message);
+                }
+              },
+            }, 'Убрать')
+          : null,
+        h('span', { class: 'hint' }, 'Квадратом по центру, JPG, PNG или WebP. Видно коллегам в задачах и меню.'),
+      ),
+      file,
+    );
+  draw();
+  return box;
 }
 
 function renderAccount() {
@@ -1343,6 +1497,7 @@ function renderAccount() {
     },
     h('h2', {}, 'Мои данные'),
     h('p', { class: 'muted' }, 'Видны коллегам в задачах, встречах и документах.'),
+    avatarPicker(),
     h('div', { class: 'field' }, h('label', { for: 'my-name' }, 'Имя и фамилия'), nameInput),
     h('div', { class: 'field' }, h('label', { for: 'my-position' }, 'Должность'), positionInput),
     h('div', { class: 'field' }, h('label', { for: 'my-phone' }, 'Телефон'), phoneInput),
@@ -1439,6 +1594,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, renderRoute as rerender };
+export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, renderRoute as rerender };
 
 boot();

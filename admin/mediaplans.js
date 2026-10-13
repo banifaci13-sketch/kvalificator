@@ -17,7 +17,7 @@ const monthsText = (m) => `${m} ${plural(m, 'месяц', 'месяца', 'ме�
 
 // ---------- список ----------
 
-export async function renderPlans() {
+export async function renderPlans(params) {
   const list = h('div', {}, h('p', { class: 'muted' }, 'Загружаю…'));
   const creator = h('div');
   const count = h('span', { class: 'count num' });
@@ -89,6 +89,7 @@ export async function renderPlans() {
       .catch(() => {});
   }
 
+  if (params?.get('new') && plans.length) openCreator();
   if (!plans.length) {
     openCreator();
     fill(list, h('p', { class: 'note' }, 'Совет: сначала заполните «Нормативы» — средние ставки, CTR и конверсию по каналам из прошлых кампаний. Тогда канал добавляется в план одним кликом, а цифры в расчёте обоснованы.'));

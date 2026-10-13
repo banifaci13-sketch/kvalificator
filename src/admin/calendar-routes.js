@@ -30,7 +30,7 @@ const meetingBody = {
   },
 };
 
-export async function calendarRoutes(api, { calendar, video, config }) {
+export async function calendarRoutes(api, { calendar, video, config, notify = null }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof CalendarError) return reply.code(400).send({ error: err.message });
     if (err instanceof VideoError) {
@@ -74,9 +74,15 @@ export async function calendarRoutes(api, { calendar, video, config }) {
     },
   );
 
-  api.post('/admin/api/meetings', { schema: { body: { ...meetingBody, required: ['title', 'startsAt'] } } }, async (req) => ({
-    meeting: publicMeeting(calendar.create(req.body, req.user)),
-  }));
+  api.post('/admin/api/meetings', { schema: { body: { ...meetingBody, required: ['title', 'startsAt'] } } }, async (req) => {
+    const m = calendar.create(req.body, req.user);
+    // участникам — уведомление в кабинете
+    const when = new Date(`${m.starts_at.replace(' ', 'T')}Z`).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
+    for (const p of m.participants ?? []) {
+      notify?.add(p.id, { kind: 'meeting', text: `Вас пригласили на встречу «${m.title}» — ${when}`, href: `#/calendar?meeting=${m.id}`, actor: req.user.name, actorId: req.user.id });
+    }
+    return { meeting: publicMeeting(m) };
+  });
 
   api.get('/admin/api/meetings/:id', { schema: { params: idParams } }, async (req) => ({ meeting: publicMeeting(calendar.get(req.params.id)) }));
 

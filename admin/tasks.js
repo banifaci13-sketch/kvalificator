@@ -2,7 +2,7 @@
 // Ещё «Мои задачи» со всех проектов, клиенты агентства и карточка клиента.
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 import { setAssistantTask } from './assistant.js';
@@ -18,21 +18,20 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(ne
 const fmtDue = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 // Сейчас по Москве: ГГГГ-ММ-ДД ЧЧ:ММ — так же сравнивает сервер
 const nowMsk = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
-function dueState(t) {
+export function dueState(t) {
   if (!t.due || t.status === 'done') return '';
   const d = today();
   if (`${t.due} ${t.due_time ?? '23:59'}` < nowMsk()) return 'overdue';
   return t.due === d ? 'today' : '';
 }
 /** Подпись срока, как в YouGile: «7 окт. к 13:00», «сегодня к 18:00», «просрочено, 7 окт.». */
-function dueText(t) {
+export function dueText(t) {
   const state = dueState(t);
   const time = t.due_time ? ` к ${t.due_time}` : '';
   if (state === 'overdue') return `просрочено, ${t.due === today() ? 'сегодня' : fmtDue(t.due)}${time}`;
   if (state === 'today') return `сегодня${time}`;
   return `${fmtDue(t.due)}${time}`;
 }
-const initials = (name) => String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
 // Проект: id клиента или 'none' — «Общие задачи»
 const projectKey = (clientId) => (clientId == null ? 'none' : String(clientId));
@@ -446,7 +445,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
 // ---------- карточка задачи на доске ----------
 
 /** Круглая галочка «выполнено», как в YouGile: отмечается прямо на карточке. */
-function doneToggle(t, onToggled) {
+export function doneToggle(t, onToggled) {
   const isDone = t.status === 'done';
   return h(
     'span',
@@ -475,7 +474,7 @@ function doneToggle(t, onToggled) {
 
 // ---------- стикеры на карточке: срок, ответственный, важность ----------
 
-const PRIORITY = { 0: '', 1: 'Низкая', 2: 'Средняя', 3: 'Высокая', 4: 'Критичная' };
+export const PRIORITY = { 0: '', 1: 'Низкая', 2: 'Средняя', 3: 'Высокая', 4: 'Критичная' };
 const addDays = (n) => {
   const d = new Date(`${today()}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
@@ -562,10 +561,10 @@ function stickers(t, onChange) {
   const who = sticker(
     `s-who${t.assignee_name ? '' : ' empty'}`,
     t.assignee_name ? `Ответственный: ${t.assignee_name}` : 'Назначить ответственного',
-    t.assignee_name ? h('span', { class: 'avatar' }, initials(t.assignee_name)) : icon('person'),
+    t.assignee_name ? userAvatar({ id: t.assignee_id, name: t.assignee_name }) : icon('person'),
     (close) => [
       h('div', { class: 'pop-title' }, 'Ответственный'),
-      ...(team?.team ?? []).map((u) => option(u.id === ctx.me.id ? `${u.name} (я)` : u.name, u.id === t.assignee_id, () => save({ assigneeId: u.id }, close), h('span', { class: 'avatar' }, initials(u.name)))),
+      ...(team?.team ?? []).map((u) => option(u.id === ctx.me.id ? `${u.name} (я)` : u.name, u.id === t.assignee_id, () => save({ assigneeId: u.id }, close), userAvatar(u))),
       t.assignee_id ? option('Снять ответственного', false, () => save({ assigneeId: null }, close)) : null,
     ],
   );
@@ -812,6 +811,8 @@ export async function renderProjects(params) {
     await loadProjects().catch(() => {});
     load();
   }
+  // ссылка из уведомления или с «Главной» открывает задачу сразу
+  if (params.get('task')) openTask(Number(params.get('task')), { onChange: refresh });
 
   async function loadTasks() {
     const q = new URLSearchParams({ board: String(active.id) });
@@ -825,8 +826,8 @@ export async function renderProjects(params) {
       return;
     }
     // кто работает в проекте — аватары в шапке, как в YouGile
-    const names = [...new Set(tasks.map((t) => t.assignee_name).filter(Boolean))];
-    fill(people, names.slice(0, 6).map((n) => h('span', { class: 'avatar', title: n }, initials(n))));
+    const people_ = [...new Map(tasks.filter((t) => t.assignee_id).map((t) => [t.assignee_id, { id: t.assignee_id, name: t.assignee_name }])).values()];
+    fill(people, people_.slice(0, 6).map((u) => userAvatar(u)));
 
     fill(board);
     active.columns.forEach((c, i) => board.append(column(c, i, tasks.filter((t) => t.column_id === c.id))));

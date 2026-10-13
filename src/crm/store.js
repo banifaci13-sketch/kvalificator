@@ -62,6 +62,7 @@ export function createCrm({ db }) {
     updateClient: db.prepare("UPDATE clients SET name = ?, contact = ?, phone = ?, email = ?, site = ?, notes = ?, manager_id = ?, archived = ?, updated_at = datetime('now') WHERE id = ?"),
     deleteClient: db.prepare('DELETE FROM clients WHERE id = ?'),
     user: db.prepare('SELECT id, name FROM admin_users WHERE id = ? AND disabled = 0'),
+    team: db.prepare('SELECT id, name FROM admin_users WHERE disabled = 0'),
     // доски и колонки
     boards: db.prepare('SELECT * FROM task_boards WHERE client_id IS ? ORDER BY position, id'),
     board: db.prepare('SELECT * FROM task_boards WHERE id = ?'),
@@ -118,6 +119,12 @@ export function createCrm({ db }) {
     },
     addComment: db.prepare('INSERT INTO task_comments (task_id, kind, text, author) VALUES (?, ?, ?, ?)'),
   };
+
+  // уведомления в кабинете подключаются снаружи (crm.useNotify) — без них задачи работают как раньше
+  let notify = null;
+  const taskHref = (t) => `#/tasks?project=${t.client_id ?? 'none'}&task=${t.id}`;
+  const label = (t) => `«${t.title}»${t.client_name ? ` — ${t.client_name}` : ''}`;
+  const tell = (userId, t, kind, text, user) => notify?.add(userId, { kind, text, href: taskHref(t), actor: user.name, actorId: user.id });
 
   function tx(fn) {
     db.exec('BEGIN');
@@ -363,7 +370,9 @@ export function createCrm({ db }) {
       const { lastInsertRowid } = q.insertTask.run(
         col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, t.dueTime, user.name, user.id, done ? now() : null,
       );
-      return getTask(lastInsertRowid);
+      const created = getTask(lastInsertRowid);
+      if (created.assignee_id) tell(created.assignee_id, created, 'task_assigned', `Вам поручена задача ${label(created)}`, user);
+      return created;
     });
   }
 
@@ -409,7 +418,12 @@ export function createCrm({ db }) {
       }
       if (next.priority !== cur.priority) q.addComment.run(cur.id, 'event', next.priority ? `Важность: ${PRIORITIES[next.priority]}` : 'Важность снята', user.name);
     });
-    return getTask(id);
+    const t = getTask(id);
+    if (next.assigneeId && next.assigneeId !== cur.assignee_id) tell(next.assigneeId, t, 'task_assigned', `Вам поручена задача ${label(t)}`, user);
+    if (t.status === 'done' && cur.status !== 'done') {
+      for (const uid of new Set([cur.created_by_id, cur.assignee_id])) tell(uid, t, 'task_done', `Выполнена задача ${label(t)}`, user);
+    }
+    return t;
   }
 
   /** Привязать к задаче медиаплан, документ или встречу; событие пишется в историю задачи. */
@@ -503,11 +517,29 @@ export function createCrm({ db }) {
       q.deleteTask.run(t.id);
     },
     addComment: (id, body, user) => {
-      getTask(id);
+      const t = getTask(id);
       const msg = text(body, 5000);
       if (!msg) throw new CrmError('Пустой комментарий');
       q.addComment.run(Number(id), 'comment', msg, user.name);
+      if (notify) {
+        const short = msg.length > 140 ? `${msg.slice(0, 140)}…` : msg;
+        // упоминания «@Даниил» — по имени сотрудника в любом падеже
+        const mentioned = new Set();
+        for (const m of msg.matchAll(/@([A-Za-zА-Яа-яЁё]{2,})/g)) {
+          const word = m[1].toLowerCase();
+          for (const u of q.team.all()) {
+            const first = u.name.split(/\s+/)[0].toLowerCase();
+            const base = first.length > 4 ? first.slice(0, -1) : first;
+            if (word.startsWith(base)) mentioned.add(u.id);
+          }
+        }
+        for (const uid of mentioned) tell(uid, t, 'mention', `Вас упомянули в задаче ${label(t)}: ${short}`, user);
+        for (const uid of new Set([t.assignee_id, t.created_by_id])) if (uid && !mentioned.has(uid)) tell(uid, t, 'comment', `Комментарий к задаче ${label(t)}: ${short}`, user);
+      }
       return q.comments.all(Number(id));
+    },
+    useNotify: (n) => {
+      notify = n;
     },
   };
 }

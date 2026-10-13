@@ -213,7 +213,7 @@ test('обновление базы: старые статусы задач ст
   const path = join(mkdtempSync(join(tmpdir(), 'crm-')), 'old.db');
   const fresh = openDb(path);
   // состояние до досок: колонок и досок ещё нет, у задач — статусы
-  fresh.raw.exec(`DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
+  fresh.raw.exec(`DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
     CREATE TABLE tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL, title TEXT NOT NULL, description TEXT,
       status TEXT NOT NULL DEFAULT 'todo', priority INTEGER NOT NULL DEFAULT 0, assignee_id INTEGER REFERENCES admin_users(id), due TEXT,
@@ -264,4 +264,50 @@ test('связи задачи: медиаплан, документ и встр�
   assert.deepEqual((await anna({ url: `/admin/api/tasks/${task.id}` })).json().task.links, [], 'удалённый медиаплан пропадает из связей');
   const linkId = db.raw.prepare('SELECT id FROM task_links').get().id;
   assert.deepEqual((await anna({ method: 'DELETE', url: `/admin/api/tasks/${task.id}/links/${linkId}` })).json().links, []);
+});
+
+test('уведомления: поручили задачу, комментарий, упоминание, выполнено; «Мой день»', async () => {
+  const { as } = await setup();
+  const anna = await as('anna');
+  const oleg = await as('oleg');
+  const ira = await as('ira');
+  const team = (await anna({ url: '/admin/api/team' })).json().team;
+  const id = (name) => team.find((u) => u.name === name).id;
+  const client = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Таллер' } })).json().client;
+
+  const msk = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+  const task = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Медиаплан на ноябрь', clientId: client.id, assigneeId: id('Олег'), due: msk } })).json().task;
+  let n = (await oleg({ url: '/admin/api/notifications' })).json();
+  assert.equal(n.unread, 1);
+  assert.equal(n.items[0].text, 'Вам поручена задача «Медиаплан на ноябрь» — Таллер');
+  assert.equal(n.items[0].actor, 'Анна');
+  assert.equal(n.items[0].href, `#/tasks?project=${client.id}&task=${task.id}`);
+  assert.equal((await anna({ url: '/admin/api/notifications' })).json().unread, 0, 'себя не уведомляем');
+
+  await oleg({ method: 'POST', url: `/admin/api/tasks/${task.id}/comments`, payload: { text: '@Ира глянь ставки, пожалуйста' } });
+  assert.match((await ira({ url: '/admin/api/notifications' })).json().items[0].text, /^Вас упомянули в задаче «Медиаплан на ноябрь»/);
+  assert.match((await anna({ url: '/admin/api/notifications' })).json().items[0].text, /^Комментарий к задаче/, 'автор задачи узнаёт о комментарии');
+
+  await oleg({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { done: true } });
+  n = (await anna({ url: '/admin/api/notifications' })).json();
+  assert.equal(n.items[0].text, 'Выполнена задача «Медиаплан на ноябрь» — Таллер');
+  assert.equal((await anna({ method: 'POST', url: '/admin/api/notifications/read', payload: {} })).json().unread, 0);
+
+  // «Главная»: просрочка, сегодня, неделя, «горит»
+  await oleg({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Старый хвост', due: '2020-01-01', assigneeId: id('Олег') } });
+  await oleg({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Сегодняшнее', due: msk, dueTime: '23:59', assigneeId: id('Олег') } });
+  await oleg({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Когда-нибудь', assigneeId: id('Олег') } });
+  const day = (await oleg({ url: '/admin/api/home' })).json();
+  assert.equal(day.today, msk);
+  assert.deepEqual(day.tasks.overdue.map((t) => t.title), ['Старый хвост']);
+  assert.ok(day.tasks.today.some((t) => t.title === 'Сегодняшнее'));
+  assert.equal(day.tasks.nodue, 1);
+  assert.ok(Array.isArray(day.meetings) && Array.isArray(day.leads));
+  assert.deepEqual(day.hot.map((t) => t.title).slice(0, 2), ['Старый хвост', 'Сегодняшнее'], 'просрочка — первой');
+  assert.ok(!day.hot.some((t) => t.title === 'Когда-нибудь'));
+  assert.equal(day.stats.overdue, 1);
+  assert.equal(day.stats.doneWeek, 1, 'выполненная задача засчитана');
+  assert.equal(day.team, null, 'нагрузку команды видит только администратор');
+  const boss = (await anna({ url: '/admin/api/home' })).json();
+  assert.ok(boss.team.some((u) => u.name === 'Олег' && u.overdue === 1));
 });

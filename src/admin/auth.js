@@ -4,6 +4,9 @@
 
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readPrefs } from './prefs.js';
+import { imageInfo } from '../docs/media.js';
+
+export const AVATAR_MAX = 512 * 1024;
 
 const SESSION_DAYS = 30;
 const SCRYPT = { N: 16384, r: 8, p: 1 };
@@ -64,6 +67,7 @@ const publicUser = (u) =>
     hasPassword: Boolean(u.password_hash),
     hasYandex: Boolean(u.yandex_id),
     prefs: readPrefs(u.prefs),
+    avatar: u.avatar_ver ?? null,
   };
 
 export function createAuth(db) {
@@ -72,6 +76,11 @@ export function createAuth(db) {
     userByLogin: db.prepare('SELECT * FROM admin_users WHERE email = ?'),
     userById: db.prepare('SELECT * FROM admin_users WHERE id = ?'),
     setPrefs: db.prepare('UPDATE admin_users SET prefs = ? WHERE id = ?'),
+    setAvatar: db.prepare("INSERT INTO user_avatars (user_id, mime, data) VALUES (?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = datetime('now')"),
+    getAvatar: db.prepare('SELECT mime, data FROM user_avatars WHERE user_id = ?'),
+    removeAvatar: db.prepare('DELETE FROM user_avatars WHERE user_id = ?'),
+    avatarVer: db.prepare('UPDATE admin_users SET avatar_ver = ? WHERE id = ?'),
+    avatars: db.prepare('SELECT id, avatar_ver FROM admin_users WHERE avatar_ver IS NOT NULL'),
     listUsers: db.prepare('SELECT * FROM admin_users ORDER BY disabled, id'),
     countUsers: db.prepare('SELECT COUNT(*) AS n FROM admin_users'),
     countAdmins: db.prepare("SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin' AND disabled = 0"),
@@ -196,6 +205,26 @@ export function createAuth(db) {
     },
 
     /** Личные настройки внешнего вида: изменение поверх сохранённых (patch уже проверен). */
+    /** Фото профиля: JPEG или PNG до 512 КБ (браузер заранее обрезает до квадрата 256×256). */
+    setAvatar(id, buf) {
+      mustGet(id);
+      const info = imageInfo(buf);
+      if (!info || !info.width || !info.height) throw new AuthError('Нужна картинка JPG или PNG');
+      if (buf.length > AVATAR_MAX) throw new AuthError('Фото больше 512 КБ — уменьшите его');
+      if (info.width > 1024 || info.height > 1024) throw new AuthError('Фото больше 1024×1024 — уменьшите его');
+      q.setAvatar.run(id, info.mime, buf);
+      const ver = Date.now();
+      q.avatarVer.run(ver, id);
+      return ver;
+    },
+    removeAvatar(id) {
+      q.removeAvatar.run(id);
+      q.avatarVer.run(null, id);
+    },
+    getAvatar: (id) => q.getAvatar.get(Number(id)) ?? null,
+    /** { id: версия } — у кого из сотрудников есть фото. */
+    avatars: () => Object.fromEntries(q.avatars.all().map((r) => [r.id, r.avatar_ver])),
+
     setPrefs(id, patch) {
       const user = mustGet(id);
       const next = { ...readPrefs(user.prefs), ...patch };

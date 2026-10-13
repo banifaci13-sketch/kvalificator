@@ -327,6 +327,29 @@ const MIGRATIONS = [
      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX assistant_messages_user ON assistant_messages (user_id, id);`,
+
+  // Уведомления в кабинете (колокольчик): назначения, комментарии, упоминания, приглашения
+  `CREATE TABLE notifications (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id     INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+     kind        TEXT NOT NULL,
+     text        TEXT NOT NULL,
+     href        TEXT,
+     actor       TEXT,
+     actor_id    INTEGER,
+     read_at     TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX notifications_user ON notifications (user_id, read_at, id);`,
+
+  // Фото профиля: квадрат 256×256, хранится в своей базе на нашем сервере; версия — для кэша браузера
+  `CREATE TABLE user_avatars (
+     user_id     INTEGER PRIMARY KEY REFERENCES admin_users(id) ON DELETE CASCADE,
+     mime        TEXT NOT NULL,
+     data        BLOB NOT NULL,
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   ALTER TABLE admin_users ADD COLUMN avatar_ver INTEGER;`,
 ];
 
 /** Номер текущей версии схемы базы. */
