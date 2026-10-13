@@ -13,6 +13,8 @@ import { AuthError, ROLES } from './auth.js';
 import { docsRoutes } from './docs-routes.js';
 import { mediaplanRoutes } from './mediaplan-routes.js';
 import { crmRoutes } from './crm-routes.js';
+import { calendarRoutes } from './calendar-routes.js';
+import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
 const STATE_COOKIE = 'kval_oauth_state';
@@ -43,7 +45,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -65,6 +67,21 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
   // Расчёт медиаплана — один модуль для сервера и браузера: цифры в админке и в Excel совпадают
   const calcModule = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../mediaplan/calc.js'), 'utf8');
   app.get('/admin/lib/mediaplan-calc.js', (req, reply) => reply.header('content-type', 'text/javascript; charset=utf-8').header('cache-control', 'no-cache').send(calcModule));
+
+  // Подписка на календарь сотрудника (Яндекс Календарь, Google, iPhone) — по секретной ссылке, без входа
+  if (calendar) {
+    app.get('/calendar/:file', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+      const user = calendar.userByCalendarToken(req.params.file.replace(/\.ics$/, ''));
+      if (!user) return reply.code(404).send({ error: 'Календарь не найден' });
+      const day = 24 * 3600_000;
+      const meetings = calendar.meetingsForUser(user.id, new Date(Date.now() - 60 * day), new Date(Date.now() + 365 * day));
+      const host = config.publicUrl ? new URL(config.publicUrl).hostname : 'soroka-assistant';
+      return reply
+        .header('content-type', 'text/calendar; charset=utf-8')
+        .header('cache-control', 'no-cache')
+        .send(meetingsIcs(meetings, { name: `Встречи — ${user.name}`, host }));
+    });
+  }
 
   app.addHook('onSend', async (req, reply, payload) => {
     if (req.url.startsWith('/admin')) {
@@ -304,6 +321,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
+    if (calendar) await api.register(calendarRoutes, { calendar, video, config });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 

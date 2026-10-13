@@ -6,7 +6,7 @@ import { AnswerError } from '../core/qualifier.js';
 
 const CHANNEL = 'telegram';
 
-export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qualifier, log, botConfig }) {
+export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qualifier, log, botConfig, staffLink = null }) {
   const bot = new Bot(token, botConfig);
   const dm = bot.chatType('private');
 
@@ -16,6 +16,15 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     const code = ctx.match.trim();
     // Ссылка t.me/бот?start=test из админки — тестовый опрос, лид не уходит менеджерам
     if (code === 'test') return startNew(ctx, { test: true });
+    // Сотрудник подключает напоминания о встречах: ссылка из «Учётной записи» в админке
+    if (code.startsWith('staff_') && staffLink) {
+      const user = staffLink(code.slice(6), ctx.chat.id);
+      return ctx.reply(
+        user
+          ? `Готово, ${user.name}! Сюда будут приходить напоминания о встречах и утренний план на день.`
+          : 'Ссылка устарела. Откройте «Учётная запись» в админке и подключите Telegram заново.',
+      );
+    }
     if (code) {
       const session = qualifier.claimHandoff(code, CHANNEL, ctx.from.id, profileMeta(ctx.from));
       if (session) {

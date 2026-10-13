@@ -14,6 +14,9 @@ import { loadBrand } from './brand/index.js';
 import { createDocLibrary } from './docs/library.js';
 import { createMediaplans } from './mediaplan/store.js';
 import { createCrm } from './crm/store.js';
+import { createCalendar } from './calendar/store.js';
+import { createVideo } from './calendar/video.js';
+import { startReminders, telegramSender } from './calendar/reminders.js';
 import { closeBrowser } from './docs/browser.js';
 import { dirname, resolve } from 'node:path';
 
@@ -32,6 +35,8 @@ if (!notifier) log.warn('Получатели лидов не настроены
 
 const auth = createAuth(db.raw);
 bootstrapAdmin();
+const calendar = createCalendar({ db: db.raw });
+const crm = createCrm({ db: db.raw });
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
 const brand = loadBrand();
@@ -50,7 +55,9 @@ const app = await buildServer({
     brand,
     library,
     mediaplans: createMediaplans({ db: db.raw, library }),
-    crm: createCrm({ db: db.raw }),
+    crm,
+    calendar,
+    video: createVideo(config),
   },
 });
 
@@ -63,6 +70,10 @@ if (telegramBot && config.telegram.webhookUrl) {
 }
 
 const retryTimer = setInterval(() => qualifier.retryUndelivered().catch((err) => log.error({ err })), RETRY_INTERVAL_MS);
+// Напоминания о встречах и утренний план — в личный Telegram сотрудников (нужен токен бота)
+const reminders = config.telegram.token
+  ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl })
+  : null;
 
 await app.listen({ port: config.port, host: config.host });
 if (telegramBot) await startTelegramBot(telegramBot);
@@ -70,6 +81,7 @@ if (telegramBot) await startTelegramBot(telegramBot);
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
     clearInterval(retryTimer);
+    reminders?.stop();
     scenarioSource.stop();
     if (telegramBot?.isRunning()) await telegramBot.stop();
     await closeBrowser();
@@ -98,6 +110,7 @@ async function initTelegramBot() {
     privacyPolicyUrl: config.privacyPolicyUrl,
     qualifier,
     log,
+    staffLink: (code, chatId) => calendar.linkTelegram(code, chatId),
   });
   try {
     // Без ответа Telegram сайт должен работать: ждём не дольше 15 секунд

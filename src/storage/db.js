@@ -176,6 +176,52 @@ const MIGRATIONS = [
      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX task_comments_task ON task_comments (task_id);`,
+
+  // Календарь встреч; Telegram сотрудника для напоминаний; секретная ссылка на подписку календаря
+  `ALTER TABLE admin_users ADD COLUMN telegram_chat_id TEXT;
+   ALTER TABLE admin_users ADD COLUMN telegram_link_code TEXT;
+   ALTER TABLE admin_users ADD COLUMN calendar_token TEXT;
+   CREATE UNIQUE INDEX admin_users_calendar ON admin_users (calendar_token) WHERE calendar_token IS NOT NULL;
+   CREATE TABLE meetings (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     title        TEXT NOT NULL,
+     starts_at    TEXT NOT NULL,
+     duration     INTEGER NOT NULL DEFAULT 60,
+     format       TEXT NOT NULL DEFAULT 'online',
+     provider     TEXT,
+     link         TEXT,
+     host_link    TEXT,
+     external_id  TEXT,
+     place        TEXT,
+     client_id    INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     lead_id      INTEGER REFERENCES leads(id),
+     guests       TEXT,
+     agenda       TEXT,
+     remind       TEXT NOT NULL DEFAULT '[1440,15]',
+     cancelled    INTEGER NOT NULL DEFAULT 0,
+     created_by   TEXT,
+     created_by_id INTEGER REFERENCES admin_users(id),
+     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX meetings_start ON meetings (starts_at);
+   CREATE TABLE meeting_participants (
+     meeting_id  INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+     user_id     INTEGER NOT NULL REFERENCES admin_users(id),
+     PRIMARY KEY (meeting_id, user_id)
+   );
+   CREATE TABLE meeting_reminders_sent (
+     meeting_id  INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+     user_id     INTEGER NOT NULL,
+     offset_min  INTEGER NOT NULL,
+     sent_at     TEXT NOT NULL DEFAULT (datetime('now')),
+     PRIMARY KEY (meeting_id, user_id, offset_min)
+   );
+   CREATE TABLE digests_sent (
+     user_id     INTEGER NOT NULL,
+     day         TEXT NOT NULL,
+     PRIMARY KEY (user_id, day)
+   );`,
 ];
 
 /** Номер текущей версии схемы базы. */

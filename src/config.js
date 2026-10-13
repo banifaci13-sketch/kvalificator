@@ -51,6 +51,28 @@ export function loadConfig(env = process.env) {
       bootstrapEmail: env.ADMIN_EMAIL || null,
       bootstrapPassword: env.ADMIN_PASSWORD || null,
     },
+    // Видеовстречи: Zoom — приложение Server-to-Server OAuth; Телемост — OAuth-токен (Яндекс 360 для бизнеса)
+    zoom: {
+      accountId: env.ZOOM_ACCOUNT_ID || null,
+      clientId: env.ZOOM_CLIENT_ID || null,
+      clientSecret: env.ZOOM_CLIENT_SECRET || null,
+      // e-mail пользователя Zoom, от имени которого создаются встречи
+      user: env.ZOOM_USER || 'me',
+    },
+    telemost: {
+      token: env.TELEMOST_TOKEN || null,
+      // PUBLIC — без комнаты ожидания; ORGANIZATION — гости ждут, сотрудники входят сразу
+      waitingRoom: env.TELEMOST_WAITING_ROOM || 'PUBLIC',
+    },
+    // ИИ-помощник: YandexGPT (данные остаются в России) или Claude
+    ai: {
+      provider: env.AI_PROVIDER || (env.YANDEX_GPT_API_KEY ? 'yandexgpt' : env.ANTHROPIC_API_KEY ? 'anthropic' : null),
+      yandexApiKey: env.YANDEX_GPT_API_KEY || null,
+      yandexFolderId: env.YANDEX_GPT_FOLDER_ID || null,
+      yandexModel: env.YANDEX_GPT_MODEL || 'yandexgpt/latest',
+      anthropicApiKey: env.ANTHROPIC_API_KEY || null,
+      anthropicModel: env.ANTHROPIC_MODEL || 'claude-opus-5-5',
+    },
     logLevel: env.LOG_LEVEL || 'info',
   };
 }
