@@ -16,6 +16,7 @@ import { mediaplanRoutes } from './mediaplan-routes.js';
 import { crmRoutes } from './crm-routes.js';
 import { calendarRoutes } from './calendar-routes.js';
 import { aiRoutes } from './ai-routes.js';
+import { DEFAULT_PREFS, PrefsError, checkPrefsPatch } from './prefs.js';
 import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
@@ -264,6 +265,38 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         if (req.body.name !== undefined && !req.body.name.trim()) throw new AuthError('Укажите имя');
         const { name, position, phone } = req.body;
         return { user: auth.updateUser(req.user.id, { name, position, phone }) };
+      },
+    );
+
+    // Личные настройки внешнего вида кабинета — каждый меняет свои
+    api.patch(
+      '/admin/api/me/prefs',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            minProperties: 1,
+            additionalProperties: false,
+            properties: Object.fromEntries(Object.keys(DEFAULT_PREFS).map((k) => [k, { type: 'string', maxLength: 32 }])),
+          },
+        },
+      },
+      async (req, reply) => {
+        try {
+          checkPrefsPatch(req.body, {
+            mediaExists: (id) => {
+              try {
+                return Boolean(media?.get(id));
+              } catch {
+                return false;
+              }
+            },
+          });
+        } catch (err) {
+          if (err instanceof PrefsError) return reply.code(400).send({ error: err.message });
+          throw err;
+        }
+        return { prefs: auth.setPrefs(req.user.id, req.body) };
       },
     );
 

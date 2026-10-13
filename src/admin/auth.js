@@ -3,6 +3,7 @@
 // Роли: admin — управляет сотрудниками; manager — работает с лидами.
 
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { readPrefs } from './prefs.js';
 
 const SESSION_DAYS = 30;
 const SCRYPT = { N: 16384, r: 8, p: 1 };
@@ -62,6 +63,7 @@ const publicUser = (u) =>
     created_at: u.created_at,
     hasPassword: Boolean(u.password_hash),
     hasYandex: Boolean(u.yandex_id),
+    prefs: readPrefs(u.prefs),
   };
 
 export function createAuth(db) {
@@ -69,6 +71,7 @@ export function createAuth(db) {
   const q = {
     userByLogin: db.prepare('SELECT * FROM admin_users WHERE email = ?'),
     userById: db.prepare('SELECT * FROM admin_users WHERE id = ?'),
+    setPrefs: db.prepare('UPDATE admin_users SET prefs = ? WHERE id = ?'),
     listUsers: db.prepare('SELECT * FROM admin_users ORDER BY disabled, id'),
     countUsers: db.prepare('SELECT COUNT(*) AS n FROM admin_users'),
     countAdmins: db.prepare("SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin' AND disabled = 0"),
@@ -190,6 +193,14 @@ export function createAuth(db) {
         if (change.disabled) q.deleteUserSessions.run(id);
       }
       return publicUser(q.userById.get(id));
+    },
+
+    /** Личные настройки внешнего вида: изменение поверх сохранённых (patch уже проверен). */
+    setPrefs(id, patch) {
+      const user = mustGet(id);
+      const next = { ...readPrefs(user.prefs), ...patch };
+      q.setPrefs.run(JSON.stringify(next), id);
+      return readPrefs(JSON.stringify(next));
     },
 
     /** Удалить можно только отключённого сотрудника, за которым ничего не числится. */

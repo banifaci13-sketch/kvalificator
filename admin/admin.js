@@ -1,7 +1,7 @@
 // Админка ассистента агентства. Без сборки и зависимостей: модули ES, DOM строится через h(),
 // пользовательские данные выводятся только как текст (никакого innerHTML с данными).
 
-import { renderDocs, renderDoc, renderTemplates, leadDocuments, formDialog } from './docs.js';
+import { renderDocs, renderDoc, renderTemplates, leadDocuments, formDialog, fill, pickMedia } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderProjects, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
@@ -148,6 +148,7 @@ const routes = {
   test: renderTest,
   staff: renderStaff,
   account: renderAccount,
+  appearance: renderAppearance,
 };
 // Разделы со своими вкладками: ключ — первая вкладка (на неё ведёт пункт меню)
 const SECTION_TABS = {
@@ -164,6 +165,10 @@ const SECTION_TABS = {
   staff: [
     ['staff', 'Сотрудники'],
     ['integrations', 'Подключения'],
+  ],
+  account: [
+    ['account', 'Учётная запись'],
+    ['appearance', 'Внешний вид'],
   ],
   tasks: [
     ['tasks', 'Проекты'],
@@ -201,6 +206,9 @@ async function boot() {
   try {
     const me = await api('/admin/api/me');
     Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat });
+    if (me.user.prefs) window.sorokaTheme?.apply(me.user.prefs);
+    // без адреса раздела — стартовый раздел из личных настроек
+    if (!location.hash.replace(/^#\/?/, '') && me.user.prefs?.start) return navigate(me.user.prefs.start);
     renderRoute();
   } catch (err) {
     if (err.status !== 401) app.replaceChildren(h('p', { class: 'page error' }, err.message));
@@ -237,6 +245,21 @@ const THEMES = [
   ['dark', 'Тёмная тема'],
   ['system', 'Как в системе'],
 ];
+/** Личные настройки внешнего вида: применяются сразу, сохраняются в профиле на сервере. */
+async function savePrefs(patch) {
+  const next = { ...(ctx.me?.prefs ?? window.sorokaTheme?.prefs() ?? {}), ...patch };
+  window.sorokaTheme?.apply(next);
+  if (ctx.me) ctx.me.prefs = next;
+  try {
+    const { prefs } = await api('/admin/api/me/prefs', { method: 'PATCH', body: patch });
+    if (ctx.me) ctx.me.prefs = prefs;
+    return prefs;
+  } catch (err) {
+    if (err.status !== 401) toast(err.message);
+    return null;
+  }
+}
+
 function themeSwitch() {
   const current = window.sorokaTheme?.get() ?? 'system';
   const buttons = THEMES.map(([id, label]) =>
@@ -246,7 +269,7 @@ function themeSwitch() {
   box.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-    window.sorokaTheme?.set(btn.dataset.theme);
+    savePrefs({ theme: btn.dataset.theme });
     for (const b of buttons) b.setAttribute('aria-pressed', String(b === btn));
   });
   return box;
@@ -299,7 +322,7 @@ function shell(active, content) {
         h(
           'div',
           { class: 'me' },
-          meLink(active === 'account'),
+          meLink(active === 'account' || active === 'appearance'),
           h('button', { type: 'button', class: 'logout', title: 'Выйти', 'aria-label': 'Выйти', onclick: logout }, icon('logout')),
         ),
       ),
@@ -1144,6 +1167,126 @@ async function renderStaff() {
 }
 
 // ---------- мой пароль ----------
+
+// ---------- внешний вид кабинета ----------
+
+const APPEARANCE = {
+  theme: [
+    ['light', 'Светлая'],
+    ['dark', 'Тёмная'],
+    ['system', 'Как в системе'],
+  ],
+  accent: [
+    ['soroka', 'Фирменный бирюзовый'],
+    ['blue', 'Синий'],
+    ['violet', 'Фиолетовый'],
+    ['green', 'Зелёный'],
+    ['orange', 'Оранжевый'],
+    ['pink', 'Розовый'],
+    ['graphite', 'Графит'],
+  ],
+  background: [
+    ['none', 'Без фона'],
+    ['mist', 'Дымка'],
+    ['aurora', 'Сияние'],
+    ['sunset', 'Закат'],
+    ['night', 'Ночь'],
+    ['paper', 'Точки'],
+  ],
+  density: [
+    ['comfortable', 'Обычная', 'Больше воздуха, крупнее элементы'],
+    ['compact', 'Компактная', 'Больше задач и строк на экране'],
+  ],
+  sidebar: [
+    ['full', 'С подписями', 'Значки и названия разделов'],
+    ['icons', 'Только значки', 'Узкая панель — больше места под работу'],
+  ],
+  start: [
+    ['docs', 'Документы'],
+    ['tasks', 'Задачи — проекты'],
+    ['mytasks', 'Мои задачи'],
+    ['calendar', 'Календарь'],
+    ['plans', 'Медиапланы'],
+    ['leads', 'Квалификатор'],
+  ],
+};
+
+function renderAppearance() {
+  const prefs = { ...(ctx.me.prefs ?? {}) };
+  const saved = h('span', { class: 'save-state', role: 'status' });
+  const set = async (patch) => {
+    Object.assign(prefs, patch);
+    saved.textContent = 'Сохраняю…';
+    const ok = await savePrefs(patch);
+    saved.textContent = ok ? 'Сохранено' : '';
+    draw();
+  };
+  const body = h('div', { class: 'appearance' });
+  const tiles = (key, options, cls = '') =>
+    h(
+      'div',
+      { class: `opt-tiles ${cls}`, role: 'radiogroup', 'aria-label': key },
+      options.map(([v, label, hint]) =>
+        h(
+          'button',
+          { type: 'button', class: `opt-tile opt-${key}-${v}`, role: 'radio', 'aria-checked': String(prefs[key] === v), onclick: () => set({ [key]: v }) },
+          h('span', { class: `opt-preview pv-${key} pv-${v}`, 'aria-hidden': 'true' }),
+          h('span', { class: 'opt-label' }, label),
+          hint ? h('span', { class: 'opt-hint' }, hint) : null,
+        ),
+      ),
+    );
+  const ownPhoto = () => {
+    const m = /^media:(\d+)$/.exec(prefs.background ?? '');
+    return h(
+      'div',
+      { class: 'own-bg' },
+      h('button', {
+        type: 'button', class: 'btn',
+        onclick: async () => {
+          const item = await pickMedia();
+          if (item) set({ background: `media:${item.id}` });
+        },
+      }, m ? 'Выбрать другое фото' : 'Своё фото из медиатеки'),
+      m ? h('span', { class: 'muted small' }, 'Сейчас фоном — ваше фото') : h('span', { class: 'muted small' }, 'Подойдёт спокойный снимок без мелкого текста: поверх него ляжет полупрозрачная подложка.'),
+    );
+  };
+  function draw() {
+    fill(
+      body,
+      h('section', { class: 'panel' }, h('h2', {}, 'Тема'), tiles('theme', APPEARANCE.theme, 'tiles-3')),
+      h('section', { class: 'panel' }, h('h2', {}, 'Цвет акцента'), h('p', { class: 'sub' }, 'Кнопки, выделение, активный раздел. Документы и презентации остаются в фирменных цветах.'), tiles('accent', APPEARANCE.accent, 'tiles-swatch')),
+      h('section', { class: 'panel' }, h('h2', {}, 'Фон кабинета'), tiles('background', APPEARANCE.background, 'tiles-bg'), ownPhoto()),
+      h('section', { class: 'panel' }, h('h2', {}, 'Плотность'), tiles('density', APPEARANCE.density, 'tiles-2')),
+      h('section', { class: 'panel' }, h('h2', {}, 'Боковая панель'), tiles('sidebar', APPEARANCE.sidebar, 'tiles-2')),
+      h(
+        'section',
+        { class: 'panel' },
+        h('h2', {}, 'Стартовый раздел'),
+        h('p', { class: 'sub' }, 'Что открывается после входа.'),
+        h('select', { class: 'select', 'aria-label': 'Стартовый раздел', onchange: (e) => set({ start: e.target.value }) }, APPEARANCE.start.map(([v, l]) => h('option', { value: v, selected: prefs.start === v }, l))),
+      ),
+    );
+  }
+  draw();
+  app.replaceChildren(
+    ...shell('appearance', [
+      h(
+        'div',
+        { class: 'page-head' },
+        h('h1', {}, 'Внешний вид'),
+        saved,
+        h('span', { class: 'spacer' }),
+        h('button', {
+          type: 'button', class: 'btn',
+          onclick: () => set({ theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'docs' }),
+        }, 'Вернуть как было'),
+      ),
+      h('p', { class: 'lead-text' }, 'Настройки только ваши: коллеги их не видят. Они сохраняются в профиле и действуют на любом устройстве, где вы вошли.'),
+      body,
+    ]),
+  );
+}
 
 function renderAccount() {
   const nameInput = h('input', { class: 'input', id: 'my-name', value: ctx.me.name, maxlength: 100, required: true });
