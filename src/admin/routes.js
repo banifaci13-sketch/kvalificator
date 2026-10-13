@@ -242,6 +242,20 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     // ---------- сотрудники ----------
 
+    // Своё имя (видно в шапке, у задач и встреч) каждый меняет сам
+    api.patch(
+      '/admin/api/me',
+      {
+        schema: {
+          body: { type: 'object', required: ['name'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 100 } } },
+        },
+      },
+      async (req) => {
+        if (!req.body.name.trim()) throw new AuthError('Укажите имя');
+        return { user: auth.updateUser(req.user.id, { name: req.body.name }) };
+      },
+    );
+
     api.post(
       '/admin/api/me/password',
       {

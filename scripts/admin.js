@@ -4,6 +4,7 @@
 //   npm run admin -- add dmitry "Дмитрий" --admin        — администратор
 //   npm run admin -- passwd anna                          — новый случайный пароль
 //   npm run admin -- role anna admin|manager
+//   npm run admin -- rename anna "Анна Петрова"          — имя, которое видно в админке
 //   npm run admin -- disable anna   |   enable anna
 // В Docker: docker compose exec app node scripts/admin.js list
 
@@ -46,13 +47,17 @@ try {
       auth.setRoleByLogin(need(login, 'логин'), need(name, 'роль: admin или manager'));
       console.log('Роль изменена');
       break;
+    case 'rename':
+      auth.setNameByLogin(need(login, 'логин'), need(name, 'новое имя в кавычках'));
+      console.log(`Имя изменено: ${name}`);
+      break;
     case 'disable':
     case 'enable':
       auth.setDisabledByLogin(need(login, 'логин'), command === 'disable');
       console.log(command === 'disable' ? 'Доступ закрыт' : 'Доступ открыт');
       break;
     default:
-      console.log('Команды: list | add <логин> [имя] [--admin] | passwd <логин> | role <логин> admin|manager | disable <логин> | enable <логин>');
+      console.log('Команды: list | add <логин> [имя] [--admin] | passwd <логин> | role <логин> admin|manager | rename <логин> "Имя" | disable <логин> | enable <логин>');
   }
 } catch (err) {
   console.error(`Ошибка: ${err.message}`);

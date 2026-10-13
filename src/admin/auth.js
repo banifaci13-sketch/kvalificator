@@ -177,6 +177,12 @@ export function createAuth(db) {
       q.setPassword.run(hashPassword(password), user.id);
       q.deleteUserSessions.run(user.id);
     },
+    setNameByLogin(login, name) {
+      const user = byLogin(login);
+      const value = String(name ?? '').trim().slice(0, 100);
+      if (!value) throw new AuthError('Укажите имя');
+      q.setName.run(value, user.id);
+    },
     setDisabledByLogin(login, disabled) {
       const user = byLogin(login);
       assertKeepsAdmin(user, { disabled });

@@ -993,7 +993,21 @@ async function renderStaff() {
           'tr',
           { class: u.disabled ? 'disabled' : '' },
           h('td', { class: 'mono' }, u.login, self ? h('span', { class: 'muted' }, ' (вы)') : null),
-          h('td', {}, u.name),
+          h('td', {}, h('input', {
+            class: 'input name-input', value: u.name, maxlength: 100, 'aria-label': `Имя ${u.login}`,
+            onchange: (e) => {
+              const name = e.target.value.trim();
+              if (!name) return (e.target.value = u.name);
+              act(async () => {
+                await api(`/admin/api/users/${u.id}`, { method: 'PATCH', body: { name } });
+                toast('Имя изменено');
+                if (self) {
+                  ctx.me.name = name;
+                  document.querySelector('.user .name').textContent = name;
+                }
+              });
+            },
+          })),
           h('td', {}, roleSelect),
           h('td', {}, u.disabled ? h('span', { class: 'status', dataset: { s: 'lost' } }, 'Отключён') : h('span', { class: 'status', dataset: { s: 'won' } }, 'Активен')),
           h('td', { class: 'num nowrap' }, fmtDateTime(u.created_at)),
@@ -1024,6 +1038,32 @@ async function renderStaff() {
 // ---------- мой пароль ----------
 
 function renderAccount() {
+  const nameInput = h('input', { class: 'input', id: 'my-name', value: ctx.me.name, maxlength: 100, required: true });
+  const nameMsg = h('p', { role: 'status' });
+  const nameForm = h(
+    'form',
+    {
+      class: 'panel account-form',
+      onsubmit: async (e) => {
+        e.preventDefault();
+        try {
+          const { user } = await api('/admin/api/me', { method: 'PATCH', body: { name: nameInput.value.trim() } });
+          ctx.me.name = user.name;
+          document.querySelector('.user .name').textContent = user.name;
+          nameMsg.className = 'saved';
+          nameMsg.textContent = 'Имя изменено';
+        } catch (err) {
+          nameMsg.className = 'error';
+          nameMsg.textContent = err.message;
+        }
+      },
+    },
+    h('h2', {}, 'Как вас зовут'),
+    h('p', { class: 'muted' }, 'Имя видно в шапке, в задачах, встречах и документах.'),
+    h('div', { class: 'field' }, h('label', { for: 'my-name' }, 'Имя и фамилия'), nameInput),
+    nameMsg,
+    h('button', { type: 'submit', class: 'btn btn-primary' }, 'Сохранить'),
+  );
   const current = h('input', { class: 'input', id: 'cur', type: 'password', autocomplete: 'current-password' });
   const next = h('input', { class: 'input', id: 'next', type: 'password', autocomplete: 'new-password', minlength: 10, required: true });
   const repeat = h('input', { class: 'input', id: 'repeat', type: 'password', autocomplete: 'new-password', minlength: 10, required: true });
@@ -1058,7 +1098,7 @@ function renderAccount() {
     msg,
     submit,
   );
-  app.replaceChildren(...shell('account', [h('div', { class: 'page-head' }, h('h1', {}, 'Учётная запись')), notificationsPanel(), form]));
+  app.replaceChildren(...shell('account', [h('div', { class: 'page-head' }, h('h1', {}, 'Учётная запись')), nameForm, notificationsPanel(), form]));
 }
 
 // ---------- тестовый режим ----------

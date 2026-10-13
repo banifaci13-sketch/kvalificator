@@ -307,3 +307,24 @@ test('после обновления первый сотрудник старо
   assert.deepEqual(users.map((u) => [u.login, u.role]), [['owner@soroka.ru', 'admin'], ['second', 'manager']]);
   db.close();
 });
+
+test('имя: каждый меняет своё, чужое — только администратор', async () => {
+  const { app, auth } = await setup();
+  auth.addUser('dmitry', 'Дмитрий Карацапов', { password: PASSWORD, role: 'manager' });
+  const anna = await login(app);
+  const res = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'dmitry', password: PASSWORD } });
+  const dmitry = { cookie: `kval_admin=${res.cookies.find((c) => c.name === 'kval_admin').value}` };
+
+  const own = await app.inject({ method: 'PATCH', url: '/admin/api/me', headers: dmitry, payload: { name: 'Даниил Карацапов' } });
+  assert.equal(own.statusCode, 200);
+  assert.equal((await app.inject({ url: '/admin/api/me', headers: dmitry })).json().user.name, 'Даниил Карацапов');
+  assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me', headers: dmitry, payload: { name: '  ' } })).statusCode, 400);
+
+  const annaId = auth.listUsers().find((u) => u.login === 'anna@soroka-marketing.ru').id;
+  const dmitryId = auth.listUsers().find((u) => u.login === 'dmitry').id;
+  assert.equal((await app.inject({ method: 'PATCH', url: `/admin/api/users/${annaId}`, headers: dmitry, payload: { name: 'Взлом' } })).statusCode, 403);
+  const byAdmin = await app.inject({ method: 'PATCH', url: `/admin/api/users/${dmitryId}`, headers: anna, payload: { name: 'Даниил К.' } });
+  assert.equal(byAdmin.json().user.name, 'Даниил К.');
+  auth.setNameByLogin('dmitry', 'Даниил Карацапов');
+  assert.equal(auth.listUsers().find((u) => u.login === 'dmitry').name, 'Даниил Карацапов');
+});
