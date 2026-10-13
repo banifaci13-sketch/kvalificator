@@ -1,9 +1,10 @@
 // Поля каждого типа слайда: по ним админка строит формы редактора, проверка — подписи ошибок.
 // Типы полей: text, textarea, number, select, checkbox, lines (по строке на пункт),
 // repeater (список карточек с полями), group (вложенный объект), chart (данные графика).
+// image — картинка из медиатеки (номер), layout — вариант расположения элементов на слайде.
 // figure: true — факт (значение KPI, результат кейса, источник, период, клиент, дата): ИИ-правка его не меняет.
 
-import { SLIDE_TYPES } from './templates.js';
+import { SLIDE_TYPES, LAYOUTS } from './templates.js';
 
 const DATA_STATUS = {
   key: 'dataStatus',
@@ -20,15 +21,24 @@ const DATA_STATUS = {
 const SOURCE = { key: 'source', label: 'Источник данных', type: 'text', figure: true, hint: 'Откуда цифры: Метрика клиента, CRM, расчёт агентства…' };
 const PERIOD = { key: 'period', label: 'Период', type: 'text', figure: true, hint: 'Например: январь — март 2027' };
 const TITLE = { key: 'title', label: 'Заголовок', type: 'text', max: 90 };
+const layout = (type) => ({ key: 'layout', label: 'Расположение', type: 'layout', options: LAYOUTS[type] });
+const FIT = (def) => ({
+  key: 'fit', label: 'Как вписать', type: 'select',
+  options: def === 'contain'
+    ? [['contain', 'Показать целиком'], ['cover', 'Заполнить блок, обрезав края']]
+    : [['cover', 'Заполнить блок, обрезав края'], ['contain', 'Показать целиком']],
+});
 const CHART = { key: 'chart', label: 'График', type: 'chart' };
 
 export const SLIDE_FIELDS = {
   cover: [
+    layout('cover'),
     TITLE,
     { key: 'subtitle', label: 'Подзаголовок', type: 'textarea', max: 160 },
     { key: 'client', label: 'Клиент', type: 'text', figure: true },
     { key: 'date', label: 'Дата', type: 'text', figure: true },
     { key: 'author', label: 'Автор', type: 'text', figure: true },
+    { key: 'image', label: 'Фото (для раскладки «С фото справа»)', type: 'image' },
   ],
   section: [
     { key: 'number', label: 'Номер раздела', type: 'number' },
@@ -49,6 +59,7 @@ export const SLIDE_FIELDS = {
     DATA_STATUS, SOURCE, PERIOD,
   ],
   chart: [
+    layout('chart'),
     TITLE, CHART,
     { key: 'takeaway', label: 'Главный вывод', type: 'textarea', max: 140 },
     { key: 'points', label: 'Пояснения', type: 'lines', max: 4 },
@@ -82,6 +93,7 @@ export const SLIDE_FIELDS = {
     SOURCE, PERIOD,
   ],
   strategy: [
+    layout('strategy'),
     TITLE,
     { key: 'lead', label: 'Пояснение', type: 'textarea' },
     {
@@ -124,6 +136,27 @@ export const SLIDE_FIELDS = {
     },
     { key: 'assumptions', label: 'Допущения', type: 'textarea', hint: 'Конверсии в корзину и в продажу, средний чек — откуда' },
     DATA_STATUS, SOURCE, PERIOD,
+  ],
+  image: [
+    layout('image'),
+    TITLE,
+    { key: 'image', label: 'Фото или креатив', type: 'image' },
+    FIT('cover'),
+    { key: 'text', label: 'Текст', type: 'textarea', max: 400 },
+    { key: 'points', label: 'Пункты', type: 'lines', max: 4 },
+    { key: 'caption', label: 'Подпись к фото', type: 'text', max: 120 },
+  ],
+  gallery: [
+    layout('gallery'),
+    TITLE,
+    {
+      key: 'items', label: 'Креативы', type: 'repeater', max: 6, item: 'Креатив',
+      fields: [
+        { key: 'image', label: 'Изображение', type: 'image' },
+        { key: 'caption', label: 'Подпись', type: 'text', hint: 'Площадка, формат, результат' },
+      ],
+    },
+    FIT('contain'),
   ],
   proposal: [
     TITLE,
@@ -182,6 +215,7 @@ export function emptySlide(type) {
   if (type === 'chart' || type === 'analytics') base.chart = { type: 'column', categories: [], series: [{ name: '', values: [] }] };
   // списки — пустые, у повторяющихся блоков одна пустая карточка: так форму сразу видно целиком
   for (const f of SLIDE_FIELDS[type] ?? []) {
+    if (f.type === 'layout') base.layout = f.options[0][0];
     if (f.type === 'lines' || f.type === 'csv') base[f.key] = [];
     if (f.type === 'repeater') base[f.key] = [Object.fromEntries(f.fields.map((x) => [x.key, x.type === 'number' ? null : x.type === 'csv' ? [] : '']))];
     if (f.type === 'group') base[f.key] = {};

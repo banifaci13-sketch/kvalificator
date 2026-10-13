@@ -8,6 +8,7 @@ import { runQa } from '../docs/qa.js';
 import { BrowserUnavailable } from '../docs/browser.js';
 import { renderDeckHtml } from '../docs/render-html.js';
 import { slideCatalog, emptySlide, CHART_TYPES } from '../docs/schema.js';
+import { MediaError, MAX_BYTES } from '../docs/media.js';
 
 const MIME = {
   pdf: 'application/pdf',
@@ -18,9 +19,9 @@ const MIME = {
 const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
 const specSchema = { type: 'object', required: ['slides'], properties: { meta: { type: 'object' }, slides: { type: 'array', maxItems: 40 } } };
 
-export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
+export async function docsRoutes(api, { library, brand, db, scenarioSource, media = null }) {
   api.setErrorHandler((err, req, reply) => {
-    if (err instanceof DocError) return reply.code(400).send({ error: err.message });
+    if (err instanceof DocError || err instanceof MediaError) return reply.code(400).send({ error: err.message });
     if (err instanceof BrowserUnavailable) {
       req.log.error({ err }, 'Chromium недоступен');
       return reply.code(503).send({ error: err.message });
@@ -191,11 +192,11 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
     const doc = library.getDocument(req.params.id);
     const { slide } = req.query;
     const html = doc.spec.slides.length && (slide == null || slide < doc.spec.slides.length)
-      ? renderDeckHtml({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, brand, slide == null ? { mode: 'screen' } : { mode: 'print', only: [slide] })
+      ? renderDeckHtml(library.prepare({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, { inline: false }), brand, slide == null ? { mode: 'screen' } : { mode: 'print', only: [slide] })
       : '<!doctype html><meta charset="utf-8"><body style="font:16px sans-serif;color:#5F6B72;padding:40px">Добавьте первый слайд</body>';
     return reply
       .header('content-type', 'text/html; charset=utf-8')
-      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; frame-ancestors 'self'")
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; script-src 'unsafe-inline'; frame-ancestors 'self'")
       .header('x-frame-options', 'SAMEORIGIN')
       .send(html);
   });
@@ -203,7 +204,7 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
   api.post('/admin/api/documents/:id/qa', { schema: { params: idParams } }, async (req) => {
     const doc = library.getDocument(req.params.id);
     if (!doc.spec.slides.length) throw new DocError('В документе нет слайдов');
-    return { qa: await runQa(doc.spec, brand) };
+    return { qa: await runQa(library.prepare(doc.spec), brand) };
   });
 
   api.post(
@@ -237,6 +238,32 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
       .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'")
       .send(createReadStream(e.file));
   });
+
+  // ---------- медиатека: фото и креативы ----------
+
+  if (media) {
+    // картинка приходит «как есть» в теле запроса: без multipart и лишних зависимостей
+    api.addContentTypeParser(['image/jpeg', 'image/png'], { parseAs: 'buffer', bodyLimit: MAX_BYTES }, (req, body, done) => done(null, body));
+
+    api.post('/admin/api/media', { bodyLimit: MAX_BYTES, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
+      if (!Buffer.isBuffer(req.body)) throw new MediaError('Нужен файл JPG или PNG');
+      const name = decodeURIComponent(String(req.headers['x-file-name'] ?? '')).slice(0, 200);
+      return { media: media.save(req.body, { name, user: req.user }) };
+    });
+
+    api.get('/admin/api/media', async () => ({ media: media.list() }));
+
+    api.get('/admin/api/media/:id', { schema: { params: idParams } }, async (req, reply) => {
+      const m = media.get(req.params.id);
+      // номер навсегда привязан к одному файлу — браузер может хранить его долго
+      return reply.header('content-type', m.mime).header('cache-control', 'private, max-age=31536000, immutable').send(media.read(m));
+    });
+
+    api.delete('/admin/api/media/:id', { schema: { params: idParams } }, async (req) => {
+      media.remove(req.params.id, req.user);
+      return { ok: true };
+    });
+  }
 
   // ---------- документы из лида ----------
 

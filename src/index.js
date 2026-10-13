@@ -12,6 +12,7 @@ import { createAuth } from './admin/auth.js';
 import { createReports } from './admin/reports.js';
 import { loadBrand } from './brand/index.js';
 import { createDocLibrary } from './docs/library.js';
+import { createMedia } from './docs/media.js';
 import { createMediaplans } from './mediaplan/store.js';
 import { createCrm } from './crm/store.js';
 import { createCalendar } from './calendar/store.js';
@@ -41,7 +42,8 @@ const crm = createCrm({ db: db.raw });
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
 const brand = loadBrand();
-const library = createDocLibrary({ db: db.raw, brand, templatesDir: resolve(config.root, 'templates/decks'), dataDir: dirname(config.dbPath) });
+const media = createMedia({ db: db.raw, dir: dirname(config.dbPath) });
+const library = createDocLibrary({ db: db.raw, brand, templatesDir: resolve(config.root, 'templates/decks'), dataDir: dirname(config.dbPath), media });
 for (const p of brand.logo.problems) log.warn(`Логотип: ${p}`);
 const app = await buildServer({
   config,
@@ -55,6 +57,7 @@ const app = await buildServer({
     scenarioSource,
     brand,
     library,
+    media,
     mediaplans: createMediaplans({ db: db.raw, library }),
     crm,
     calendar,

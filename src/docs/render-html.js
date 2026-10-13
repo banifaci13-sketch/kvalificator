@@ -114,6 +114,11 @@ function elementHtml(el, brand, L, theme) {
       return `<table class="el tbl" ${attrs} style="${box(el)}"><colgroup>${cols}</colgroup>${head}<tbody>${rows}</tbody>${total}</table>`;
     }
 
+    case 'image': {
+      // object-fit: «cover» обрезает края, «contain» показывает целиком; пропорции не искажаются
+      return `<img class="el" ${attrs} data-objfit="${el.fit}" src="${esc(el.src)}" alt="" style="${box(el)}object-fit:${el.fit};border-radius:${el.radius ?? 0}px">`;
+    }
+
     case 'logo': {
       const asset = brand.logo[el.variant] ?? (el.variant === 'onDark' ? null : brand.logo.onLight);
       if (asset) {

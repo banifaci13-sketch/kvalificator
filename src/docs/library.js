@@ -11,7 +11,10 @@ const VAR_RE = /\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/gi;
 
 export class DocError extends Error {}
 
-export function createDocLibrary({ db, brand, templatesDir, dataDir }) {
+export function createDocLibrary({ db, brand, templatesDir, dataDir, media = null }) {
+  // картинки из медиатеки: в превью — ссылки, в выгрузке и проверке — внутри файла
+  const prepare = (spec, { inline = true } = {}) => (media ? media.hydrate(spec, { inline }) : spec);
+
   const q = {
     listTemplates: db.prepare('SELECT * FROM doc_templates ORDER BY updated_at DESC'),
     getTemplate: db.prepare('SELECT * FROM doc_templates WHERE id = ?'),
@@ -130,7 +133,7 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir }) {
   async function exportDocument(id, format, { force = false } = {}, user) {
     const doc = getDocument(id);
     if (!doc.spec.slides.length) throw new DocError('В документе нет слайдов');
-    const { qa, files, manifest } = await buildDeck({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, brand, { formats: [format], force });
+    const { qa, files, manifest } = await buildDeck(prepare({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }), brand, { formats: [format], force });
     const buf = files[format];
     const dir = join(dataDir, 'documents', String(doc.id));
     mkdirSync(dir, { recursive: true });
@@ -149,6 +152,7 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir }) {
   }
 
   return {
+    prepare,
     listTemplates,
     getTemplate,
     saveTemplate,

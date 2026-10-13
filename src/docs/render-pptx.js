@@ -100,6 +100,19 @@ export async function renderDeckPptx(deck, brand) {
         addTable(slide, el);
         return;
 
+      case 'image': {
+        if (!String(el.src).startsWith('data:')) throw new Error(`Изображение «${el.name}» не встроено в документ`);
+        // pptxgenjs вписывает картинку в блок сам: w/h — пропорции исходника, sizing — размер блока
+        const ratio = el.ih / el.iw;
+        slide.addImage({
+          data: el.src.slice(5),
+          x: pos.x, y: pos.y, w: pos.w, h: +(pos.w * ratio).toFixed(4),
+          sizing: { type: el.fit === 'contain' ? 'contain' : 'cover', w: pos.w, h: pos.h },
+          objectName: el.name,
+        });
+        return;
+      }
+
       case 'logo': {
         const asset = brand.logo[el.variant] ?? (el.variant === 'onDark' ? null : brand.logo.onLight);
         if (asset) {

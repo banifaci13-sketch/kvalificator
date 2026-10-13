@@ -430,7 +430,7 @@ details.menu summary::-webkit-details-marker { display: none; }
 .rep-item:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
 .rep-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
 .rep-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
-.rep-fields .f-textarea, .rep-fields .f-lines { grid-column: 1 / -1; }
+.rep-fields .f-textarea, .rep-fields .f-lines, .rep-fields .f-image { grid-column: 1 / -1; }
 .grid-wrap { overflow-x: auto; margin-bottom: 8px; }
 .grid-edit { border-collapse: collapse; width: 100%; }
 .grid-edit th, .grid-edit td { padding: 2px; text-align: left; font-weight: 400; }
@@ -700,6 +700,40 @@ details.menu summary::-webkit-details-marker { display: none; }
 .board-counts b { color: var(--text); margin-left: auto; }
 .board-flags { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; min-height: 20px; }
 .board-flags .tag { margin: 0; }
+
+/* ---------- фото, медиатека, раскладки ---------- */
+.f-image .label { font-size: 13px; font-weight: 600; }
+.image-pick { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.image-actions { flex: 1; min-width: 180px; }
+.image-thumb { width: 160px; height: 100px; object-fit: cover; border-radius: var(--radius-s); border: 1px solid var(--line); background: var(--surface-2); flex: none; }
+.image-thumb.empty { display: grid; place-items: center; color: var(--muted); font-size: 12px; border-style: dashed; }
+.image-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.layout-pick { border: 0; padding: 0; margin: 0 0 14px; }
+.layout-pick legend { font-size: 13px; font-weight: 600; padding: 0; margin-bottom: 6px; }
+.layout-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.layout-tile { display: grid; gap: 6px; padding: 8px; border: 1.5px solid var(--line); border-radius: var(--radius-s); cursor: pointer; font-size: 12px; text-align: center; background: var(--surface); }
+.layout-tile:hover { border-color: var(--muted); }
+.layout-tile:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.layout-tile:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.layout-tile input { position: absolute; opacity: 0; pointer-events: none; }
+.scheme { position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 3px; background: var(--soroka-paper); border: 1px solid var(--line); overflow: hidden; }
+.scheme.dark { background: var(--soroka-ink); border-color: var(--soroka-ink); }
+.scheme i { position: absolute; border-radius: 1px; }
+.scheme .s-t { background: #b9c4c9; }
+.scheme.dark .s-t, .scheme .s-l { background: #e8eef0; }
+.scheme .s-p { background: var(--soroka-accent); opacity: .75; }
+.scheme .s-c { background: repeating-linear-gradient(90deg, var(--soroka-accent) 0 10%, transparent 10% 18%); opacity: .7; }
+.scheme .s-b { background: #dde5e8; }
+.scheme .s-d { background: var(--soroka-ink); }
+.media-dialog { width: min(880px, calc(100% - 32px)); }
+.media-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.media-head h2 { margin: 0; flex: 1; }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 60vh; overflow-y: auto; margin-bottom: 12px; }
+.media-item { display: grid; gap: 4px; padding: 6px; border: 1.5px solid var(--line); border-radius: var(--radius-s); background: var(--surface); cursor: pointer; text-align: left; color: var(--text); }
+.media-item:hover, .media-item:focus-visible { border-color: var(--accent); }
+.media-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; background: var(--surface-2); }
+.media-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-size { font-size: 11px; color: var(--muted); }
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 

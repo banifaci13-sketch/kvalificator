@@ -95,6 +95,126 @@ function download(exportId) {
   a.remove();
 }
 
+// ---------- фото: подготовка, загрузка, медиатека ----------
+
+const MAX_SIDE = 2560;
+
+/**
+ * Перед загрузкой браузер сам разворачивает фото по EXIF (иначе в PowerPoint оно ляжет набок),
+ * уменьшает до 2560 px и переводит WebP/HEIC в JPEG — сервер принимает только JPG и PNG.
+ */
+async function prepareImage(file) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    throw new Error('Не удалось открыть файл — сохраните его как JPG или PNG');
+  }
+  const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  const png = file.type === 'image/png';
+  // PNG без уменьшения — как есть (прозрачность, логотипы, скриншоты)
+  if (png && k === 1) return file;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * k);
+  canvas.height = Math.round(bmp.height * k);
+  canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('Не удалось подготовить изображение'))), png ? 'image/png' : 'image/jpeg', 0.9));
+}
+
+export async function uploadImage(file) {
+  const blob = await prepareImage(file);
+  const res = await fetch('/admin/api/media', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': blob.type, 'x-file-name': encodeURIComponent(file.name) },
+    body: blob,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Не удалось загрузить изображение');
+  return data.media;
+}
+
+/** Окно медиатеки: выбрать загруженное раньше или загрузить новое. Возвращает выбранное или null. */
+export function pickMedia() {
+  return new Promise((done) => {
+    let chosen = null;
+    const grid = h('div', { class: 'media-grid' }, h('p', { class: 'muted' }, 'Загружаю…'));
+    const fileInput = h('input', {
+      type: 'file', accept: 'image/*', multiple: true, hidden: true,
+      onchange: async (e) => {
+        for (const file of e.target.files ?? []) {
+          try {
+            await uploadImage(file);
+          } catch (err) {
+            toast(`${file.name}: ${err.message}`);
+          }
+        }
+        load();
+      },
+    });
+    const dlg = h(
+      'dialog',
+      { class: 'dialog media-dialog', 'aria-labelledby': 'media-title' },
+      h('div', { class: 'media-head' }, h('h2', { id: 'media-title' }, 'Медиатека'), fileInput, h('button', { type: 'button', class: 'btn btn-primary btn-s', onclick: () => fileInput.click() }, 'Загрузить файлы')),
+      grid,
+      h('div', { class: 'work-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Закрыть')),
+    );
+    dlg.addEventListener('close', () => {
+      dlg.remove();
+      done(chosen);
+    });
+    async function load() {
+      try {
+        const { media } = await api('/admin/api/media');
+        if (!media.length) return fill(grid, h('p', { class: 'muted' }, 'Пока пусто — загрузите фото или креативы.'));
+        fill(
+          grid,
+          media.map((m) =>
+            h(
+              'button',
+              { type: 'button', class: 'media-item', title: m.name ?? '', onclick: () => { chosen = m; dlg.close(); } },
+              h('img', { src: `/admin/api/media/${m.id}`, alt: m.name ?? '', loading: 'lazy' }),
+              h('span', { class: 'media-name' }, m.name ?? `Изображение ${m.id}`),
+              h('span', { class: 'media-size num' }, `${m.width}×${m.height}`),
+            ),
+          ),
+        );
+      } catch (err) {
+        fill(grid, h('p', { class: 'error' }, err.message));
+      }
+    }
+    document.body.append(dlg);
+    dlg.showModal();
+    load();
+  });
+}
+
+/** Мини-схема раскладки: прямоугольники в долях слайда — фото, текст, график, карточки. */
+const SCHEMES = {
+  'cover:left': [['t', 8, 30, 60, 14], ['t', 8, 50, 40, 6]],
+  'cover:center': [['t', 20, 30, 60, 14], ['t', 30, 50, 40, 6]],
+  'cover:image': [['p', 54, 0, 46, 100], ['t', 8, 30, 40, 14], ['t', 8, 50, 30, 6]],
+  'chart:side': [['t', 6, 8, 50, 8], ['c', 6, 24, 56, 64], ['b', 66, 24, 28, 64]],
+  'chart:side-left': [['t', 6, 8, 50, 8], ['b', 6, 24, 28, 64], ['c', 38, 24, 56, 64]],
+  'chart:wide': [['t', 6, 8, 50, 8], ['c', 6, 22, 88, 44], ['b', 6, 72, 88, 16]],
+  'strategy:columns': [['t', 6, 8, 50, 8], ['b', 6, 26, 28, 64], ['b', 36, 26, 28, 64], ['b', 66, 26, 28, 64]],
+  'strategy:rows': [['t', 6, 8, 50, 8], ['b', 6, 26, 88, 18], ['b', 6, 48, 88, 18], ['b', 6, 70, 88, 18]],
+  'image:right': [['t', 6, 10, 40, 10], ['t', 6, 26, 36, 30], ['p', 52, 8, 42, 80]],
+  'image:left': [['p', 6, 8, 42, 80], ['t', 54, 10, 40, 10], ['t', 54, 26, 36, 30]],
+  'image:wide': [['t', 6, 8, 50, 8], ['p', 6, 22, 88, 50], ['t', 6, 78, 60, 8]],
+  'image:full': [['p', 0, 0, 100, 100], ['d', 0, 68, 100, 32], ['l', 6, 74, 60, 8]],
+  'gallery:grid': [['t', 6, 8, 50, 8], ['p', 6, 24, 27, 30], ['p', 37, 24, 27, 30], ['p', 68, 24, 27, 30], ['p', 6, 58, 27, 30], ['p', 37, 58, 27, 30], ['p', 68, 58, 27, 30]],
+  'gallery:feature': [['t', 6, 8, 50, 8], ['p', 6, 24, 52, 64], ['p', 62, 24, 32, 30], ['p', 62, 58, 32, 30]],
+};
+function layoutScheme(type, value) {
+  const dark = (type === 'cover') || value === 'full';
+  return h(
+    'span',
+    { class: `scheme${dark ? ' dark' : ''}`, 'aria-hidden': 'true' },
+    (SCHEMES[`${type}:${value}`] ?? []).map(([k, x, y, w, hh]) => h('i', { class: `s-${k}`, style: `left:${x}%;top:${y}%;width:${w}%;height:${hh}%` })),
+  );
+}
+
 // ---------- список документов ----------
 
 export async function renderDocs(params) {
@@ -672,9 +792,89 @@ export async function renderDoc(params) {
         return repeater(f, obj, id, required);
       case 'chart':
         return chartEditor(f, obj, id);
+      case 'image':
+        return imageField(f, obj, id);
+      case 'layout':
+        return layoutField(f, obj, id, slides[current].type);
       default:
         return null;
     }
+  }
+
+  // ----- фото и раскладки -----
+  function imageField(f, obj, id) {
+    const box = h('div', { class: 'field f-image' });
+    const draw = () => {
+      const mediaId = typeof obj[f.key] === 'number' ? obj[f.key] : null;
+      const set = (v) => {
+        obj[f.key] = v;
+        changed();
+        draw();
+      };
+      const fileInput = h('input', {
+        type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic,image/*', hidden: true, id: `${id}-file`,
+        onchange: async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          status.textContent = 'Загружаю…';
+          try {
+            set((await uploadImage(file)).id);
+          } catch (err) {
+            status.textContent = '';
+            toast(err.message);
+          }
+        },
+      });
+      const status = h('span', { class: 'hint', role: 'status' });
+      fill(
+        box,
+        h('span', { class: 'label' }, f.label),
+        h(
+          'div',
+          { class: 'image-pick' },
+          mediaId
+            ? h('img', { class: 'image-thumb', src: `/admin/api/media/${mediaId}`, alt: '' })
+            : h('div', { class: 'image-thumb empty' }, 'Нет изображения'),
+          h(
+            'div',
+            { class: 'image-actions' },
+            fileInput,
+            h('button', { type: 'button', class: 'btn btn-s', onclick: () => fileInput.click() }, mediaId ? 'Заменить' : 'Загрузить'),
+            h('button', { type: 'button', class: 'btn btn-s', onclick: async () => { const m = await pickMedia(); if (m) set(m.id); } }, 'Из медиатеки'),
+            mediaId ? h('button', { type: 'button', class: 'btn btn-s', onclick: () => set(null) }, 'Убрать') : null,
+            status,
+          ),
+        ),
+        h('span', { class: 'hint' }, 'JPG, PNG или фото с телефона. Большие снимки уменьшим до 2560 px — презентация останется лёгкой.'),
+      );
+    };
+    draw();
+    return box;
+  }
+
+  function layoutField(f, obj, id, type) {
+    obj[f.key] ??= f.options[0][0];
+    const group = h('fieldset', { class: 'layout-pick' }, h('legend', {}, f.label));
+    const draw = () =>
+      fill(
+        group,
+        h('legend', {}, f.label),
+        h(
+          'div',
+          { class: 'layout-tiles' },
+          f.options.map(([v, label]) =>
+            h(
+              'label',
+              { class: 'layout-tile' },
+              h('input', { type: 'radio', name: id, value: v, checked: obj[f.key] === v, onchange: () => { obj[f.key] = v; changed(); draw(); renderForm(); } }),
+              layoutScheme(type, v),
+              h('span', {}, label),
+            ),
+          ),
+        ),
+      );
+    draw();
+    return group;
   }
 
   function repeater(f, obj, id, required) {

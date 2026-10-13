@@ -11,6 +11,8 @@ export const SLIDE_TYPES = {
   strategy: { label: 'Стратегия', theme: 'light', required: ['title', 'pillars'] },
   mediaplan: { label: 'Медиаплан', theme: 'light', required: ['title', 'rows', 'dataStatus'], data: true },
   ecomplan: { label: 'Медиаплан: интернет-магазин', theme: 'light', required: ['title', 'rows', 'dataStatus'], data: true },
+  image: { label: 'Фото или креатив', theme: 'light', required: ['title'] },
+  gallery: { label: 'Креативы', theme: 'light', required: ['title', 'items'] },
   proposal: { label: 'Коммерческое предложение', theme: 'light', required: ['title', 'items'] },
   closing: { label: 'Следующий шаг и контакты', theme: 'dark', required: ['title'] },
 };
@@ -32,13 +34,53 @@ export function fmtMoneyShort(v, currency = '₽') {
 export function renderSlide(slide, ctx) {
   const type = SLIDE_TYPES[slide.type];
   if (!type) throw new Error(`Неизвестный тип слайда «${slide.type}»`);
-  const elements = BUILDERS[slide.type](slide, ctx);
-  return { type: slide.type, theme: type.theme, elements, notes: slide.notes ?? null };
+  // сборщик возвращает список элементов или { theme, elements }, если раскладка меняет тему (фото на весь слайд)
+  const built = BUILDERS[slide.type](slide, ctx);
+  const elements = (Array.isArray(built) ? built : built.elements).filter(Boolean);
+  const theme = Array.isArray(built) ? type.theme : built.theme ?? type.theme;
+  return { type: slide.type, theme, elements, notes: slide.notes ?? null };
 }
+
+/**
+ * Раскладки — варианты расположения внутри фирменной сетки. Первая — по умолчанию.
+ * Свободного перетаскивания нет намеренно: так любой вариант проходит проверку и одинаков в PDF и PowerPoint.
+ */
+export const LAYOUTS = {
+  cover: [['left', 'Текст слева'], ['center', 'По центру'], ['image', 'С фото справа']],
+  chart: [['side', 'Вывод справа'], ['side-left', 'Вывод слева'], ['wide', 'График во всю ширину']],
+  strategy: [['columns', 'Колонки'], ['rows', 'Строки']],
+  image: [['right', 'Фото справа'], ['left', 'Фото слева'], ['wide', 'Фото во всю ширину'], ['full', 'Фото на весь слайд']],
+  gallery: [['grid', 'Сетка'], ['feature', 'Одно крупное']],
+};
+const layoutOf = (slide) => {
+  const list = LAYOUTS[slide.type];
+  return list?.some(([v]) => v === slide.layout) ? slide.layout : list?.[0][0];
+};
 
 // ---------- общие части ----------
 
 const text = (name, box, style, value, extra = {}) => ({ kind: 'text', name, ...box, style, text: value, color: 'ink', ...extra });
+
+/**
+ * Изображение из медиатеки. После подготовки документа (media.hydrate) в слайде лежит
+ * { src, width, height } или { missing: true }; пока картинки нет — заглушка, которую видно в превью.
+ */
+function picture(name, box, img, { fit = 'cover', radius = 16, dark = false } = {}) {
+  if (img?.src) {
+    const out = [];
+    // «целиком» — под картинкой фон ячейки, чтобы поля вокруг не выглядели дырой
+    if (fit === 'contain') out.push({ kind: 'rect', name: `${name}-bg`, ...box, fill: dark ? 'ink' : 'mist', radius });
+    out.push({ kind: 'image', name, ...box, src: img.src, mime: img.mime, iw: img.width, ih: img.height, fit, radius });
+    return out;
+  }
+  return [
+    { kind: 'rect', name: `${name}-empty`, ...box, fill: dark ? 'steel' : 'mist', radius },
+    text(`${name}-hint`, { x: box.x + 24, y: box.y + box.h / 2 - 20, w: box.w - 48, h: 40 }, 'small', img?.missing ? 'Изображение удалено — выберите другое' : 'Добавьте изображение', {
+      align: 'center',
+      color: dark ? 'onDark' : 'steel',
+    }),
+  ];
+}
 
 function contentTitle(slide, L) {
   return text('title', L.titleBox, 'title', slide.title, { placeholder: 'title' });
@@ -63,6 +105,30 @@ function dataFooter(slide, ctx) {
 const BUILDERS = {
   cover(slide, { L }) {
     const meta = [slide.client, slide.date].filter(Boolean).join(', ');
+    const layout = layoutOf(slide);
+    if (layout === 'center') {
+      return [
+        { kind: 'logo', name: 'logo', x: L.M, y: L.top, h: 40, variant: 'onDark' },
+        text('title', { x: L.M, y: 300, w: L.CW, h: 336 }, 'display', slide.title, { color: 'onDark', align: 'center' }),
+        slide.subtitle ? text('subtitle', { x: L.M + 160, y: 672, w: L.CW - 320, h: 104 }, 'lead', slide.subtitle, { color: 'onDarkMuted', align: 'center' }) : null,
+        { kind: 'rect', name: 'accent', x: L.W / 2 - 48, y: 820, w: 96, h: 8, fill: 'accent', radius: 4 },
+        meta || slide.author
+          ? text('meta', { x: L.M, y: 864, w: L.CW, h: 40 }, 'small', [meta, slide.author].filter(Boolean).join(' — '), { color: 'onDark', align: 'center' })
+          : null,
+      ];
+    }
+    if (layout === 'image') {
+      const textW = 800;
+      return [
+        ...picture('cover-image', { x: 1008, y: 0, w: L.W - 1008, h: L.H }, slide.image, { fit: 'cover', radius: 0, dark: true }),
+        { kind: 'logo', name: 'logo', x: L.M, y: L.top, h: 40, variant: 'onDark' },
+        text('title', { x: L.M, y: 260, w: textW, h: 420 }, 'title', slide.title, { color: 'onDark' }),
+        slide.subtitle ? text('subtitle', { x: L.M, y: 700, w: textW, h: 120 }, 'lead', slide.subtitle, { color: 'onDarkMuted' }) : null,
+        { kind: 'rect', name: 'accent', x: L.M, y: 848, w: 96, h: 8, fill: 'accent', radius: 4 },
+        meta ? text('meta', { x: L.M, y: 888, w: textW, h: 40 }, 'small', meta, { color: 'onDark' }) : null,
+        slide.author ? text('author', { x: L.M, y: 936, w: textW, h: 40 }, 'small', slide.author, { color: 'onDarkMuted' }) : null,
+      ];
+    }
     return [
       { kind: 'logo', name: 'logo', x: L.M, y: L.top, h: 40, variant: 'onDark' },
       text('title', { x: L.M, y: 300, w: 1440, h: 336 }, 'display', slide.title, { color: 'onDark' }),
@@ -104,12 +170,27 @@ const BUILDERS = {
 
   chart(slide, ctx) {
     const { L } = ctx;
+    const layout = layoutOf(slide);
+    if (layout === 'wide') {
+      const pointsW = 560;
+      return [
+        contentTitle(slide, L),
+        { kind: 'chart', name: 'chart', x: L.M, y: L.contentTop - 16, w: L.CW, h: 456, chart: slide.chart },
+        text('takeaway', { x: L.M, y: 744, w: slide.points?.length ? L.CW - pointsW - 64 : L.CW, h: 168 }, 'subtitle', slide.takeaway),
+        slide.points?.length
+          ? text('points', { x: L.W - L.M - pointsW, y: 744, w: pointsW, h: 168 }, 'small', null, { bullets: slide.points.slice(0, 3), color: 'ink' })
+          : null,
+        ...dataFooter(slide, ctx),
+      ].filter(Boolean);
+    }
     const chartW = 1088;
-    const sideX = L.M + chartW + 64;
-    const sideW = L.W - L.M - sideX;
+    const sideW = L.CW - chartW - 64;
+    // «вывод слева»: панель и график меняются местами
+    const chartX = layout === 'side-left' ? L.M + sideW + 64 : L.M;
+    const sideX = layout === 'side-left' ? L.M : L.M + chartW + 64;
     return [
       contentTitle(slide, L),
-      { kind: 'chart', name: 'chart', x: L.M, y: L.contentTop, w: chartW, h: 600, chart: slide.chart },
+      { kind: 'chart', name: 'chart', x: chartX, y: L.contentTop, w: chartW, h: 600, chart: slide.chart },
       { kind: 'rect', name: 'takeaway-card', x: sideX, y: L.contentTop, w: sideW, h: 600, fill: 'mist', radius: 16 },
       text('takeaway', { x: sideX + 40, y: L.contentTop + 40, w: sideW - 80, h: 200 }, 'subtitle', slide.takeaway),
       slide.points?.length
@@ -165,6 +246,25 @@ const BUILDERS = {
     const top = slide.lead ? 360 : 304;
     const out = [contentTitle(slide, L)];
     if (slide.lead) out.push(text('lead', { x: L.M, y: 256, w: L.CW, h: 80 }, 'lead', slide.lead, { color: 'steel' }));
+    if (layoutOf(slide) === 'rows') {
+      // направления строками: номер и название слева, что делаем — по центру, каналы — справа
+      const gap = 24;
+      const rowH = Math.floor((904 - top - gap * (pillars.length - 1)) / pillars.length);
+      const channelsW = 360;
+      pillars.forEach((p, i) => {
+        const y = top + i * (rowH + gap);
+        const inner = rowH - 48;
+        out.push({ kind: 'rect', name: `pillar-${i}-card`, x: L.M, y, w: L.CW, h: rowH, fill: 'mist', radius: 16 });
+        out.push(text(`pillar-${i}-n`, { x: L.M + 32, y: y + 24, w: 80, h: 56 }, 'subtitle', String(i + 1).padStart(2, '0'), { color: 'accentText' }));
+        out.push(text(`pillar-${i}-title`, { x: L.M + 136, y: y + 24, w: 440, h: inner }, 'bodyStrong', p.title));
+        const textW = L.CW - 640 - (p.channels?.length ? channelsW + 32 : 32);
+        out.push(text(`pillar-${i}-text`, { x: L.M + 608, y: y + 24, w: textW, h: inner }, 'small', p.text, { color: 'steel' }));
+        if (p.channels?.length) {
+          out.push(text(`pillar-${i}-channels`, { x: L.M + L.CW - channelsW - 32, y: y + 24, w: channelsW, h: inner }, 'caption', p.channels.join(', '), { color: 'accentText', align: 'right' }));
+        }
+      });
+      return [...out, ...dataFooter(slide, ctx)];
+    }
     pillars.forEach((p, i) => {
       const { x, w } = cols[i];
       out.push({ kind: 'rect', name: `pillar-${i}-card`, x, y: top, w, h: 904 - top, fill: 'mist', radius: 16 });
@@ -286,6 +386,79 @@ const BUILDERS = {
       slide.validUntil ? text('valid', { x: sideX + 40, y: 824, w: sideW - 80, h: 48 }, 'caption', `Предложение действует до ${slide.validUntil}`, { color: 'steel' }) : null,
       ...dataFooter(slide, ctx),
     ].filter(Boolean);
+  },
+
+  // Фото или креатив с текстом: раскладка задаёт, где фото
+  image(slide, ctx) {
+    const { L } = ctx;
+    const layout = layoutOf(slide);
+    const fit = slide.fit === 'contain' ? 'contain' : 'cover';
+    if (layout === 'full') {
+      const lines = [slide.text, slide.caption].filter(Boolean).join(' — ');
+      return {
+        theme: 'dark',
+        elements: [
+          ...picture('photo', { x: 0, y: 0, w: L.W, h: L.H }, slide.image, { fit, radius: 0, dark: true }),
+          // плашка под текстом — заголовок читается на любом фото
+          { kind: 'rect', name: 'band', x: 0, y: 720, w: L.W, h: L.H - 720, fill: 'ink', radius: 0 },
+          text('title', { x: L.M, y: 768, w: L.CW, h: 152 }, 'title', slide.title, { color: 'onDark' }),
+          lines ? text('text', { x: L.M, y: 936, w: L.CW, h: 96 }, 'body', lines, { color: 'onDarkMuted' }) : null,
+        ],
+      };
+    }
+    if (layout === 'wide') {
+      return [
+        contentTitle(slide, L),
+        ...picture('photo', { x: L.M, y: L.contentTop, w: L.CW, h: 504 }, slide.image, { fit }),
+        slide.text ? text('text', { x: L.M, y: 816, w: slide.caption ? 1040 : L.CW, h: 104 }, 'body', slide.text) : null,
+        slide.caption ? text('caption', { x: L.W - L.M - 560, y: 816, w: 560, h: 104 }, 'caption', slide.caption, { color: 'steel', align: 'right' }) : null,
+      ];
+    }
+    const imgW = 888;
+    const textW = L.CW - imgW - 72;
+    const imgX = layout === 'left' ? L.M : L.W - L.M - imgW;
+    const textX = layout === 'left' ? L.M + imgW + 72 : L.M;
+    const box = { x: imgX, y: L.top - 8, w: imgW, h: slide.caption ? 776 : 824 };
+    const points = slide.points?.slice(0, 4) ?? [];
+    return [
+      text('title', { x: textX, y: L.top - 8, w: textW, h: 232 }, 'title', slide.title),
+      slide.text ? text('text', { x: textX, y: 352, w: textW, h: points.length ? 232 : 552 }, 'body', slide.text) : null,
+      points.length ? text('points', { x: textX, y: slide.text ? 608 : 352, w: textW, h: slide.text ? 296 : 552 }, 'body', null, { bullets: points }) : null,
+      ...picture('photo', box, slide.image, { fit }),
+      slide.caption ? text('caption', { x: imgX, y: box.y + box.h + 12, w: imgW, h: 36 }, 'caption', slide.caption, { color: 'steel' }) : null,
+    ];
+  },
+
+  // Креативы: до шести картинок сеткой или одна крупная и остальные рядом
+  gallery(slide, ctx) {
+    const { L } = ctx;
+    const items = (slide.items ?? []).slice(0, 6);
+    const fit = slide.fit === 'cover' ? 'cover' : 'contain';
+    const capH = items.some((it) => it.caption) ? 44 : 0;
+    const area = { x: L.M, y: L.contentTop, w: L.CW, h: 632 };
+    const gap = 32;
+    const out = [contentTitle(slide, L)];
+    const cell = (it, i, box) => {
+      out.push(...picture(`creative-${i}`, { ...box, h: box.h - capH }, it.image, { fit }));
+      if (it.caption) out.push(text(`creative-${i}-caption`, { x: box.x, y: box.y + box.h - capH + 8, w: box.w, h: 36 }, 'caption', it.caption, { color: 'steel' }));
+    };
+    const grid = (list, box, cols, from = 0) => {
+      const rows = Math.ceil(list.length / cols);
+      const cw = (box.w - gap * (cols - 1)) / cols;
+      const ch = (box.h - gap * (rows - 1)) / rows;
+      list.forEach((it, i) => cell(it, from + i, { x: Math.round(box.x + (i % cols) * (cw + gap)), y: Math.round(box.y + Math.floor(i / cols) * (ch + gap)), w: Math.round(cw), h: Math.round(ch) }));
+    };
+    if (!items.length) return [...out, ...picture('creative-0', area, null)];
+    if (layoutOf(slide) === 'feature' && items.length > 1) {
+      const bigW = 1000;
+      cell(items[0], 0, { x: area.x, y: area.y, w: bigW, h: area.h });
+      const rest = items.slice(1);
+      grid(rest, { x: area.x + bigW + gap, y: area.y, w: area.w - bigW - gap, h: area.h }, rest.length > 2 ? 2 : 1, 1);
+      return out;
+    }
+    const cols = items.length <= 3 ? items.length : items.length === 4 ? 2 : 3;
+    grid(items, area, cols);
+    return out;
   },
 
   closing(slide, { L }) {

@@ -46,7 +46,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -351,7 +351,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       });
     });
 
-    if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });
+    if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config });

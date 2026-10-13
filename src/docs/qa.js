@@ -35,6 +35,14 @@ export function checkContent(deck, brand) {
       if (typeof s[f] === 'string' && s[f].length > max) warnings.push(at(i, `«${fieldLabel(f)}» длиннее ${max} символов — один слайд, одна мысль`));
     }
     if (type.data && s.source && /^(источник|нет|-|—)$/i.test(s.source.trim())) errors.push(at(i, 'источник данных указан формально'));
+    // картинки: выбрана ли, не удалена ли из медиатеки
+    const imgs = [];
+    if (s.type === 'image' || (s.type === 'cover' && s.layout === 'image')) imgs.push(['фото', s.image]);
+    if (s.type === 'gallery') (s.items ?? []).forEach((it, k) => imgs.push([`креатив ${k + 1}`, it.image]));
+    for (const [what, img] of imgs) {
+      if (img?.missing) errors.push(at(i, `${what}: изображение удалено из медиатеки — выберите другое`));
+      else if (!img || (typeof img === 'object' && !img.src)) errors.push(at(i, `${what}: не выбрано изображение`));
+    }
     if (s.type === 'case' && s.verified !== true) errors.push(at(i, 'кейс не подтверждён: отметьте «Проверено», только реальные кейсы с согласия клиента'));
     if (s.chart) checkChart(s.chart, (m) => errors.push(at(i, m)));
     if ((s.type === 'mediaplan' || s.type === 'ecomplan') && s.dataStatus === 'fact') warnings.push(at(i, 'медиаплан помечен как «Факт» — обычно это прогноз'));
@@ -54,6 +62,7 @@ function checkChart(chart, fail) {
 }
 
 function walkStrings(obj, fn, path = '') {
+  if (obj && typeof obj === 'object' && 'src' in obj && 'width' in obj) return; // картинка: данные файла не текст
   if (typeof obj === 'string') return fn(obj, path);
   if (Array.isArray(obj)) return obj.forEach((v, i) => walkStrings(v, fn, `${path}[${i}]`));
   if (obj && typeof obj === 'object') for (const [k, v] of Object.entries(obj)) walkStrings(v, fn, path ? `${path}.${k}` : k);
@@ -62,7 +71,7 @@ function walkStrings(obj, fn, path = '') {
 const FIELD_LABELS = {
   title: 'Заголовок', subtitle: 'Подзаголовок', kpis: 'Показатели', source: 'Источник', dataStatus: 'Статус данных',
   chart: 'График', takeaway: 'Главный вывод', insights: 'Выводы', client: 'Клиент', task: 'Задача', solution: 'Что сделали',
-  results: 'Результаты', pillars: 'Направления', rows: 'Строки медиаплана', items: 'Состав работ',
+  results: 'Результаты', pillars: 'Направления', rows: 'Строки медиаплана', items: 'Состав работ / креативы', image: 'Изображение',
 };
 export const fieldLabel = (f) => FIELD_LABELS[f] ?? f;
 
@@ -179,6 +188,16 @@ function runChecks({ minFont, margin, W, H, logoMin, figureStyles }) {
       }
       const r = img.getBoundingClientRect();
       const natural = img.naturalWidth / img.naturalHeight;
+      const fit = img.dataset.objfit;
+      if (fit) {
+        // фото вписано в блок (обрезка или поля) — пропорции сохраняются; смотрим только, не растянуто ли
+        const scale = (fit === 'cover' ? Math.max : Math.min)(r.width / img.naturalWidth, r.height / img.naturalHeight);
+        if (scale > 1.25) {
+          const need = `${Math.ceil((img.naturalWidth * scale) / 1.25)}×${Math.ceil((img.naturalHeight * scale) / 1.25)}`;
+          push(i, 'warning', `фото «${img.dataset.name}» маленькое для этого блока и будет нечётким — нужно примерно ${need} пикселей`);
+        }
+        continue;
+      }
       if (Math.abs(r.width / r.height - natural) / natural > 0.01) push(i, 'error', `пропорции «${img.dataset.name}» искажены`);
       if (!img.src.startsWith('data:image/svg') && img.naturalWidth < r.width) push(i, 'warning', `изображение «${img.dataset.name}» растянуто — будет нечётким`);
       if (img.classList.contains('logo') && r.height < logoMin) push(i, 'error', `логотип меньше минимальной высоты ${logoMin}px`);
