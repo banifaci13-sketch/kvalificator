@@ -1,0 +1,17 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "brand": "Soroka Marketing",
+  "version": "0.1-provisional",
+  "warning": "Palette and fonts are PROPOSED, not verified from site CSS. Do not identify them as official.",
+  "color": {
+    "accent": {"value": "#12C9D6", "status": "proposed"},
+    "text": {"value": "#20252A", "status": "proposed"},
+    "muted": {"value": "#68747B", "status": "proposed"},
+    "surface": {"value": "#FFFFFF", "status": "proposed"},
+    "surfaceAlt": {"value": "#F3F6F7", "status": "proposed"},
+    "border": {"value": "#DDE5E8", "status": "proposed"}
+  },
+  "typography": {"heading": {"value": "Manrope, Arial, sans-serif", "status": "proposed"}, "body": {"value": "Inter, Arial, sans-serif", "status": "proposed"}},
+  "slide": {"width": 1920, "height": 1080, "safeMargin": 120, "status": "recommended"},
+  "logo": {"asset": null, "status": "original-required", "fallback": "SOROKA MARKETING"}
+}

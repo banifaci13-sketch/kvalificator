@@ -1,41 +1,30 @@
-/* Админка квалификатора. Шрифт Golos Text (OFL), лежит рядом — внешних запросов нет. */
+/* Админка квалификатора. Цвета и шрифты — из фирменного стиля (admin/brand/brand.css). */
 
-@font-face {
-  font-family: 'Golos';
-  src: url('fonts/golos-text-cyrillic-wght-normal.woff2') format('woff2-variations');
-  font-weight: 400 900;
-  font-display: swap;
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
-@font-face {
-  font-family: 'Golos';
-  src: url('fonts/golos-text-latin-wght-normal.woff2') format('woff2-variations');
-  font-weight: 400 900;
-  font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
+/* Цвета и шрифты бренда — из brand/brand.css (генерируется npm run brand:sync). */
 
 :root {
   color-scheme: light;
-  --brand: #143a6b;
-  --brand-2: #0e2b52;
-  --accent: #17b3d6;
-  --accent-text: #08708a;
-  --bg: #eef2f7;
-  --surface: #ffffff;
-  --surface-2: #f6f8fb;
-  --text: #17202e;
-  --muted: #5a6577;
-  --line: #dbe2eb;
-  --focus: #17b3d6;
+  --brand: var(--soroka-ink);
+  --brand-2: #14181c;
+  --accent: var(--soroka-accent);
+  --accent-text: var(--soroka-accent-text);
+  --on-brand: var(--soroka-on-dark);
+  --on-brand-muted: var(--soroka-on-dark-muted);
+  --bg: var(--soroka-mist);
+  --surface: var(--soroka-paper);
+  --surface-2: #f8fafb;
+  --text: var(--soroka-ink);
+  --muted: var(--soroka-steel);
+  --line: var(--soroka-line);
+  --focus: var(--soroka-accent);
   --danger: #b42318;
   --good: #0c7a0c;
-  /* Рейтинг 1→5: один оттенок, от светлого к тёмному (проверено на различимость) */
-  --r1: #86b6ef; --r2: #5598e7; --r3: #2a78d6; --r4: #1c5cab; --r5: #104281;
+  /* Рейтинг 1→5: порядковая шкала бренда, один оттенок от светлого к тёмному (проверено валидатором) */
+  --r1: var(--soroka-ordinal-1); --r2: var(--soroka-ordinal-2); --r3: var(--soroka-ordinal-3); --r4: var(--soroka-ordinal-4); --r5: var(--soroka-ordinal-5);
   --shadow: 0 1px 2px rgba(16, 33, 60, .06), 0 8px 24px rgba(16, 33, 60, .08);
   --radius-s: 6px;
   --radius-m: 10px;
-  font-family: 'Golos', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--soroka-font-body);
   font-size: 15px;
   line-height: 1.5;
 }
@@ -43,18 +32,18 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --brand: #0f2748;
-    --brand-2: #0b1e38;
-    --accent-text: #5fd0ea;
-    --bg: #0d121a;
-    --surface: #151b24;
-    --surface-2: #1b2330;
-    --text: #e4e9f0;
-    --muted: #9aa6b6;
-    --line: #283244;
+    --brand: #14181c;
+    --brand-2: #0f1215;
+    --accent-text: var(--soroka-accent);
+    --bg: #111417;
+    --surface: #1a1e22;
+    --surface-2: #22272c;
+    --text: #e9eef0;
+    --muted: #a3aeb4;
+    --line: #2e353b;
     --danger: #ff8a80;
     --good: #5cd65c;
-    --r1: #184f95; --r2: #256abf; --r3: #3987e5; --r4: #6da7ec; --r5: #9ec5f4;
+    --r1: #0A6870; --r2: #0E8590; --r3: #1FA2AD; --r4: #48BDC7; --r5: #8FD9DF;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
   }
 }
@@ -78,7 +67,6 @@ a { color: var(--accent-text); }
   place-items: center;
   padding: 24px 16px;
   background: var(--brand);
-  background-image: radial-gradient(circle at 85% 10%, rgba(23, 179, 214, .28), transparent 45%);
 }
 .login-card {
   width: min(400px, 100%);
@@ -87,8 +75,9 @@ a { color: var(--accent-text); }
   padding: 32px 28px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, .35);
 }
-.login-mark { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; font-weight: 700; }
-.login-mark svg { width: 36px; height: 36px; }
+.login-mark { margin-bottom: 28px; }
+.wordmark { font-family: var(--soroka-font-heading); font-weight: 800; letter-spacing: .08em; font-size: 15px; }
+.login h1, .page-head h1, .drawer-head h2, .panel h2, .kpi .value { font-family: var(--soroka-font-heading); }
 .login h1 { font-size: 24px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -.01em; }
 .login p { margin: 0 0 24px; color: var(--muted); }
 .btn-yandex {
@@ -129,16 +118,17 @@ a { color: var(--accent-text); }
   padding: 0 24px; height: 60px;
   background: var(--brand); color: #fff;
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: #fff; text-decoration: none; }
-.brand svg { width: 30px; height: 30px; }
+.brand { display: flex; align-items: baseline; gap: 12px; color: var(--on-brand); text-decoration: none; }
+.brand .wordmark { color: var(--on-brand); font-size: 14px; }
+.brand .product { color: var(--on-brand-muted); font-size: 14px; }
 .nav { display: flex; gap: 4px; height: 100%; }
 .nav a {
-  display: flex; align-items: center; padding: 0 14px; color: rgba(255, 255, 255, .78);
+  display: flex; align-items: center; padding: 0 14px; color: var(--on-brand-muted);
   text-decoration: none; font-weight: 500; border-bottom: 3px solid transparent;
 }
-.nav a:hover { color: #fff; }
-.nav a[aria-current="page"] { color: #fff; border-bottom-color: var(--accent); }
-.user { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 14px; color: rgba(255, 255, 255, .85); }
+.nav a:hover { color: var(--on-brand); }
+.nav a[aria-current="page"] { color: var(--on-brand); border-bottom-color: var(--accent); }
+.user { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--on-brand-muted); }
 .user button { background: transparent; border: 1px solid rgba(255, 255, 255, .35); color: #fff; border-radius: var(--radius-s); padding: 6px 10px; cursor: pointer; }
 .user button:hover { border-color: #fff; }
 
@@ -163,7 +153,7 @@ a { color: var(--accent-text); }
   min-width: 36px; min-height: 37px; border: 0; background: var(--surface); cursor: pointer; font-weight: 600;
 }
 .rating-filter button + button { border-left: 1px solid var(--line); }
-.rating-filter button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.rating-filter button[aria-pressed="true"] { background: var(--brand); color: var(--on-brand); }
 
 /* ---------- рейтинг: главный визуальный знак админки ---------- */
 .meter { display: inline-flex; align-items: center; gap: 8px; }
@@ -320,7 +310,7 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
 }
 @media (max-width: 720px) {
   .topbar { gap: 8px; padding: 0 12px; }
-  .brand span { display: none; }
+  .brand .product, .brand .wordmark { display: none; }
   .nav a { padding: 0 8px; font-size: 14px; }
   .user button { padding: 6px 8px; font-size: 13px; }
   /* Таблица лидов превращается в список карточек */

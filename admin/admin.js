@@ -165,7 +165,7 @@ function shell(active, content) {
     h(
       'header',
       { class: 'topbar' },
-      h('a', { class: 'brand', href: '#/leads' }, logo(), h('span', {}, 'Квалификатор')),
+      h('a', { class: 'brand', href: '#/leads' }, logo(), h('span', { class: 'product' }, 'Квалификатор')),
       h(
         'nav',
         { class: 'nav', 'aria-label': 'Разделы' },
@@ -238,7 +238,7 @@ async function renderLogin() {
       h(
         'div',
         { class: 'login-card' },
-        h('div', { class: 'login-mark' }, logo(), 'Soroka Marketing'),
+        h('div', { class: 'login-mark' }, logo()),
         h('h1', {}, 'Квалификатор лидов'),
         h('p', {}, 'Заявки с сайта и из мессенджеров с оценкой 1–5.'),
         errorEl,
@@ -874,15 +874,11 @@ function renderTest() {
   );
 }
 
-// ---------- логотип ----------
+// ---------- подпись бренда ----------
+// Оригинальный логотип ещё не утверждён — по брендбуку ставим текстовую подпись, знак не рисуем.
 
 function logo() {
-  return s(
-    'svg',
-    { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
-    s('rect', { width: 32, height: 32, rx: 8, fill: '#17b3d6' }),
-    s('path', { fill: '#143a6b', d: 'M7 21c4-1 7-3 8-7 1-3 3-5 6-5 2 0 3 1 4 2l2 1-2 1c0 5-3 9-9 10l-5 4 1-4c-2 0-4-1-5-2z' }),
-  );
+  return h('span', { class: 'wordmark' }, 'SOROKA MARKETING');
 }
 
 boot();

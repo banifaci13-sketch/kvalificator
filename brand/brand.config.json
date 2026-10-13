@@ -1,0 +1,102 @@
+{
+  "$comment": "Единый источник фирменного стиля Soroka Marketing. Меняйте только этот файл, затем: npm run brand:sync. Статусы: verified — подтверждено владельцем бренда или исходниками сайта; observed — видно на сайте, но не сверено с исходником; proposed — временное значение до проверки.",
+  "brand": "Soroka Marketing",
+  "version": "0.2.0",
+  "status": "provisional",
+  "updated": "2026-10-13",
+  "sources": [
+    { "url": "https://soroka-marketing.ru/", "used_for": "позиционирование, слоган, направления" },
+    { "url": "https://soroka-marketing.ru/about", "used_for": "год основания, ценности" },
+    { "file": "brand/kit/BRANDBOOK.md", "used_for": "рабочие правила оформления (SOROKA_Claude_Brand_Kit.zip)" }
+  ],
+  "pending": [
+    "Оригинальный логотип (SVG/PNG) из шапки сайта или от дизайнера → brand/assets/logo/",
+    "Цвета и шрифты из CSS сайта (getComputedStyle, @font-face) или утверждённого брендбука",
+    "Подтверждение палитры и шрифтов владельцем бренда"
+  ],
+
+  "voice": {
+    "name_ru": "Сорока Маркетинг",
+    "name_en": "Soroka Marketing",
+    "wordmark": "SOROKA MARKETING",
+    "positioning": { "value": "Агентство перформанс-маркетинга", "status": "observed" },
+    "slogan": { "value": "Фокусируемся на возможностях. Даем результат", "status": "observed" },
+    "subline": { "value": "Охваты, трафик и конверсии для брендов и растущего бизнеса", "status": "observed" },
+    "founded": { "value": 2011, "status": "observed" },
+    "values": { "value": ["Амбициозность", "Деньги как инвестиция", "Свобода"], "status": "observed" },
+    "tone": "Экспертный, деловой, конкретный. Русский язык по умолчанию. Факт, оценка, гипотеза и план всегда различимы."
+  },
+
+  "color": {
+    "accent":     { "value": "#12C9D6", "status": "proposed", "role": "смысловые акценты, маркеры KPI, ссылки; не заливка каждого блока" },
+    "accentText": { "value": "#0A7F89", "status": "proposed", "role": "акцентный цвет для текста: на белом 4.76:1; на mist 4.38:1 — только крупный текст" },
+    "ink":        { "value": "#20252A", "status": "proposed", "role": "заголовки, основной текст, тёмные фоны разделов" },
+    "paper":      { "value": "#FFFFFF", "status": "proposed", "role": "основной фон" },
+    "mist":       { "value": "#F3F6F7", "status": "proposed", "role": "вторичный фон, подложки" },
+    "steel":      { "value": "#5F6B72", "status": "proposed", "role": "подписи и второстепенный текст (5.48:1 на белом, 5.05:1 на mist; в ките было #68747B — 4.80:1 на белом, затемнён для запаса на подложках)" },
+    "line":       { "value": "#DDE5E8", "status": "proposed", "role": "разделители, сетка графиков" },
+    "onDark":     { "value": "#F3F6F7", "status": "proposed", "role": "текст на тёмном фоне" },
+    "onDarkMuted":{ "value": "#A9B4BA", "status": "proposed", "role": "второстепенный текст на тёмном фоне" }
+  },
+
+  "dataviz": {
+    "$comment": "Палитры проверены валидатором dataviz (OKLab, CVD): категориальная — все проверки пройдены, жёлтый ниже 3:1 → всегда подписи значений; порядковая — один оттенок, монотонная светлота.",
+    "categorical": ["#0E9AA6", "#EB6834", "#6250D6", "#EDA100"],
+    "ordinal": ["#48BDC7", "#1FA2AD", "#0E8590", "#0A6870", "#064A50"],
+    "context": "#C5CED4",
+    "grid": "#DDE5E8",
+    "axisText": "#5F6B72"
+  },
+
+  "typography": {
+    "heading": { "family": "Manrope", "fallback": "Arial, sans-serif", "status": "proposed", "files": ["manrope-cyrillic-wght-normal.woff2", "manrope-latin-wght-normal.woff2"] },
+    "body":    { "family": "Inter",   "fallback": "Arial, sans-serif", "status": "proposed", "files": ["inter-cyrillic-wght-normal.woff2", "inter-latin-wght-normal.woff2"] },
+    "license": "SIL Open Font License 1.1 (brand/fonts/LICENSE-*.txt)",
+    "slideScalePx": {
+      "$comment": "Размеры для холста 1920×1080 (кит: заголовок 48–72, текст 20–26, подписи от 16). Подняты к верхней границе, чтобы в PPTX (px × 0.5 = pt) текст был не меньше 14 pt, подписи — 10 pt.",
+      "display": 104,
+      "title": 64,
+      "subtitle": 40,
+      "lead": 34,
+      "kpi": 96,
+      "body": 28,
+      "small": 24,
+      "caption": 20,
+      "minimum": 20
+    }
+  },
+
+  "slide": {
+    "width": 1920,
+    "height": 1080,
+    "margin": 120,
+    "marginTop": 104,
+    "grid": 8,
+    "columns": 12,
+    "gutter": 32,
+    "footerHeight": 56
+  },
+
+  "logo": {
+    "status": "missing",
+    "$comment": "Положите оригинальные файлы в brand/assets/logo/ и пропишите их здесь вместе с sha256 (npm run brand:sync подскажет хеши). Пока файлов нет — текстовая подпись wordmark. Знак-птицу не рисовать.",
+    "onLight": null,
+    "onDark": null,
+    "sha256": {},
+    "minHeightPx": 40,
+    "clearSpacePx": 40
+  },
+
+  "documents": {
+    "footer": "Конфиденциально",
+    "dataStatusLabels": {
+      "fact": "Факт",
+      "estimate": "Оценка",
+      "forecast": "Прогноз",
+      "hypothesis": "Гипотеза",
+      "plan": "План"
+    },
+    "currency": "₽",
+    "locale": "ru-RU"
+  }
+}

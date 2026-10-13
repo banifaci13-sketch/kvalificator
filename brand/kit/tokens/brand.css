@@ -1,0 +1,11 @@
+/* SOROKA — PROVISIONAL tokens, verify with site's computed CSS */
+:root {
+  --soroka-accent: #12C9D6;
+  --soroka-ink: #20252A;
+  --soroka-muted: #68747B;
+  --soroka-paper: #FFFFFF;
+  --soroka-mist: #F3F6F7;
+  --soroka-line: #DDE5E8;
+  --soroka-heading: 'Manrope', Arial, sans-serif;
+  --soroka-body: 'Inter', Arial, sans-serif;
+}

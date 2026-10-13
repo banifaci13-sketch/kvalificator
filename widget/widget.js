@@ -18,12 +18,18 @@
   var API = (ds.api || (script ? new URL(script.src).origin : '')).replace(/\/$/, '');
   var STORAGE_KEY = 'soroka-kval-v1';
 
+  // brand:start — сгенерировано npm run brand:sync из brand/brand.config.json
+  var BRAND = {"color":"#20252A","accent":"#12C9D6","accentText":"#0A7F89","onAccent":"#20252A","title":"Soroka Marketing"};
+  // brand:end
+
   var opts = {
-    title: ds.title || 'Soroka Marketing',
+    title: ds.title || BRAND.title,
     subtitle: ds.subtitle || 'Подберём решение под вашу задачу',
     button: ds.button || 'Получить предложение',
-    color: ds.color || '#143a6b',
-    accent: ds.accent || '#17b3d6',
+    color: ds.color || BRAND.color,
+    accent: ds.accent || BRAND.accent,
+    accentText: ds.accentText || BRAND.accentText,
+    onAccent: ds.onAccent || BRAND.onAccent,
     position: ds.position === 'left' ? 'left' : 'right',
     metrika: ds.metrika || null,
     zIndex: ds.zIndex || '2147483000',
@@ -90,7 +96,7 @@
     '</button>' +
     '<section class="panel" role="dialog" aria-modal="false" aria-labelledby="kv-title" hidden>' +
       '<header class="head">' +
-        '<div class="avatar" aria-hidden="true">' + iconBird() + '</div>' +
+        '<div class="avatar" aria-hidden="true">' + iconChat() + '</div>' +
         '<div class="head-text"><h2 id="kv-title"></h2><p class="sub"></p></div>' +
         '<button class="close" type="button" aria-label="Закрыть">' + iconClose() + '</button>' +
       '</header>' +
@@ -112,6 +118,8 @@
   $('.sub').textContent = opts.subtitle;
   host.style.setProperty('--kv-color', opts.color);
   host.style.setProperty('--kv-accent', opts.accent);
+  host.style.setProperty('--kv-accent-text', opts.accentText);
+  host.style.setProperty('--kv-on-accent', opts.onAccent);
 
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -459,7 +467,7 @@
   function css() {
     var side = opts.position;
     return [
-      ':host{all:initial;--kv-color:#143a6b;--kv-accent:#17b3d6;--kv-bg:#fff;--kv-text:#14213d;--kv-muted:#5b6478;--kv-bot:#eef3f9;--kv-line:#dde4ee;--kv-error:#b42318;',
+      ':host{all:initial;--kv-color:#20252a;--kv-accent:#12c9d6;--kv-accent-text:#0a7f89;--kv-on-accent:#20252a;--kv-bg:#fff;--kv-text:#14213d;--kv-muted:#5b6478;--kv-bot:#eef3f9;--kv-line:#dde4ee;--kv-error:#b42318;',
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px;line-height:1.45;color:var(--kv-text)}',
       '@media (prefers-color-scheme:dark){:host{--kv-bg:#121a26;--kv-text:#e8edf5;--kv-muted:#9aa6b8;--kv-bot:#1d2838;--kv-line:#2a3648;--kv-error:#ff8a80}}',
       '*{box-sizing:border-box}',
@@ -469,15 +477,15 @@
       '.launcher[hidden]{display:none}',
       '.launcher:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(10,30,60,.34)}',
       '.launcher:focus-visible,.option:focus-visible,.primary:focus-visible,.send:focus-visible,.skip:focus-visible,.close:focus-visible{outline:3px solid var(--kv-accent);outline-offset:2px}',
-      '.launcher-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--kv-accent)}',
+      '.launcher-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--kv-accent);color:var(--kv-on-accent)}',
       '.launcher-icon svg{width:22px;height:22px}',
       '.panel{position:fixed;bottom:20px;' + side + ':20px;width:380px;height:min(640px,calc(100vh - 40px));display:flex;flex-direction:column;',
       'background:var(--kv-bg);border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(10,30,60,.32);animation:kv-in .22s ease-out}',
       '.panel[hidden]{display:none}',
       '@keyframes kv-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}',
       '.head{display:flex;align-items:center;gap:12px;padding:16px;background:var(--kv-color);color:#fff}',
-      '.avatar{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#fff}',
-      '.avatar svg{width:28px;height:28px}',
+      '.avatar{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--kv-accent);color:var(--kv-on-accent)}',
+      '.avatar svg{width:22px;height:22px}',
       '.head-text{flex:1;min-width:0}',
       'h2{margin:0;font-size:16px;font-weight:700}',
       '.sub{margin:2px 0 0;font-size:13px;opacity:.85}',
@@ -503,11 +511,11 @@
       '.primary{min-height:46px;padding:10px 18px;border:0;border-radius:12px;background:var(--kv-color);color:#fff;font-weight:600}',
       '.primary:hover{filter:brightness(1.1)}',
       '.consent p{margin:0 0 8px;font-size:13px;color:var(--kv-muted)}',
-      '.consent a,.foot a{color:var(--kv-accent)}',
+      '.consent a,.foot a{color:var(--kv-accent-text)}',
       '.input{display:flex;gap:8px;align-items:flex-end}',
       '.input input,.input textarea{flex:1;min-width:0;min-height:46px;padding:12px 14px;border:1.5px solid var(--kv-line);border-radius:12px;background:var(--kv-bg);color:var(--kv-text);font:inherit;font-size:16px;resize:none}',
       '.input input:focus,.input textarea:focus{outline:none;border-color:var(--kv-accent)}',
-      '.send{flex:none;display:grid;place-items:center;width:46px;height:46px;border:0;border-radius:12px;background:var(--kv-accent);color:#fff}',
+      '.send{flex:none;display:grid;place-items:center;width:46px;height:46px;border:0;border-radius:12px;background:var(--kv-accent);color:var(--kv-on-accent)}',
       '.send svg{width:20px;height:20px}',
       '.skip{align-self:center;min-height:36px;padding:6px 12px;border:0;background:transparent;color:var(--kv-muted);text-decoration:underline}',
       '.foot{padding:8px 16px 12px;font-size:12px;color:var(--kv-muted);text-align:center;border-top:1px solid var(--kv-line)}',
@@ -519,16 +527,12 @@
   }
 
   function iconChat() {
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
   }
   function iconClose() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   }
   function iconSend() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
-  }
-  function iconBird() {
-    // Упрощённый силуэт сороки; замените на логотип из брендбука
-    return '<svg viewBox="0 0 32 32"><path fill="#143a6b" d="M4 20c5-1 8-4 10-9 1-3 4-5 7-5 2 0 4 1 5 3l3 1-3 1c0 6-4 11-11 12l-6 5 1-5c-3 0-5-1-6-3z"/><path fill="#17b3d6" d="M14 17c3 0 6-2 7-5-2 4-6 6-10 6z"/></svg>';
   }
 })();

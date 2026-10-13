@@ -15,7 +15,9 @@
     "scenario:csv": "node scripts/scenario-to-csv.js > config/scenario-template.csv",
     "check": "node --disable-warning=ExperimentalWarning scripts/check.js",
     "admin": "node --disable-warning=ExperimentalWarning scripts/admin.js",
-    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js"
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
+    "brand:sync": "node scripts/brand-sync.js",
+    "brand:check": "node scripts/brand-sync.js --check"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -25,6 +27,11 @@
     "@fastify/static": "^10.1.6",
     "fastify": "^5.12.5",
     "grammy": "^1.46.0",
-    "pino": "^10.4.0"
+    "pino": "^10.4.0",
+    "playwright-core": "^1.56.1",
+    "pptxgenjs": "^4.0.1"
+  },
+  "overrides": {
+    "image-size": "^2.0.4"
   }
 }

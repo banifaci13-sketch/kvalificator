@@ -15,6 +15,16 @@ ask_secret() { local q="$1" ans; read -r -s -p "$q: " ans; echo >&2; echo "$ans"
 [[ $EUID -eq 0 ]] || die "Запустите от root: sudo bash deploy/install.sh"
 [[ -f docker-compose.yml ]] || die "Запускайте из папки проекта (где лежит docker-compose.yml)"
 
+# ---------- 0. Подкачка для маленьких серверов ----------
+# На 1 ГБ памяти сборка образа и генерация PDF могут упасть без swap
+mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+if [[ $mem_mb -lt 2000 ]] && ! swapon --show | grep -q .; then
+  say "Памяти ${mem_mb} МБ — добавляю файл подкачки 2 ГБ"
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -qw vm.swappiness=10 && echo 'vm.swappiness=10' > /etc/sysctl.d/99-kvalificator.conf
+fi
+
 # ---------- 1. Docker ----------
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
   say "Ставлю Docker из репозитория Ubuntu"
