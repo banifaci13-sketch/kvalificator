@@ -1,5 +1,7 @@
-# Квалификатор + Caddy (HTTPS-сертификат Let's Encrypt выпускается автоматически).
-# Запуск: docker compose up -d --build   (настройки — в .env, см. deploy/install.sh)
+# Квалификатор и HTTPS-прокси. Два режима (выбирает deploy/install.sh, пишет в .env):
+#  - COMPOSE_PROFILES=caddy — сервер только наш: Caddy сам слушает 80/443 и выпускает сертификат;
+#  - COMPOSE_PROFILES пустой — на сервере уже есть nginx с другими сайтами: он проксирует на 127.0.0.1:APP_PORT.
+# Запуск: docker compose up -d --build
 services:
   app:
     build:
@@ -14,12 +16,16 @@ services:
       DB_PATH: /app/data/kvalificator.db
     volumes:
       - ./data:/app/data
+    # Только для локального прокси (nginx на этом же сервере); снаружи порт недоступен
+    ports:
+      - "127.0.0.1:${APP_PORT:-3100}:3000"
     restart: unless-stopped
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
 
   caddy:
+    profiles: [caddy]
     image: ${CADDY_IMAGE:-mirror.gcr.io/library/caddy:2}
     depends_on: [app]
     ports:

@@ -102,22 +102,90 @@ if command -v ufw >/dev/null && ufw status | grep -q active; then
   echo "  ✓ ufw: открыты 22, 80, 443"
 fi
 
-# ---------- 5. Порты 80 и 443 ----------
-# Caddy должен сам слушать 80/443, чтобы выпустить HTTPS-сертификат. На свежих серверах
-# хостинг часто заранее ставит nginx или apache — их нужно отключить.
+# ---------- 5. HTTPS: Caddy или уже установленный nginx ----------
+set_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
+env_get() { grep -E "^$1=" .env | cut -d= -f2-; }
+
+proxy_mode=caddy
 busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
 if [[ -n "$busy" ]]; then
-  warn "Порты 80/443 заняты другой программой:"
-  echo "$busy" | sed 's/^/    /'
-  for svc in nginx apache2 httpd caddy lighttpd; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-      if [[ "$(ask "Остановить и отключить $svc? Он мешает HTTPS квалификатора (yes/no)" yes)" == yes ]]; then
-        systemctl disable --now "$svc" && echo "  ✓ $svc остановлен и больше не запускается сам"
-      fi
+  if systemctl is-active --quiet nginx 2>/dev/null; then
+    warn "На сервере работает nginx (порты 80/443 заняты им)."
+    echo "    1 — работать через ваш nginx: квалификатор добавится как ещё один сайт, другие проекты не затрагиваются"
+    echo "    2 — отключить nginx: только если на сервере больше нет сайтов"
+    if [[ "$(ask "Ваш выбор" 1)" == 2 ]]; then
+      systemctl disable --now nginx && echo "  ✓ nginx остановлен"
+    else
+      proxy_mode=nginx
     fi
-  done
-  busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
-  [[ -z "$busy" ]] || die "Порты 80/443 всё ещё заняты. Остановите программу из списка выше и запустите установку снова."
+  else
+    warn "Порты 80/443 заняты другой программой:"
+    echo "$busy" | sed 's/^/    /'
+    for svc in apache2 httpd caddy lighttpd; do
+      if systemctl is-active --quiet "$svc" 2>/dev/null && [[ "$(ask "Остановить и отключить $svc? (yes/no)" no)" == yes ]]; then
+        systemctl disable --now "$svc" && echo "  ✓ $svc остановлен"
+      fi
+    done
+  fi
+  if [[ $proxy_mode == caddy ]]; then
+    busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
+    [[ -z "$busy" ]] || die "Порты 80/443 всё ещё заняты. Освободите их или настройте прокси вручную (README → Развёртывание)."
+  fi
+fi
+
+# Локальный порт приложения: 3100 или следующий свободный (на сервере могут быть другие проекты)
+app_port=$(env_get APP_PORT); app_port=${app_port:-3100}
+ours=$(docker compose port app 3000 2>/dev/null || true)
+while ss -ltnH "( sport = :$app_port )" 2>/dev/null | grep -q . && [[ "$ours" != "127.0.0.1:$app_port" ]]; do
+  app_port=$((app_port + 1))
+done
+set_env APP_PORT "$app_port"
+
+if [[ $proxy_mode == nginx ]]; then
+  set_env COMPOSE_PROFILES ""
+  docker compose --profile caddy rm -sf caddy >/dev/null 2>&1 || true
+  if [[ -d /etc/nginx/sites-available ]]; then
+    site=/etc/nginx/sites-available/kvalificator.conf
+    link=/etc/nginx/sites-enabled/kvalificator.conf
+  else
+    site=/etc/nginx/conf.d/kvalificator.conf
+    link=""
+  fi
+  if [[ -f "$site" ]] && grep -q "managed by Certbot" "$site"; then
+    # Конфиг уже дополнен certbot (HTTPS) — меняем только порт приложения
+    sed -i -E "s|proxy_pass http://127\.0\.0\.1:[0-9]+;|proxy_pass http://127.0.0.1:$app_port;|" "$site"
+  else
+    cat > "$site" <<NGINX
+# Квалификатор Soroka (deploy/install.sh). HTTPS добавляет certbot.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN www.$DOMAIN;
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:$app_port;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 120s;
+    }
+}
+NGINX
+  fi
+  [[ -n "$link" ]] && ln -sf "$site" "$link"
+  if ! nginx -t 2>/tmp/kval-nginx-test.log; then
+    # Не ломаем другие сайты: убираем наш конфиг, если nginx его не принял
+    rm -f "$site" ${link:+"$link"}
+    cat /tmp/kval-nginx-test.log
+    die "nginx не принял конфигурацию квалификатора — она удалена, другие сайты не затронуты. Пришлите вывод выше."
+  fi
+  systemctl reload nginx
+  echo "  ✓ nginx: $DOMAIN → 127.0.0.1:$app_port ($site)"
+else
+  set_env COMPOSE_PROFILES caddy
 fi
 
 # ---------- 6. Запуск ----------
@@ -145,6 +213,25 @@ if [[ -n "${ADMIN_LOGIN:-}" && -z "$(admin_cli list 2>/dev/null)" ]]; then
   # Без терминала команда сама генерирует пароль и печатает его один раз
   if admin_cli add "$ADMIN_LOGIN" "Администратор" --admin; then
     warn "Сохраните пароль выше: он показывается один раз. Новый пароль: docker compose exec app node scripts/admin.js passwd $ADMIN_LOGIN"
+  fi
+fi
+
+# ---------- HTTPS-сертификат для режима nginx ----------
+if [[ $proxy_mode == nginx ]]; then
+  if ! command -v certbot >/dev/null || ! dpkg -s python3-certbot-nginx >/dev/null 2>&1; then
+    say "Ставлю certbot (сертификаты Let's Encrypt для nginx)"
+    apt-get install -y -qq certbot python3-certbot-nginx
+  fi
+  if certbot certificates 2>/dev/null | grep -q "Domains:.*\b$DOMAIN\b"; then
+    echo "  ✓ сертификат для $DOMAIN уже есть"
+  elif [[ -n "$domain_ip" && "$domain_ip" == "$server_ip" ]]; then
+    domains=(-d "$DOMAIN")
+    [[ "$(getent ahostsv4 "www.$DOMAIN" | awk 'NR==1 {print $1}')" == "$server_ip" ]] && domains+=(-d "www.$DOMAIN")
+    say "Выпускаю HTTPS-сертификат для ${domains[*]//-d /}"
+    certbot --nginx "${domains[@]}" --non-interactive --agree-tos --register-unsafely-without-email --redirect \
+      || warn "Сертификат не выпущен. Повторите позже: certbot --nginx ${domains[*]} --redirect"
+  else
+    warn "DNS ещё не указывает на сервер — сертификат выпустите позже командой: certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"
   fi
 fi
 
