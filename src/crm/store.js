@@ -124,6 +124,10 @@ export function createCrm({ db }) {
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
     checklist: db.prepare('SELECT id, text, done, done_by FROM task_checklist WHERE task_id = ? ORDER BY position, id'),
+    taskFiles: db.prepare('SELECT f.id, f.mime, f.kind, f.name, f.bytes, tf.added_by, tf.created_at FROM task_files tf JOIN files f ON f.id = tf.file_id WHERE tf.task_id = ? ORDER BY tf.created_at, f.id'),
+    attachFile: db.prepare('INSERT OR IGNORE INTO task_files (task_id, file_id, added_by) VALUES (?, ?, ?)'),
+    detachFile: db.prepare('DELETE FROM task_files WHERE task_id = ? AND file_id = ?'),
+    fileRow: db.prepare('SELECT id, name, uploaded_by_id FROM files WHERE id = ?'),
     checkItem: db.prepare('SELECT * FROM task_checklist WHERE id = ?'),
     addCheck: db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM task_checklist WHERE task_id = ?))'),
     setCheck: db.prepare('UPDATE task_checklist SET text = ?, done = ?, done_by = ? WHERE id = ?'),
@@ -478,6 +482,31 @@ export function createCrm({ db }) {
     return t;
   }
 
+  // ---------- вложения ----------
+  /** Прикрепить загруженные файлы к задаче; событие — в историю задачи. */
+  function attachFiles(taskId, fileIds, user) {
+    const t = getTask(taskId);
+    const names = [];
+    tx(() => {
+      for (const fid of [...new Set(fileIds.map(Number))]) {
+        const f = q.fileRow.get(fid);
+        if (!f) throw new CrmError('Файл не найден — загрузите его ещё раз');
+        if (f.uploaded_by_id !== user.id && user.role !== 'admin') throw new CrmError('Можно прикрепить только свои файлы');
+        if (q.attachFile.run(t.id, fid, user.name).changes) names.push(f.name);
+      }
+      if (names.length) q.addComment.run(t.id, 'event', `Файлы: ${names.join(', ')}`, user.name);
+    });
+    if (names.length) for (const uid of new Set([t.assignee_id, t.created_by_id])) tell(uid, t, 'task_file', `Новые файлы в задаче ${label(t)}: ${names.join(', ').slice(0, 120)}`, user);
+    return q.taskFiles.all(t.id);
+  }
+  /** Открепить файл; возвращает { files, fileId } — сам файл удаляет вызывающий, если он больше нигде не нужен. */
+  function detachFile(taskId, fileId, user) {
+    const t = getTask(taskId);
+    const f = q.fileRow.get(Number(fileId));
+    if (q.detachFile.run(t.id, Number(fileId)).changes && f) q.addComment.run(t.id, 'event', `Файл удалён: ${f.name}`, user.name);
+    return q.taskFiles.all(t.id);
+  }
+
   // ---------- чек-лист задачи ----------
   const checklist = (taskId) => q.checklist.all(Number(taskId)).map((c) => ({ ...c, done: Boolean(c.done) }));
   const MAX_CHECK = 100;
@@ -574,6 +603,7 @@ export function createCrm({ db }) {
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments,
                 (SELECT COUNT(*) FROM task_links l WHERE l.task_id = t.id) AS links,
                 (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id) AS check_total,
+                (SELECT COUNT(*) FROM task_files f WHERE f.task_id = t.id) AS files,
                 (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id AND k.done = 1) AS check_done
          ${TASK_JOINS}
          WHERE ${where.join(' AND ')}
@@ -601,7 +631,9 @@ export function createCrm({ db }) {
     },
     clientTasks: (id) => listTasks({ clientId: id }),
     listTasks,
-    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)), checklist: checklist(id) }),
+    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)), checklist: checklist(id), files: q.taskFiles.all(Number(id)) }),
+    attachFiles,
+    detachFile,
     checklist,
     addChecklist,
     updateCheck,

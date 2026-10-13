@@ -6,6 +6,7 @@ import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, us
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 import { setAssistantTask } from './assistant.js';
+import { uploadFile, lightbox, fileSize, ACCEPT_ANY } from './files.js';
 
 let team = null;
 async function loadTeam() {
@@ -454,6 +455,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     body,
     fields,
     checklistSection(task, () => (changed = true)),
+    filesSection(task, () => (changed = true)),
     toolsSection(task, () => {
       changed = true;
       // перерисовать карточку задачи со свежими связями
@@ -464,6 +466,94 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     h('section', {}, h('h3', {}, 'Обсуждение и история'), commentForm, feed),
   );
   renderFeed();
+}
+
+// ---------- вложения ----------
+
+function filesSection(task, onChanged) {
+  let files = task.files ?? [];
+  const box = h('section', { class: 'task-files' });
+  const picker = h('input', { type: 'file', multiple: true, hidden: true, accept: ACCEPT_ANY, onchange: (e) => add(e.target.files) });
+  const progress = h('div', { class: 'news-attach' });
+  async function add(list) {
+    const ids = [];
+    for (const file of [...(list ?? [])]) {
+      const bar = h('i');
+      const chip = h('div', { class: 'attach-chip uploading' }, h('span', { class: 'attach-name' }, file.name), h('span', { class: 'attach-bar' }, bar));
+      progress.append(chip);
+      try {
+        ids.push((await uploadFile(file, { onProgress: (x) => (bar.style.width = `${Math.round(x * 100)}%`) })).id);
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        chip.remove();
+      }
+    }
+    picker.value = '';
+    if (!ids.length) return;
+    try {
+      files = (await api(`/admin/api/tasks/${task.id}/files`, { method: 'POST', body: { fileIds: ids } })).files;
+      onChanged();
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  async function remove(f) {
+    if (!(await confirmDialog(`Удалить файл «${f.name}» из задачи?`))) return;
+    try {
+      files = (await api(`/admin/api/tasks/${task.id}/files/${f.id}`, { method: 'DELETE' })).files;
+      onChanged();
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  function draw() {
+    const media = files.filter((f) => f.kind === 'image');
+    fill(
+      box,
+      h('div', { class: 'checklist-head' }, h('h3', {}, 'Файлы'), files.length ? h('span', { class: 'muted small num' }, files.length) : null, h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'btn btn-s', onclick: () => picker.click() }, icon('clip'), 'Прикрепить')),
+      files.length
+        ? h(
+            'ul',
+            { class: 'task-file-list' },
+            files.map((f) =>
+              h(
+                'li',
+                {},
+                f.kind === 'image'
+                  ? h('button', { type: 'button', class: 'task-file-thumb', 'aria-label': `Открыть ${f.name}`, onclick: () => lightbox(media, f) }, h('img', { src: `/admin/api/files/${f.id}`, alt: '', loading: 'lazy' }))
+                  : h('span', { class: 'task-file-thumb' }, f.kind === 'video' ? '▶' : icon('docs')),
+                h('div', { class: 'task-file-main' }, h('a', { href: `/admin/api/files/${f.id}`, target: '_blank', rel: 'noopener' }, f.name), h('span', { class: 'muted small' }, `${fileSize(f.bytes)} · ${f.added_by ?? ''}`)),
+                h('button', { type: 'button', class: 'icon-btn checklist-del', title: 'Удалить файл', 'aria-label': `Удалить файл ${f.name}`, onclick: () => remove(f) }, icon('trash')),
+              ),
+            ),
+          )
+        : h('p', { class: 'muted small task-files-empty' }, 'Бриф, макеты, доступы, отчёты — перетащите файлы сюда или вставьте скриншот (Ctrl+V).'),
+      progress,
+      picker,
+    );
+  }
+  box.addEventListener('dragover', (e) => (e.preventDefault(), box.classList.add('drag')));
+  box.addEventListener('dragleave', () => box.classList.remove('drag'));
+  box.addEventListener('drop', (e) => {
+    e.preventDefault();
+    box.classList.remove('drag');
+    add(e.dataTransfer.files);
+  });
+  // скриншот из буфера, пока открыта задача
+  const paste = (e) => {
+    if (!box.isConnected) return document.removeEventListener('paste', paste);
+    const list = [...(e.clipboardData?.files ?? [])];
+    if (list.length && !e.target.closest?.('textarea, input')) {
+      e.preventDefault();
+      add(list);
+    }
+  };
+  document.addEventListener('paste', paste);
+  draw();
+  return box;
 }
 
 // ---------- чек-лист задачи ----------
@@ -674,6 +764,7 @@ function stickers(t, onChange) {
     prio,
     t.comments ? h('span', { class: 'chip', title: 'Комментарии' }, `💬 ${t.comments}`) : null,
     t.links ? h('span', { class: 'chip chip-link', title: 'Медиапланы, документы и встречи по задаче' }, icon('docs'), t.links) : null,
+    t.files ? h('span', { class: 'chip', title: `Файлов: ${t.files}` }, '📎 ', t.files) : null,
     t.check_total ? h('span', { class: `chip chip-check${t.check_done === t.check_total ? ' all' : ''}`, title: `Чек-лист: выполнено ${t.check_done} из ${t.check_total}` }, '☑ ', `${t.check_done}/${t.check_total}`) : null,
     t.repeat ? h('span', { class: 'chip chip-repeat', title: `Повтор: ${(team?.repeats?.[t.repeat] ?? '').toLowerCase()}` }, '↻') : null,
     h('span', { class: 'spacer' }),

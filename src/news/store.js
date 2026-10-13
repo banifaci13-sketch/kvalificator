@@ -47,7 +47,6 @@ export function createNews({ db, files = null }) {
     files: db.prepare('SELECT f.id, f.mime, f.kind, f.name, f.bytes FROM news_files nf JOIN files f ON f.id = nf.file_id WHERE nf.post_id = ? ORDER BY nf.position'),
     attach: db.prepare('INSERT OR IGNORE INTO news_files (post_id, file_id, position) VALUES (?, ?, ?)'),
     detachAll: db.prepare('DELETE FROM news_files WHERE post_id = ?'),
-    fileUse: db.prepare('SELECT (SELECT COUNT(*) FROM news_files WHERE file_id = ?) AS n'),
     file: db.prepare('SELECT * FROM files WHERE id = ?'),
     comments: db.prepare('SELECT * FROM news_comments WHERE post_id = ? ORDER BY id'),
     comment: db.prepare('SELECT * FROM news_comments WHERE id = ?'),
@@ -188,7 +187,7 @@ export function createNews({ db, files = null }) {
         const before = q.files.all(cur.id).map((x) => x.id);
         q.detachAll.run(cur.id);
         ids.forEach((fid, i) => q.attach.run(cur.id, fid, i));
-        for (const fid of before) if (!ids.includes(fid) && !q.fileUse.get(fid).n) files?.remove(fid);
+        for (const fid of before) if (!ids.includes(fid)) files?.removeIfUnused(fid);
       }
     });
     const p = get(cur.id, user.id);
@@ -201,7 +200,7 @@ export function createNews({ db, files = null }) {
     if (!canEdit(cur, user)) throw new NewsError('Удалить запись может её автор или администратор');
     const attached = q.files.all(cur.id).map((x) => x.id);
     q.remove.run(cur.id);
-    for (const fid of attached) if (!q.fileUse.get(fid).n) files?.remove(fid);
+    for (const fid of attached) files?.removeIfUnused(fid);
   }
 
   const get = (id, userId) => hydrate(getRaw(id), userId);

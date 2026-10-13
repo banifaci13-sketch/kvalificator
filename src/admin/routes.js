@@ -440,7 +440,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans, brand });
-    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb });
+    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb, files });
 
     // ---------- уведомления (колокольчик) ----------
     api.get('/admin/api/notifications', async (req) => ({ items: notify.list(req.user.id), unread: notify.unread(req.user.id) }));

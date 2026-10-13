@@ -52,7 +52,7 @@ const columnBody = {
   },
 };
 
-export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null }) {
+export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null, files = null }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof CrmError) return reply.code(400).send({ error: err.message });
     if (err instanceof KbError) return reply.code(404).send({ error: err.message });
@@ -147,6 +147,18 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null 
     if (req.user.role !== 'admin') return reply.code(403).send({ error: 'Удалить клиента может администратор — остальные могут перенести его в архив' });
     crm.deleteClient(req.params.id);
     return { ok: true };
+  });
+
+  // ---------- вложения к задаче ----------
+  api.post('/admin/api/tasks/:id/files', {
+    schema: { params: idParams, body: { type: 'object', required: ['fileIds'], additionalProperties: false, properties: { fileIds: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'integer' } } } } },
+  }, async (req) => ({ files: crm.attachFiles(req.params.id, req.body.fileIds, req.user) }));
+  api.delete('/admin/api/tasks/:id/files/:fileId', {
+    schema: { params: { type: 'object', properties: { id: { type: 'integer' }, fileId: { type: 'integer' } } } },
+  }, async (req) => {
+    const list = crm.detachFile(req.params.id, req.params.fileId, req.user);
+    files?.removeIfUnused(req.params.fileId);
+    return { files: list };
   });
 
   // ---------- чек-лист задачи и процессы из регламентов ----------

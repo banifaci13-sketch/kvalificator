@@ -419,6 +419,16 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX task_checklist_task ON task_checklist (task_id, position);`,
+
+  // Вложения к задачам: файлы из общего хранилища (data/files)
+  `CREATE TABLE task_files (
+     task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+     added_by   TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     PRIMARY KEY (task_id, file_id)
+   );
+   CREATE INDEX task_files_file ON task_files (file_id);`,
 ];
 
 /** Номер текущей версии схемы базы. */

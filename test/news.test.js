@@ -138,3 +138,29 @@ test('новости: запись с фото, кейс, ссылка; реак
   assert.equal((await oleg({ url: `/admin/api/files/${photo.id}` })).statusCode, 404, 'файл удалённой записи стёрт');
   assert.equal(id('Ира') > 0, true);
 });
+
+test('вложения к задаче: прикрепить, видно на карточке, открепить — файл стирается, если больше нигде не нужен', async () => {
+  const { as } = await setup();
+  const oleg = await as('oleg');
+  const ira = await as('ira');
+  const up = async (who, body, type, name) => (await who({ method: 'POST', url: '/admin/api/files', headers: { 'content-type': type, 'x-file-name': encodeURIComponent(name) }, payload: body })).json().file;
+  const task = (await oleg({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Креативы для РСЯ' } })).json().task;
+  const brief = await up(oleg, Buffer.from('%PDF-1.4 бриф'), 'application/pdf', 'бриф.pdf');
+  const pic = await up(oleg, png(), 'image/png', 'баннер.png');
+
+  let files = (await oleg({ method: 'POST', url: `/admin/api/tasks/${task.id}/files`, payload: { fileIds: [brief.id, pic.id] } })).json().files;
+  assert.deepEqual(files.map((f) => f.name), ['бриф.pdf', 'баннер.png']);
+  const full = (await oleg({ url: `/admin/api/tasks/${task.id}` })).json().task;
+  assert.equal(full.files.length, 2);
+  assert.match(full.comments.at(-1).text, /^Файлы: бриф\.pdf, баннер\.png/);
+  assert.equal((await oleg({ url: '/admin/api/tasks?mine=false' })).json().tasks.find((t) => t.id === task.id).files, 2);
+  assert.equal((await ira({ method: 'POST', url: `/admin/api/tasks/${task.id}/files`, payload: { fileIds: [pic.id] } })).statusCode, 400, 'чужой файл не прикрепить');
+
+  // тот же баннер в новостях — при откреплении от задачи он остаётся
+  await oleg({ method: 'POST', url: '/admin/api/news', payload: { body: 'Новые баннеры', fileIds: [pic.id] } });
+  files = (await oleg({ method: 'DELETE', url: `/admin/api/tasks/${task.id}/files/${pic.id}` })).json().files;
+  assert.deepEqual(files.map((f) => f.name), ['бриф.pdf']);
+  assert.equal((await oleg({ url: `/admin/api/files/${pic.id}` })).statusCode, 200, 'нужен в новостях');
+  await oleg({ method: 'DELETE', url: `/admin/api/tasks/${task.id}/files/${brief.id}` });
+  assert.equal((await oleg({ url: `/admin/api/files/${brief.id}` })).statusCode, 404, 'больше нигде не нужен — стёрт');
+});
