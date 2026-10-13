@@ -314,7 +314,7 @@ function shell(active, content) {
             tabs.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
           )
         : null,
-      h('main', { class: `page${active === 'doc' || active === 'plan' ? ' page-wide' : ''}`, id: 'main' }, content),
+      h('main', { class: `page${['doc', 'plan', 'tasks', 'board'].includes(active) ? ' page-wide' : ''}`, id: 'main' }, content),
     ),
   ];
 }
@@ -1259,11 +1259,14 @@ function renderTest() {
   );
 }
 
-// ---------- подпись бренда ----------
-// Оригинальный логотип ещё не утверждён — по брендбуку ставим текстовую подпись, знак не рисуем.
+// ---------- логотип ----------
+// Оригинальный утверждённый файл (brand/assets/logo → admin/brand/logo.png при npm run brand:sync).
+// Если файла нет — текстовая подпись; знак не рисуем.
 
 function logo() {
-  return h('span', { class: 'wordmark' }, 'SOROKA MARKETING');
+  const img = h('img', { class: 'brand-logo', src: 'brand/logo.png', alt: 'SOROKA — агентство интернет-маркетинга' });
+  img.addEventListener('error', () => img.replaceWith(h('span', { class: 'wordmark' }, 'SOROKA MARKETING')), { once: true });
+  return img;
 }
 
 export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon };

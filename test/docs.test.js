@@ -37,12 +37,14 @@ test('проверка ловит заготовки, цифры без исто
   assert.match(text, /Слайд 4: неизвестный тип/);
 });
 
-test('HTML самодостаточный: шрифты встроены, внешних ссылок нет, подпись вместо неутверждённого логотипа', () => {
+test('HTML самодостаточный: шрифты и утверждённый логотип встроены, внешних ссылок нет', () => {
   const html = renderDeckHtml(demo, brand);
   assert.equal((html.match(/class="slide"/g) ?? []).length, demo.slides.length);
   assert.match(html, /@font-face\{font-family:'Manrope';src:url\(data:font\/woff2;base64,/);
   assert.doesNotMatch(html, /(src|href)="https?:/);
-  assert.match(html, /SOROKA MARKETING/);
+  // логотип — оригинальный файл с проверенным хешем, встроен в документ
+  assert.match(html, new RegExp(`class="el logo"[^>]*data-sha="${brand.logo.onLight.sha256}" src="data:image/png;base64,`));
+  assert.doesNotMatch(html, /data-el="wordmark"/, 'текстовая подпись нужна, только пока логотипа нет');
 });
 
 test('PPTX собирается: заголовки в плейсхолдерах, нативные графики и таблицы', async () => {

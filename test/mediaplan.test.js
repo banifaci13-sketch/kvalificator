@@ -106,7 +106,8 @@ test('медиаплан: создание, Excel с формулами, про�
   const sheet = await zip.file('xl/worksheets/sheet1.xml').async('string');
   assert.match(sheet, /<f>SUM\(H3:H4\)<\/f><v>450000<\/v>/, 'итоги — формулами, рядом готовое значение');
   assert.match(sheet, /'Допущения'!\$C\$3/, 'период берётся с листа допущений');
-  assert.match(sheet, /SOROKA/, 'шапка как в таблицах агентства');
+  assert.match(sheet, /<drawing r:id="rId1"\/>/, 'в шапке — утверждённый логотип агентства');
+  assert.ok(zip.file('xl/media/logo.png'));
   assert.match(sheet, /<c r="A2" s="\d+" t="inlineStr"><is><t xml:space="preserve">Площадка/, 'шапка таблицы — сразу во второй строке');
 
   const calcJs = await req({ url: '/admin/lib/mediaplan-calc.js' });

@@ -15,8 +15,9 @@ const brand = loadBrand();
 let stale = 0;
 
 function write(path, content) {
-  const current = existsSync(path) ? readFileSync(path, 'utf8') : null;
-  if (current === content) return;
+  const binary = Buffer.isBuffer(content);
+  const current = existsSync(path) ? readFileSync(path, binary ? undefined : 'utf8') : null;
+  if (binary ? current?.equals(content) : current === content) return;
   stale++;
   if (check) return console.log(`устарел: ${path.replace(`${ROOT}/`, '')}`);
   writeFileSync(path, content);
@@ -36,6 +37,8 @@ if (!check) {
     for (const f of brand.typography[role].files) copyFileSync(brand.fontFile(f), resolve(adminBrand, 'fonts', f));
   }
 }
+// логотип для тёмной боковой панели и экрана входа — только утверждённый файл
+if (brand.logo.onDark?.mime === 'image/png') write(resolve(adminBrand, 'logo.png'), brand.logo.onDark.data);
 
 // 3. Виджет: значения по умолчанию
 const widgetPath = resolve(ROOT, 'widget/widget.js');

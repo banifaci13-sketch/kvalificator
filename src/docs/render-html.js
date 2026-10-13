@@ -35,7 +35,7 @@ export function layoutDeck(deck, brand) {
 function footer(brand, L, deck, index) {
   const note = deck.meta?.footer ?? brand.documents.footer;
   return [
-    { kind: 'logo', name: 'footer-logo', x: L.M, y: L.footerY, h: 28, variant: 'onLight', chrome: true },
+    { kind: 'logo', name: 'footer-logo', x: L.M, y: L.footerY - 6, h: 40, variant: 'onLight', chrome: true },
     note ? { kind: 'text', name: 'footer-text', x: L.W - L.M - 640, y: L.footerY + 2, w: 560, h: 32, style: 'caption', color: 'steel', align: 'right', text: note, chrome: true } : null,
     { kind: 'text', name: 'page', x: L.W - L.M - 64, y: L.footerY + 2, w: 64, h: 32, style: 'caption', color: 'ink', align: 'right', text: String(index + 1), chrome: true },
   ].filter(Boolean);
