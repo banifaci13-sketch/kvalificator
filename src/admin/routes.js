@@ -371,7 +371,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     });
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
-    if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
+    if (mediaplans) await api.register(mediaplanRoutes, { mediaplans, brand });
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });

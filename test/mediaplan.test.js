@@ -14,7 +14,8 @@ import { loadBrand } from '../src/brand/index.js';
 import { createDocLibrary } from '../src/docs/library.js';
 import { checkContent } from '../src/docs/qa.js';
 import { calcRow, calcScenario, emptyPlan } from '../src/mediaplan/calc.js';
-import { createMediaplans } from '../src/mediaplan/store.js';
+import { createMediaplans, validatePlan } from '../src/mediaplan/store.js';
+import { mediaplanXlsx } from '../src/mediaplan/xlsx.js';
 import { rules, staticSource, silentLog } from './helpers.js';
 
 const PASSWORD = 'correct-horse-battery';
@@ -103,8 +104,9 @@ test('медиаплан: создание, Excel с формулами, про�
   assert.match(workbook, /name="Оптимальный"/);
   assert.match(workbook, /fullCalcOnLoad="1"/);
   const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
-  assert.match(sheet, /<f>SUM\(C5:C6\)<\/f>/, 'итоги — формулами, а не числами');
-  assert.match(sheet, /'Допущения'!\$B\$4/, 'период берётся с листа допущений');
+  assert.match(sheet, /<f>SUM\(H7:H8\)<\/f><v>450000<\/v>/, 'итоги — формулами, рядом готовое значение');
+  assert.match(sheet, /'Допущения'!\$B\$7/, 'период берётся с листа допущений');
+  assert.match(sheet, /SOROKA/, 'шапка в фирменном стиле');
 
   const calcJs = await req({ url: '/admin/lib/mediaplan-calc.js' });
   assert.equal(calcJs.statusCode, 200);
@@ -199,5 +201,37 @@ test('интернет-магазин: слайды и Excel', async () => {
   const zip = await JSZip.loadAsync(file.rawPayload);
   const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
   assert.match(sheet, /CR1 \(в корзину\)/);
-  assert.match(sheet, /<f>IF\(R5&gt;0,L5\/R5,0\)<\/f>/, 'ДРР по строке — формулой');
+  // колонки — как в медиапланах агентства: площадка, таргетинг, клики, CPC, стоимость без и с НДС…
+  const heads = [...sheet.matchAll(/<c r="([A-Z]+)6" s="\d+" t="inlineStr"><is><t xml:space="preserve">([^<]+)</g)].map((m) => m[2]);
+  assert.deepEqual(heads, ['Площадка', 'Таргетинг', 'Клики', 'CPC', 'Стоимость без НДС', 'Стоимость с НДС', 'CR1 (в корзину)', 'Кол-во корзин', 'CPA (цена доб. в корз.)', 'CR2 (конверсия в продажу)', 'Кол-во продаж', 'CPS (цена продажи)', 'Ср. чек', 'Выручка', 'ДРР']);
+  const drr = sheet.match(/<c r="O7" s="\d+"><f>IF\(N7&gt;0,F7\/N7,0\)<\/f><v>([\d.]+)<\/v>/);
+  assert.ok(drr, 'ДРР по строке — формулой');
+  assert.equal((Number(drr[1]) * 100).toFixed(2), '39.57', 'готовое значение видно и без пересчёта');
+  assert.match(sheet, /<f>'Допущения'!\$B\$12<\/f><v>5500<\/v>/, 'средний чек по умолчанию — ссылкой на допущения');
+});
+
+test('комиссия агентства: процент и фиксированная часть в месяц', () => {
+  const plan = {
+    kind: 'leads', months: 3, settings: { agencyFee: 10, agencyFixed: 25000, vat: 22 },
+    scenarios: [{ name: 'Основной', rows: [{ channel: 'Поиск', model: 'cpc', budget: 100000, cpc: 50, cr: 5 }] }],
+  };
+  const { period } = calcScenario(plan.scenarios[0], plan);
+  assert.equal(period.media, 300000);
+  assert.equal(period.fee, 30000 + 75000, '10 % от медиабюджета + 25 000 ₽ × 3 месяца');
+  assert.equal(Math.round(period.vat), Math.round((300000 + 105000) * 0.22));
+  assert.throws(() => validatePlan({ ...plan, settings: { agencyFixed: -1 } }), /Фиксированная комиссия/);
+});
+
+test('Excel: логотип бренда в шапке, если он утверждён', async () => {
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000c800000032080200000000000000', 'hex');
+  const spec = { kind: 'leads', months: 1, settings: { agencyFixed: 10000 }, scenarios: [{ name: 'Основной', rows: [{ channel: 'Поиск', model: 'cpc', budget: 100000, cpc: 50, cr: 5 }] }] };
+  const buf = await mediaplanXlsx({ title: 'План', client: 'Клиент', spec }, { logo: png });
+  const zip = await JSZip.loadAsync(buf);
+  assert.ok(zip.file('xl/media/logo.png'), 'логотип — оригинальный файл');
+  const drawing = await zip.file('xl/drawings/drawing1.xml').async('string');
+  assert.match(drawing, /cx="1524000" cy="381000"/, 'пропорции 200×50 сохранены: 160×40 px');
+  const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
+  assert.match(sheet, /<drawing r:id="rId1"\/>/);
+  assert.doesNotMatch(sheet, />SOROKA</, 'с логотипом текстовая подпись не нужна');
+  assert.match(sheet, /\$B\$9\*C/, 'фиксированная комиссия входит в формулу');
 });

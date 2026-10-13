@@ -212,6 +212,7 @@ export async function renderPlan(params) {
     h('div', { class: 'field' }, h('label', { for: 'mp-client' }, 'Клиент'), client),
     h('div', { class: 'field' }, h('label', { for: 'mp-months' }, 'Период, мес.'), months),
     h('div', { class: 'field' }, h('label', { for: 'mp-fee' }, 'Комиссия агентства, %'), numInput(spec.settings, 'agencyFee', { label: 'Комиссия агентства', id: 'mp-fee', placeholder: 'нет' })),
+    h('div', { class: 'field' }, h('label', { for: 'mp-fixed' }, 'Фикс. комиссия, ₽/мес'), numInput(spec.settings, 'agencyFixed', { label: 'Фиксированная часть комиссии в месяц, без НДС', id: 'mp-fixed', placeholder: 'нет' })),
     h('div', { class: 'field' }, h('label', { for: 'mp-vat' }, 'НДС, %'), numInput(spec.settings, 'vat', { label: 'НДС', id: 'mp-vat', placeholder: 'без НДС' })),
     spec.kind === 'ecom'
       ? null

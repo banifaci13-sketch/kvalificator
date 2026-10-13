@@ -754,7 +754,7 @@ details.menu summary::-webkit-details-marker { display: none; }
 .mp-table.ecom col.c-budget { width: 112px; }
 .mp-table.ecom col.c-out { width: 88px; }
 .mp-settings .mp-vat-flag { align-self: end; padding-bottom: 22px; }
-@media (min-width: 1201px) { .mp-settings { grid-template-columns: minmax(200px, 2fr) repeat(7, minmax(110px, 1fr)); } }
+@media (min-width: 1201px) { .mp-settings { grid-template-columns: minmax(180px, 1.6fr) repeat(8, minmax(100px, 1fr)); } }
 /* интернет-магазин: таблица широкая — итоги строкой над ней */
 .mp-layout.wide { grid-template-columns: minmax(0, 1fr); }
 .mp-layout.wide .mp-results { order: -1; position: static; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }

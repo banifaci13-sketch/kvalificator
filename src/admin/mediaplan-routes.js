@@ -32,7 +32,9 @@ const benchmarkBody = {
   },
 };
 
-export async function mediaplanRoutes(api, { mediaplans }) {
+export async function mediaplanRoutes(api, { mediaplans, brand }) {
+  // утверждённый логотип бренда (PNG) — в шапку Excel; пока его нет, там текстовая подпись
+  const logo = brand?.logo?.onLight?.mime === 'image/png' ? brand.logo.onLight.data : null;
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof DocError) return reply.code(400).send({ error: err.message });
     throw err;
@@ -62,7 +64,7 @@ export async function mediaplanRoutes(api, { mediaplans }) {
 
   api.get('/admin/api/mediaplans/:id/xlsx', { schema: { params: idParams } }, async (req, reply) => {
     const plan = mediaplans.get(req.params.id);
-    const buf = await mediaplanXlsx(plan, { benchmarks: mediaplans.usedBenchmarks(plan), author: req.user.name });
+    const buf = await mediaplanXlsx(plan, { benchmarks: mediaplans.usedBenchmarks(plan), author: req.user.name, logo });
     return reply
       .header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .header('content-disposition', `attachment; filename="${slugify(plan.title)}.xlsx"; filename*=UTF-8''${encodeURIComponent(`${plan.title}.xlsx`)}`)

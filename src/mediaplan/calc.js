@@ -11,6 +11,7 @@
 //   CPC: клики = бюджет без НДС / CPC;          показы = клики / CTR (если CTR задан)
 //   CPM: показы = бюджет без НДС / CPM × 1000;  клики = показы × CTR
 // Проценты (CTR, конверсии, комиссия, НДС) хранятся в процентах: 2.5 — это 2,5 %.
+// Комиссия агентства = процент от медиабюджета + фиксированная часть (₽ в месяц, без НДС).
 
 export const MODELS = [
   ['cpc', 'Клики (CPC)'],
@@ -31,7 +32,7 @@ export function emptyPlan(kind = 'leads') {
   return {
     kind,
     months: 1,
-    settings: { agencyFee: null, vat: null, budgetWithVat: false, saleRate: null, avgCheck: null },
+    settings: { agencyFee: null, agencyFixed: null, vat: null, budgetWithVat: false, saleRate: null, avgCheck: null },
     scenarios: [{ name: 'Основной', rows: [emptyRow()] }],
     assumptions: '',
   };
@@ -104,7 +105,8 @@ export function calcScenario(scenario, plan) {
   }
 
   const media = (month.net ?? 0) * months;
-  const fee = media * (pct(s.agencyFee) ?? 0);
+  // комиссия агентства: процент от медиабюджета и (или) фиксированная часть в месяц, обе без НДС
+  const fee = media * (pct(s.agencyFee) ?? 0) + (num(s.agencyFixed) ?? 0) * months;
   const vat = (media + fee) * (pct(s.vat) ?? 0);
   const total = media + fee + vat;
   const period = {

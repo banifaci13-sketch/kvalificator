@@ -221,6 +221,7 @@ export function validatePlan(spec) {
   const s = spec.settings ?? {};
   if (s.budgetWithVat != null && typeof s.budgetWithVat !== 'boolean') throw new DocError('Неверная настройка НДС');
   checkPct(s.agencyFee, 'Комиссия агентства');
+  checkNum(s.agencyFixed, 'Фиксированная комиссия');
   checkPct(s.vat, 'НДС');
   checkPct(s.saleRate, 'Конверсия в продажу');
   checkNum(s.avgCheck, 'Средний чек');
