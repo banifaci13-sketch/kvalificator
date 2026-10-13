@@ -10,6 +10,14 @@ import { createKb, chunk } from '../src/assistant/kb.js';
 import { createSearch, parseYandexXml } from '../src/assistant/search.js';
 import { parseWhen } from '../src/assistant/when.js';
 import { parseCommand, bestMatch } from '../src/assistant/commands.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { loadBrand } from '../src/brand/index.js';
+import { createDocLibrary } from '../src/docs/library.js';
+import { createMediaplans } from '../src/mediaplan/store.js';
+import { createReports } from '../src/admin/reports.js';
+import { createNotifications } from '../src/notify/store.js';
 
 // вторник, 13 октября 2026, 12:00 по Москве
 const NOW = new Date('2026-10-13T09:00:00Z');
@@ -95,7 +103,7 @@ test('регламенты: фрагменты по разделам, подбо
   assert.equal(kb.search('метрика цели')[0].title, 'Запуск рекламы');
 });
 
-function setup({ ai = null, search = null } = {}) {
+function setup({ ai = null, search = null, full = false } = {}) {
   const db = openDb(':memory:');
   const auth = createAuth(db.raw);
   const anna = auth.addUser('anna', 'Анна Сорокина', { password: 'correct-horse-battery', role: 'admin' }).user;
@@ -104,8 +112,17 @@ function setup({ ai = null, search = null } = {}) {
   const calendar = createCalendar({ db: db.raw });
   const kb = createKb({ db: db.raw });
   const talle = crm.createClient({ name: 'Таллер' }, anna);
-  const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb });
-  return { db, auth, crm, calendar, kb, assistant, anna, dan, talle };
+  const extra = {};
+  if (full) {
+    extra.library = createDocLibrary({ db: db.raw, brand: loadBrand(), templatesDir: resolve(import.meta.dirname, '../templates/decks'), dataDir: mkdtempSync(join(tmpdir(), 'assist-')) });
+    extra.mediaplans = createMediaplans({ db: db.raw, library: extra.library });
+    extra.reports = createReports(db.raw);
+    extra.leads = db;
+    extra.notify = createNotifications({ db: db.raw });
+    crm.useNotify(extra.notify);
+  }
+  const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, ...extra });
+  return { db, auth, crm, calendar, kb, assistant, anna, dan, talle, ...extra };
 }
 
 test('ассистент: ставит, закрывает и переносит задачи; переспрашивает, если похожих несколько', async () => {
@@ -181,4 +198,90 @@ test('ассистент без ИИ: подсказывает, что умее�
 
   const off = await s.assistant.handle(s.anna, 'найди ставки', { now: NOW, prefs: { webSearch: 'off' } });
   assert.match(off.reply, /выключен/);
+});
+
+test('ассистент выполняет действия по разделам без ИИ: клиент, доска, медиаплан, КП, заявки, исполнитель, тема', async () => {
+  const s = setup({ full: true });
+  const say = (t) => s.assistant.handle(s.anna, t, { now: NOW });
+
+  const c = await say('добавь клиента Юнистрим, сайт unistream.ru');
+  assert.match(c.reply, /Добавил клиента «Юнистрим» \(сайт unistream\.ru\)/);
+  const client = s.crm.listClients().find((x) => x.name === 'Юнистрим');
+  assert.equal(client.site, 'unistream.ru');
+  assert.match((await say('создай клиента Юнистрим')).reply, /уже есть/, 'дубликат не заводим');
+
+  const b = await say('создай доску Трафик в проекте Юнистрим');
+  assert.match(b.reply, /Добавил доску «Трафик» в проект «Юнистрим»/);
+
+  const mp = await say('создай медиаплан для Юнистрима на 6 месяцев');
+  assert.match(mp.reply, /Создал медиаплан «Медиаплан — Юнистрим на 6 месяцев»/);
+  assert.equal(s.mediaplans.get(mp.actions[0].id).spec.months, 6);
+  assert.match(mp.navigate, /^#\/plan\?id=\d+$/);
+
+  const kp = await say('создай КП для Таллера');
+  assert.match(kp.reply, /Создал «Коммерческое предложение — Таллер»/);
+  const doc = s.library.getDocument(kp.actions[0].id);
+  assert.ok(JSON.stringify(doc.spec).includes('Таллер'), 'клиент подставлен в шаблон');
+  assert.ok(!JSON.stringify(doc.spec).includes('{{client}}'));
+
+  // задача → передать, важность, комментарий с уведомлением
+  await say('поставь задачу баннеры для Таллера на пятницу');
+  assert.match((await say('передай задачу баннеры Даниилу')).reply, /теперь на Даниил Карацапов/);
+  assert.match((await say('сделай задачу баннеры критичной')).reply, /критичная/);
+  assert.match((await say('комментарий к задаче баннеры: макеты в папке')).reply, /Оставил комментарий/);
+  const t = s.crm.listTasks({ open: true }).find((x) => x.title === 'Баннеры');
+  assert.deepEqual([t.assignee_id, t.priority], [s.dan.id, 4]);
+  assert.ok(s.notify.list(s.dan.id).some((n) => /Комментарий к задаче «Баннеры»/.test(n.text)));
+  const del = await say('удали задачу баннеры');
+  assert.match(del.reply, /Удалить задачу «Баннеры»/, 'удаление — только после подтверждения');
+  await say(del.options[0].command);
+  assert.ok(!s.crm.listTasks({}).some((x) => x.title === 'Баннеры'));
+
+  // заявки
+  const session = { id: 's1', channel: 'web', meta: {} };
+  s.db.createSession({ id: 's1', token: 't', channel: 'web', state: {}, meta: {} });
+  const lead = s.db.completeSession(session, { answers: { company: { raw: 'Глобал Стекло' } } }, { rating: 5, score: 90, reasons: [], tags: [] });
+  const fresh = await say('новые заявки');
+  assert.match(fresh.reply, /Новые заявки за неделю: 1/);
+  assert.match(fresh.reply, /«Глобал Стекло» — рейтинг 5/);
+  const take = await say(`возьми заявку ${lead.id}`);
+  assert.match(take.reply, /статус «В работе», ответственный — вы/);
+  assert.equal(s.db.getLead(lead.id).assignee, 'Анна Сорокина');
+  const fromLead = await say(take.options[0].command);
+  assert.match(fromLead.reply, /Завёл клиента «Глобал Стекло» по заявке/);
+
+  // навигация, тема, сводка по клиенту, справка
+  assert.equal((await say('открой медиапланы')).navigate, '#/plans');
+  const theme = await say('включи тёмную тему');
+  assert.equal(theme.prefs.theme, 'dark');
+  assert.equal(s.auth.getUser(s.anna.id).prefs.theme, 'dark');
+  assert.match((await say('что по Юнистриму')).reply, /Медиапланов: 1/);
+  const help = await say('что ты умеешь');
+  assert.match(help.reply, /добавь клиента/);
+  assert.match(help.reply, /возьми заявку/);
+});
+
+test('ассистент с ИИ: свободную просьбу модель переписывает в фразы каталога, их выполняют правила', async () => {
+  const replies = ['КОМАНДА: добавь клиента Юнистрим\nКОМАНДА: поставь задачу бриф для Юнистрима на завтра', 'Это свободный ответ.'];
+  const sent = [];
+  const ai = createAi(
+    { provider: 'yandexgpt', yandexApiKey: 'k', yandexFolderId: 'f', yandexModel: 'yandexgpt/latest' },
+    {
+      fetchImpl: async (url, init) => {
+        sent.push(JSON.parse(init.body));
+        const text = replies.shift() ?? 'ок';
+        return new Response(JSON.stringify({ result: { alternatives: [{ message: { text } }], usage: {} } }), { status: 200 });
+      },
+    },
+  );
+  const s = setup({ ai, full: true });
+  const r = await s.assistant.handle(s.anna, 'слушай, у нас новый клиент Юнистрим, заведи его и запланируй мне на завтра бриф', { now: NOW });
+  assert.match(JSON.stringify(sent[0]), /КОМАНДА/, 'модель знает про команды');
+  assert.match(r.reply, /Добавил клиента «Юнистрим»/);
+  assert.match(r.reply, /Поставил задачу «Бриф»: проект «Юнистрим»/);
+  assert.equal(r.via, 'ai');
+  // фразы из каталога модель не тратят
+  const before = sent.length;
+  await s.assistant.handle(s.anna, 'добавь клиента Ромашка', { now: NOW });
+  assert.equal(sent.length, before, 'правила сработали без модели');
 });

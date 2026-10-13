@@ -3,6 +3,7 @@
 // выполняются сразу; вопросы — с опорой на регламенты агентства и, при необходимости, поиск в интернете.
 
 import { h, api, toast, navigate, ctx, icon, rerender } from './admin.js';
+import { refreshBell } from './home.js';
 import { fill } from './docs.js';
 
 const PAGES = {
@@ -174,7 +175,7 @@ function bubble(m) {
     h(
       'div',
       { class: 'msg-action' },
-      icon(a.type === 'meeting' ? 'calendar' : 'tasks'),
+      icon({ meeting: 'calendar', plan: 'plans', doc: 'docs', lead: 'leads', client: 'person', link: 'home' }[a.type] ?? 'tasks'),
       h('a', { href: a.href, onclick: () => setTimeout(() => window.innerWidth < 960 && closeAssistant(), 0) }, a.title),
       a.created && a.type === 'task' ? toolButtons(a) : null,
     ),
@@ -230,7 +231,12 @@ async function ask(text, shown = text) {
     typing.remove();
     state?.list.append(bubble({ role: 'assistant', text: res.reply, ...res }));
     // поставленные или изменённые задачи — обновить доску под окном
-    if (res.actions?.length && /^#\/(tasks|mytasks|calendar)/.test(location.hash)) rerender();
+    if (res.prefs) {
+      ctx.me.prefs = res.prefs;
+      window.sorokaTheme?.apply(res.prefs);
+    }
+    if (res.refreshBell || res.actions?.length) refreshBell();
+    if (!res.navigate && res.actions?.length && /^#\/(home|tasks|mytasks|calendar|clients|client|plans|docs|leads)?(\?|$)/.test(location.hash)) rerender();
     if (res.navigate) navigate(res.navigate.replace(/^#\//, '').split('?')[0], new URLSearchParams(res.navigate.split('?')[1] ?? ''));
   } catch (err) {
     typing.remove();

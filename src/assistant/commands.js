@@ -58,8 +58,13 @@ export function findClient(text, clients) {
     const hits = name.filter((n) => words.some((w) => stemMatch(w, n))).length;
     if (hits === name.length && (!best || name.length > best.n)) best = { client: c, n: name.length };
   }
-  return best?.client ?? null;
+  if (best) return best.client;
+  // «Медлайн» вместо «Клиника Медлайн»: хватает одного характерного слова, если оно только у одного клиента
+  const partial = clients.filter((c) => tokens(c.name).filter((t) => t.length >= 4 && !LEGAL.has(t) && !GENERIC.has(t)).some((n) => words.some((w) => w.length >= 4 && stemMatch(w, n))));
+  return partial.length === 1 ? partial[0] : null;
 }
+// слова, которые встречаются в названиях многих компаний и сами по себе клиента не определяют
+const GENERIC = new Set(['клиника', 'компания', 'группа', 'студия', 'агентство', 'магазин', 'центр', 'завод', 'холдинг', 'сервис', 'маркет', 'торговый', 'дом']);
 
 /** Сотрудник по имени в любом падеже: «Даниилу», «на Олега». */
 export function findPerson(text, team) {

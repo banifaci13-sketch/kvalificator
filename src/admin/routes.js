@@ -525,7 +525,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       const kb = createKb({ db: db.raw });
       const search = createSearch(config.search);
       const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log });
+      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify });
       await api.register(assistantRoutes, { assistant, kb, ai, search });
     }
 
