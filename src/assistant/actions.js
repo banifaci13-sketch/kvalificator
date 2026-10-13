@@ -24,7 +24,7 @@ const company = (l) => l.answers?.company?.raw ?? l.answers?.company ?? null;
 const leadLabel = (l) => `№${l.id}${company(l) ? ` «${company(l)}»` : ''}`;
 const RU_MONTH = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, findTask, choose }) {
+export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, money, findTask, choose }) {
   const need = (store, what) => {
     if (!store) throw new Error(`${what} недоступны на этом сервере`);
   };
@@ -388,6 +388,46 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       return { reply: lines.join('\n'), actions: [{ type: 'link', title: 'Сводка по заявкам', href: '#/stats' }] };
     },
 
+    // ---------- деньги ----------
+    money_summary(user) {
+      if (!money) return { reply: 'Учёт оплат недоступен.' };
+      const s = money.summary(user);
+      const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+      const lines = [];
+      lines.push(s.overdue.sum ? `Просрочено: ${rub(s.overdue.sum)} (${s.overdue.count}).` : 'Просроченных оплат нет.');
+      for (const d of s.debtors.slice(0, 8)) lines.push(`• ${d.client_name} — ${rub(d.sum)}, ${d.days} дн.`);
+      lines.push(`Ждём в этом месяце: ${rub(s.expected.sum)}. Получено в этом месяце: ${rub(s.received.sum)}.`);
+      return { reply: lines.join('\n'), actions: [{ type: 'link', title: 'Оплаты', href: '#/money' }, ...s.debtors.slice(0, 4).map((d) => ({ type: 'client', id: d.client_id, title: d.client_name, href: `#/client?id=${d.client_id}` }))] };
+    },
+    money_paid(user, cmd, { now }) {
+      if (!money) return { reply: 'Учёт оплат недоступен.' };
+      const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+      const open = money.list(user, { clientId: cmd.client.id, now }).filter((p) => p.status !== 'paid');
+      let p = cmd.amount ? open.find((x) => Math.round(x.amount) === Math.round(cmd.amount)) : open.length === 1 ? open[0] : null;
+      if (!p && !cmd.amount && open.length > 1) return { reply: `У «${cmd.client.name}» несколько неоплаченных счетов — какой оплачен?`, options: open.slice(0, 5).map((x) => ({ label: `${x.label} — ${rub(x.amount)}`, command: `${cmd.client.name} оплатил ${Math.round(x.amount)}` })) };
+      if (!p && !cmd.amount) return { reply: `Сколько оплатил «${cmd.client.name}»? Например: «${cmd.client.name} оплатил 80 000».` };
+      if (p) {
+        money.update(p.id, { paid: true }, user, now);
+        return { reply: `Отметил оплату: ${cmd.client.name} — ${rub(p.amount)}, ${p.label.toLowerCase()}.`, actions: [{ type: 'client', id: cmd.client.id, title: cmd.client.name, href: `#/client?id=${cmd.client.id}` }] };
+      }
+      const added = money.add(cmd.client.id, { kind: 'other', title: 'Оплата', amount: cmd.amount, paid: true }, user, now);
+      return { reply: `Счёта на ${rub(cmd.amount)} у «${cmd.client.name}» не было — записал поступление ${rub(added.amount)}.${open.length ? ` Неоплаченных счетов: ${open.length}.` : ''}`, actions: [{ type: 'client', id: cmd.client.id, title: cmd.client.name, href: `#/client?id=${cmd.client.id}` }] };
+    },
+    money_invoice(user, cmd, { now }) {
+      if (!money) return { reply: 'Учёт оплат недоступен.' };
+      if (!cmd.client) return { reply: 'Кому выставить счёт? Например: «выставь счёт Таллеру 80 000 до 20.10».', notFound: true };
+      if (!cmd.amount) return { reply: `На какую сумму счёт для «${cmd.client.name}»?` };
+      const p = money.add(cmd.client.id, { kind: cmd.kind, title: cmd.title, amount: cmd.amount, due: cmd.due }, user, now);
+      const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+      return { reply: `Записал счёт: ${cmd.client.name} — ${rub(p.amount)}, ${p.label.toLowerCase()}${p.due ? `, срок ${fmtDay(p.due)}` : ''}. Напомню менеджеру за 3 дня и при просрочке.`, actions: [{ type: 'client', id: cmd.client.id, title: cmd.client.name, href: `#/client?id=${cmd.client.id}` }] };
+    },
+    money_billing(user, cmd) {
+      if (!money) return { reply: 'Учёт оплат недоступен.' };
+      money.setBilling(cmd.client.id, { fee: cmd.fee, payDay: cmd.payDay ?? 10 }, user);
+      const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+      return { reply: `Ведение «${cmd.client.name}» — ${rub(cmd.fee)} в месяц, оплата до ${cmd.payDay ?? 10} числа. Счёт будет появляться каждый месяц сам, напомню за 3 дня до срока.`, actions: [{ type: 'client', id: cmd.client.id, title: cmd.client.name, href: `#/client?id=${cmd.client.id}` }] };
+    },
+
     // ---------- новости ----------
     news_create(user, cmd) {
       if (!news) return { reply: 'Новости недоступны.' };
@@ -443,6 +483,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     if (calendar) g.push('', 'Встречи', '• «встреча с Ромашкой завтра в 15 в Телемосте»', '• «перенеси встречу с Таллером на четверг», «отмени планёрку», «встречи на неделе»');
     if (mediaplans || library) g.push('', 'Медиапланы и документы', '• «создай медиаплан для Таллера на квартал», «медиаплан для интернет-магазина»', '• «создай КП для Юнистрима», «сделай отчёт для Таллера за сентябрь», «открой медиаплан Таллер»');
     if (reports) g.push('', 'Заявки', '• «новые заявки», «горячие заявки за неделю», «сколько заявок за месяц»', '• «возьми заявку 123», «заявка 123 — спам», «заведи клиента по заявке 123»');
+    if (money) g.push('', 'Деньги', '• «Таллер оплатил 80 000», «выставь счёт Ромашке 50 000 до 20.10 за аудит»', '• «ведение Таллер 80 000 в месяц до 10 числа», «кто должен»');
     if (kb) g.push('', 'Регламенты', '• «запусти регламент запуска рекламы для Таллера» — шаги задачами с чек-листами', '• «открой регламент по КП»');
     g.push('', 'Новости', '• «опубликуй в новости: запустили РСЯ для Таллера», «покажи новости»');
     g.push('', 'Кабинет', '• «открой календарь», «перейди в медиапланы», «что нового», «включи тёмную тему»');

@@ -41,7 +41,7 @@ export async function renderHome() {
       if (err.status !== 401) fill(body, h('p', { class: 'error' }, err.message));
       return;
     }
-    fill(body, hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, newsCard(d), meetings(d, load), leads(d), notifications(d), recent(d))));
+    fill(body, hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, moneyCard(d), newsCard(d), meetings(d, load), leads(d), notifications(d), recent(d))));
   }
   await load();
 }
@@ -209,6 +209,23 @@ export function notificationRow(n, onOpen = () => {}) {
       },
       n.text,
       h('span', { class: 'muted small' }, fmtDateTime(n.created_at)),
+    ),
+  );
+}
+
+function moneyCard(d) {
+  const m = d.money;
+  if (!m || (!m.overdue.sum && !m.soon.length)) return null;
+  const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+  return card(
+    'Деньги',
+    { cls: 'home-money', action: h('a', { class: 'linkish small', href: '#/money' }, 'Все оплаты') },
+    m.overdue.sum ? h('p', { class: 'home-money-debt' }, h('b', { class: 'num' }, rub(m.overdue.sum)), ` просрочено · ${m.overdue.count} ${plural(m.overdue.count, 'счёт', 'счёта', 'счетов')}`) : null,
+    h(
+      'ul',
+      { class: 'home-list' },
+      m.debtors.map((x) => h('li', { class: 'home-recent' }, h('span', { class: 'home-money-dot bad' }), h('a', { class: 'task-link', href: `#/client?id=${x.client_id}` }, x.client_name), h('span', { class: 'due overdue num small' }, `${rub(x.sum)} · ${x.days} дн.`))),
+      m.soon.map((p) => h('li', { class: 'home-recent' }, h('span', { class: 'home-money-dot' }), h('a', { class: 'task-link', href: `#/client?id=${p.client_id}` }, `${p.client_name}: ${p.label}`), h('span', { class: 'muted small num' }, `${rub(p.amount)} · ${new Date(`${p.due}T12:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`))),
     ),
   );
 }

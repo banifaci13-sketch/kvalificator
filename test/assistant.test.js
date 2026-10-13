@@ -18,6 +18,7 @@ import { createDocLibrary } from '../src/docs/library.js';
 import { createMediaplans } from '../src/mediaplan/store.js';
 import { createReports } from '../src/admin/reports.js';
 import { createNotifications } from '../src/notify/store.js';
+import { createMoney } from '../src/crm/money.js';
 
 // вторник, 13 октября 2026, 12:00 по Москве
 const NOW = new Date('2026-10-13T09:00:00Z');
@@ -120,6 +121,7 @@ function setup({ ai = null, search = null, full = false } = {}) {
     extra.leads = db;
     extra.notify = createNotifications({ db: db.raw });
     crm.useNotify(extra.notify);
+    extra.money = createMoney({ db: db.raw, notify: extra.notify });
   }
   const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, ...extra });
   return { db, auth, crm, calendar, kb, assistant, anna, dan, talle, ...extra };
@@ -297,4 +299,18 @@ test('ассистент с ИИ: свободную просьбу модель
   const before = sent.length;
   await s.assistant.handle(s.anna, 'добавь клиента Ромашка', { now: NOW });
   assert.equal(sent.length, before, 'правила сработали без модели');
+});
+
+test('ассистент: деньги — ведение, счёт, оплата, должники', async () => {
+  const s = setup({ full: true });
+  const say = (t) => s.assistant.handle(s.anna, t, { now: NOW });
+  assert.match((await say('ведение Таллер 80 000 в месяц до 10 числа')).reply, /Ведение «Таллер» — 80\s000 ₽ в месяц, оплата до 10 числа/);
+  assert.match((await say('выставь счёт Таллеру 50 000 до 20.10 за аудит')).reply, /Записал счёт: Таллер — 50\s000 ₽, аудит, срок 20 октября/);
+  const who = await say('кто должен');
+  assert.match(who.reply, /Просрочено: 80\s000 ₽/, 'ведение за октябрь — срок 10-го, уже прошёл');
+  assert.match(who.reply, /Таллер — 80\s000 ₽/);
+  const amb = await say('Таллер оплатил');
+  assert.equal(amb.options.length, 2, 'два счёта — переспросить');
+  assert.match((await say('Таллер оплатил 80 000')).reply, /Отметил оплату: Таллер — 80\s000 ₽, ведение за октябрь 2026/);
+  assert.match((await say('кто должен')).reply, /Просроченных оплат нет/);
 });

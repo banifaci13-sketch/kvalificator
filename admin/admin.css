@@ -1597,3 +1597,34 @@ select.select[data-open] { background-image: url("data:image/svg+xml,%3Csvg xmln
 .task-file-main a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; text-decoration: none; }
 .task-file-main a:hover { color: var(--accent-text); text-decoration: underline; }
 .task-files-empty { margin: 0; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius-s); }
+
+/* деньги по клиентам */
+.money { display: grid; gap: 18px; max-width: 1100px; }
+.money-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.money-stats .home-stat[aria-current] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.client-money { display: grid; gap: 10px; }
+.client-money h2 { margin: 0; }
+.money-billing { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.money-billing .field { margin: 0; }
+.pay-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.pay-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.pay-row:first-child { border-top: 0; }
+.pay-status { justify-self: start; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; background: var(--surface-3); color: var(--muted); }
+.pay-status.s-overdue { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); color: var(--danger); }
+.pay-status.s-open { background: color-mix(in srgb, var(--due-today) 16%, var(--surface)); color: var(--due-today); }
+.pay-status.s-paid { background: color-mix(in srgb, var(--good) 15%, var(--surface)); color: var(--good); }
+.pay-main { display: grid; min-width: 0; line-height: 1.35; }
+.pay-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pay-main a { color: var(--text); text-decoration: none; }
+.pay-main a:hover { color: var(--accent-text); }
+.pay-sum { font-size: 15px; }
+.pay-row.s-paid .pay-sum { color: var(--muted); }
+.home-money-debt { margin: 8px 0 0; color: var(--muted); }
+.home-money-debt b { color: var(--danger); font-size: 22px; }
+.home-money-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--due-today); justify-self: center; }
+.home-money-dot.bad { background: var(--danger); }
+@media (max-width: 720px) {
+  .pay-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .pay-status { grid-column: 1 / -1; }
+  .money-stats { grid-template-columns: 1fr; }
+}

@@ -16,6 +16,8 @@ import { createMedia } from './docs/media.js';
 import { createMediaplans } from './mediaplan/store.js';
 import { createFiles } from './files/store.js';
 import { createHotLeads } from './crm/hot-leads.js';
+import { createMoney } from './crm/money.js';
+import { createNotifications } from './notify/store.js';
 import { createCrm } from './crm/store.js';
 import { createCalendar } from './calendar/store.js';
 import { createVideo } from './calendar/video.js';
@@ -43,6 +45,8 @@ const calendar = createCalendar({ db: db.raw });
 const crm = createCrm({ db: db.raw });
 // горячая заявка — сразу задача «Связаться» за 15 минут
 const hotLeads = createHotLeads({ db: db.raw, crm });
+// деньги по клиентам: счета за ведение каждый месяц, напоминания о сроках оплаты
+const money = createMoney({ db: db.raw, notify: createNotifications({ db: db.raw }) });
 qualifier.onLead((lead) => hotLeads.onLead(lead));
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
@@ -65,6 +69,7 @@ const app = await buildServer({
     library,
     media,
     files,
+    money,
     mediaplans: createMediaplans({ db: db.raw, library }),
     crm,
     calendar,
@@ -82,6 +87,21 @@ if (telegramBot && config.telegram.webhookUrl) {
 }
 
 const retryTimer = setInterval(() => qualifier.retryUndelivered().catch((err) => log.error({ err })), RETRY_INTERVAL_MS);
+// раз в час: счета за ведение на новый месяц и напоминания об оплате
+const moneyTimer = setInterval(() => {
+  try {
+    money.remind();
+  } catch (err) {
+    log.error({ err }, 'Напоминания об оплате');
+  }
+}, 3600e3);
+setTimeout(() => {
+  try {
+    money.remind();
+  } catch (err) {
+    log.error({ err }, 'Напоминания об оплате');
+  }
+}, 30e3);
 // Напоминания о встречах и утренний план — в личный Telegram сотрудников (нужен токен бота)
 const reminders = config.telegram.token
   ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl })
@@ -93,6 +113,7 @@ if (telegramBot) await startTelegramBot(telegramBot);
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
     clearInterval(retryTimer);
+    clearInterval(moneyTimer);
     reminders?.stop();
     scenarioSource.stop();
     if (telegramBot?.isRunning()) await telegramBot.stop();

@@ -52,7 +52,7 @@ const columnBody = {
   },
 };
 
-export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null, files = null }) {
+export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null, files = null, money = null }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof CrmError) return reply.code(400).send({ error: err.message });
     if (err instanceof KbError) return reply.code(404).send({ error: err.message });
@@ -148,6 +148,38 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null,
     crm.deleteClient(req.params.id);
     return { ok: true };
   });
+
+  // ---------- деньги по клиентам ----------
+  if (money) {
+    const payBody = {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', enum: Object.keys(money.kinds) },
+        title: { type: ['string', 'null'], maxLength: 200 },
+        amount: { type: 'number', exclusiveMinimum: 0 },
+        due: { type: ['string', 'null'], format: 'date' },
+        period: { type: 'string', pattern: '^\\d{4}-\\d{2}$' },
+        invoice: { type: ['string', 'null'], maxLength: 100 },
+        note: { type: ['string', 'null'], maxLength: 1000 },
+        paid: { type: 'boolean' },
+      },
+    };
+    api.get('/admin/api/money', { schema: { querystring: { type: 'object', properties: { client: { type: 'integer' } } } } }, async (req) => ({
+      payments: money.list(req.user, { clientId: req.query.client ?? null }),
+      summary: req.query.client ? null : money.summary(req.user),
+      kinds: money.kinds,
+    }));
+    api.post('/admin/api/clients/:id/payments', { schema: { params: idParams, body: { ...payBody, required: ['amount'] } } }, async (req) => ({ payment: money.add(req.params.id, req.body, req.user) }));
+    api.patch('/admin/api/payments/:id', { schema: { params: idParams, body: { ...payBody, minProperties: 1 } } }, async (req) => ({ payment: money.update(req.params.id, req.body, req.user) }));
+    api.delete('/admin/api/payments/:id', { schema: { params: idParams } }, async (req) => {
+      money.remove(req.params.id, req.user);
+      return { ok: true };
+    });
+    api.patch('/admin/api/clients/:id/billing', {
+      schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { fee: { type: ['number', 'null'], minimum: 0 }, payDay: { type: ['integer', 'null'], minimum: 1, maximum: 31 } } } },
+    }, async (req) => ({ client: money.setBilling(req.params.id, req.body, req.user), payments: money.list(req.user, { clientId: req.params.id }) }));
+  }
 
   // ---------- вложения к задаче ----------
   api.post('/admin/api/tasks/:id/files', {

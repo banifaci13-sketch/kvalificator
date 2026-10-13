@@ -218,3 +218,16 @@ test('повторяющиеся задачи из фразы', () => {
     assert.doesNotMatch(got.title, /кажд|ежемесячно|будням|раз в/i, got.title);
   }
 });
+
+test('деньги из фразы', () => {
+  const a = parse('Таллер оплатил 80 000');
+  assert.deepEqual([a.intent, a.client?.id, a.amount], ['money_paid', 1, 80000]);
+  const b = parse('выставь счёт Ромашке 50к до 20.10 за аудит рекламы');
+  assert.deepEqual([b.intent, b.client?.id, b.amount, b.due, b.kind, b.title], ['money_invoice', 2, 50000, '2026-10-20', 'other', 'аудит рекламы']);
+  const c = parse('выставь счёт Таллеру на рекламный бюджет 300 000');
+  assert.deepEqual([c.kind, c.amount], ['budget', 300000]);
+  const d = parse('ведение Таллер 80 000 в месяц до 10 числа');
+  assert.deepEqual([d.intent, d.client?.id, d.fee, d.payDay], ['money_billing', 1, 80000, 10]);
+  assert.equal(parse('кто должен?').intent, 'money_summary');
+  assert.equal(parse('пришла оплата от Медлайн 120 тыс').amount, 120000);
+});

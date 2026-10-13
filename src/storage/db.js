@@ -429,6 +429,29 @@ const MIGRATIONS = [
      PRIMARY KEY (task_id, file_id)
    );
    CREATE INDEX task_files_file ON task_files (file_id);`,
+
+  // Деньги по клиентам: абонентская плата за ведение, день оплаты, счета и оплаты.
+  // auto = 1 — ежемесячный счёт за ведение, создан сам (один на клиента и месяц).
+  `ALTER TABLE clients ADD COLUMN fee REAL;
+   ALTER TABLE clients ADD COLUMN pay_day INTEGER;
+   CREATE TABLE client_payments (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+     kind       TEXT NOT NULL DEFAULT 'fee',
+     title      TEXT,
+     amount     REAL NOT NULL,
+     period     TEXT,
+     due        TEXT,
+     paid_at    TEXT,
+     invoice    TEXT,
+     note       TEXT,
+     auto       INTEGER NOT NULL DEFAULT 0,
+     reminded   TEXT NOT NULL DEFAULT '',
+     created_by TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX client_payments_client ON client_payments (client_id, due);
+   CREATE UNIQUE INDEX client_payments_auto ON client_payments (client_id, period) WHERE auto = 1;`,
 ];
 
 /** Номер текущей версии схемы базы. */

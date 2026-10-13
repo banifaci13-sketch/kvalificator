@@ -10,6 +10,7 @@ import { assistantEntry } from './assistant.js';
 import { renderKb } from './kb.js';
 import { renderHome, bellButton } from './home.js';
 import { renderNews, refreshNewsBadge } from './news.js';
+import { renderMoney } from './money.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -181,6 +182,7 @@ const statusChip = (status) => h('span', { class: 'status', dataset: { s: status
 const routes = {
   home: renderHome,
   news: renderNews,
+  money: renderMoney,
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
@@ -227,6 +229,7 @@ const SECTION_TABS = {
     ['tasks', 'Проекты'],
     ['mytasks', 'Мои задачи'],
     ['clients', 'Клиенты'],
+    ['money', 'Оплаты'],
   ],
 };
 // Страницы внутри раздела без своей вкладки

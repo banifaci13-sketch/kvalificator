@@ -81,7 +81,8 @@ export function createCrm({ db }) {
     clients: db.prepare(
       `SELECT c.*, u.name AS manager_name,
               (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done') AS open_tasks,
-              (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done' AND ${OVERDUE.replace(/due/g, 't.due')}) AS overdue
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done' AND ${OVERDUE.replace(/due/g, 't.due')}) AS overdue,
+              (SELECT COALESCE(SUM(p.amount), 0) FROM client_payments p WHERE p.client_id = c.id AND p.paid_at IS NULL AND p.due < strftime('%Y-%m-%d', 'now', '+3 hours')) AS debt
        FROM clients c LEFT JOIN admin_users u ON u.id = c.manager_id
        WHERE c.archived = ? ORDER BY c.name COLLATE NOCASE`,
     ),

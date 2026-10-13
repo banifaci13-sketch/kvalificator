@@ -56,7 +56,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media, files = null }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media, files = null, money = null }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   // уведомления в кабинете: задачи шлют их сами, встречам — через маршруты календаря
   const notify = createNotifications({ db: db.raw });
@@ -440,7 +440,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans, brand });
-    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb, files });
+    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb, files, money });
 
     // ---------- уведомления (колокольчик) ----------
     api.get('/admin/api/notifications', async (req) => ({ items: notify.list(req.user.id), unread: notify.unread(req.user.id) }));
@@ -522,6 +522,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         notifications: notify.list(req.user.id, 6).filter((n) => !n.read_at),
         news: news.list(req.user.id, { limit: 3 }).posts.map((p) => ({ id: p.id, kind: p.kind, title: p.title, body: p.body.slice(0, 220), author: p.author, author_id: p.author_id, created_at: p.created_at, pinned: p.pinned, comments: p.comments, image: p.files.find((f) => f.kind === 'image')?.id ?? null, files: p.files.length })),
         newsUnseen: news.unseen(req.user.id),
+        money: money ? (({ overdue, expected, received, debtors, soon }) => ({ overdue, expected, received, debtors: debtors.slice(0, 5), soon: soon.slice(0, 5) }))(money.summary(req.user)) : null,
       };
     });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify });
@@ -532,7 +533,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     {
       const search = createSearch(config.search);
       const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news });
+      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news, money });
       await api.register(assistantRoutes, { assistant, kb, ai, search });
     }
 

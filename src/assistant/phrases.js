@@ -132,6 +132,25 @@ export function parsePhrase(message, { clients = [], team = [], now = new Date()
     if (sec) return { intent: 'navigate', section: sec[0], label: sec[1] };
   }
 
+  // ---------- деньги ----------
+  if (/^(?:кто (?:нам )?должен|кто не оплатил|должники|долги(?: клиентов)?|дебиторка|дебиторская задолженность|что с оплатами|оплаты|какие оплаты (?:ждём|ждем))\??$/.test(low)) return { intent: 'money_summary' };
+  if ((m = /^(?:выставь|выставить|создай|добавь)\s+сч[её]т\s+(.+)$/i.exec(text))) {
+    const w = parseWhen(m[1], now);
+    const sum = moneyIn(w.rest)[0]?.value ?? null;
+    const client = clientIn(w.rest, clients);
+    const kind = /ведени|абонент/i.test(w.rest) ? 'fee' : /бюджет|пополнени/i.test(w.rest) ? 'budget' : 'other';
+    const what = /за\s+(.+?)$/i.exec(w.rest.replace(/\d[\d\s]*(?:[.,]\d+)?\s*(?:млн|тыс\S*|к|₽|руб\S*)?/gi, ' ').replace(/\s+/g, ' ').trim());
+    return { intent: 'money_invoice', client, query: w.rest, amount: sum, due: w.date, kind, title: what && kind === 'other' ? strip(what[1]) : null };
+  }
+  if ((m = /^(.+?)\s+(?:оплатил[аи]?|заплатил[аи]?|перевел[аи]?|перевёл|прислал[аи]? оплату)\s*(.*)$/i.exec(text)) || (m = /^(?:пришла|получили|поступила)?\s*оплат[аы]\s+(?:от\s+)?(.+?)\s+(\d.*)$/i.exec(text))) {
+    const client = clientIn(m[1], clients);
+    if (client) return { intent: 'money_paid', client, amount: moneyIn(m[2])[0]?.value ?? null };
+  }
+  if ((m = /^(?:ведение|абонентк\S*|абонентская плата)\s+(?:для\s+|у\s+)?(.+?)\s+(\d[\d\s]*(?:[.,]\d+)?\s*(?:к|тыс\S*|₽|руб\S*)?)(?:\s+в\s+месяц)?(?:[,\s]+(?:оплата\s+)?(?:до|к)\s+(\d{1,2})(?:-?го)?\s+числа)?$/i.exec(text))) {
+    const client = clientIn(m[1], clients);
+    if (client) return { intent: 'money_billing', client, fee: moneyIn(m[2])[0]?.value ?? Number(m[2].replace(/\D/g, '')), payDay: m[3] ? Number(m[3]) : null };
+  }
+
   // ---------- клиенты ----------
   if ((m = /^(?:заведи|создай|добавь|сделай)\s+клиента\s+(?:по|из)\s+(?:заявк[еи]|лиду|лида)\s*№?\s*(\d+)$/i.exec(text))) return { intent: 'client_from_lead', leadId: Number(m[1]) };
   if ((m = /^(?:добав(?:ь|ить)|созда(?:й|ть)|заведи|завести|внеси|внести|нов(?:ый|ого))\s+(?:нового\s+)?(?:клиента|клиент|проект)\s*:?\s+(.+)$/i.exec(text)) || (m = /^новый клиент\s*:?\s+(.+)$/i.exec(text))) {
