@@ -591,6 +591,49 @@ details.menu summary::-webkit-details-marker { display: none; }
   .client-layout { grid-template-columns: 1fr; }
 }
 
+/* ---------- календарь ---------- */
+.cal-bar { gap: 12px; }
+.cal-nav { display: inline-flex; gap: 4px; }
+.cal-nav .btn { min-width: 40px; }
+.cal-notice { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 0 0 16px; max-width: none; }
+.cal-week { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); overflow-x: auto; }
+.cal-head, .cal-body { display: grid; grid-template-columns: 56px repeat(7, minmax(120px, 1fr)); min-width: 920px; }
+.cal-head { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 2; }
+.cal-dayname { padding: 10px 8px; display: flex; gap: 6px; align-items: baseline; color: var(--muted); font-size: 13px; border-left: 1px solid var(--line); }
+.cal-dayname b { font-size: 18px; color: var(--text); font-family: var(--soroka-font-heading); }
+.cal-dayname.today b { display: inline-grid; place-items: center; min-width: 30px; height: 30px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+.cal-hours { position: relative; }
+.cal-hours span { position: absolute; right: 8px; transform: translateY(-50%); font-size: 11px; color: var(--muted); }
+.cal-hours span:first-child { transform: none; }
+.cal-day {
+  position: relative; border-left: 1px solid var(--line); cursor: copy;
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 48px);
+}
+.cal-day.today { background-color: color-mix(in srgb, var(--accent) 5%, transparent); }
+.cal-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--danger); z-index: 1; pointer-events: none; }
+.cal-now::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+.cal-event {
+  position: absolute; display: flex; flex-direction: column; gap: 1px; overflow: hidden; text-align: left; cursor: pointer;
+  padding: 3px 6px; border: 0; border-left: 3px solid var(--accent); border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--text); font-size: 12px; line-height: 1.25;
+}
+.cal-event:hover { box-shadow: var(--shadow); z-index: 3; }
+.cal-event.f-office { border-left-color: var(--brand); background: color-mix(in srgb, var(--text) 9%, var(--surface)); }
+.cal-event.f-call { border-left-color: var(--muted); background: var(--surface-2); }
+.cal-event.cancelled { opacity: .55; text-decoration: line-through; }
+.ev-time { color: var(--muted); font-size: 11px; }
+.ev-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.ev-client { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-agenda { display: grid; gap: 12px; max-width: 900px; }
+.cal-agenda h2 { text-transform: none; }
+.task-list li.cancelled { opacity: .55; text-decoration: line-through; }
+.meeting-form .label { font-size: 13px; font-weight: 600; }
+.meeting-time { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.meeting-time > div { display: grid; gap: 6px; }
+.video-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 12px; }
+.account-form h3 { font-size: 14px; margin: 16px 0 8px; }
+
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 
 /* ---------- мобильные ---------- */

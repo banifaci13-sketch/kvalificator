@@ -3,6 +3,7 @@
 
 import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
 import { fill } from './docs.js';
+import { clientMeetings } from './calendar.js';
 
 let team = null;
 async function loadTeam() {
@@ -516,7 +517,7 @@ export async function renderClient(params) {
           h('div', { class: 'field' }, h('label', { for: 'cl-notes' }, 'Заметки'), h('textarea', { class: 'textarea', id: 'cl-notes', rows: 6, maxlength: 5000, placeholder: 'Договорённости, доступы где лежат, особенности согласования', onchange: (e) => save({ notes: e.target.value || null }) }, c.notes ?? '')),
           c.lead_id ? h('p', {}, h('a', { href: `#/leads?lead=${c.lead_id}` }, `Заявка #${c.lead_id} из квалификатора`)) : null,
         ),
-        h('div', { class: 'client-side' }, h('section', { class: 'panel' }, tasksBox), h('section', { class: 'panel' }, docsBox)),
+        h('div', { class: 'client-side' }, h('section', { class: 'panel' }, clientMeetings(id, c.name)), h('section', { class: 'panel' }, tasksBox), h('section', { class: 'panel' }, docsBox)),
       ),
     ]),
   );

@@ -4,6 +4,7 @@
 import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderTasks, renderClients, renderClient, leadClient } from './tasks.js';
+import { renderCalendar, notificationsPanel } from './calendar.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -31,6 +32,8 @@ function h(tag, attrs = {}, ...children) {
   for (const [k, v] of Object.entries(attrs ?? {})) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
+    // через CSSOM: атрибут style="" запрещён политикой безопасности (CSP без unsafe-inline)
+    else if (k === 'style') el.style.cssText = v;
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (k === 'dataset') Object.assign(el.dataset, v);
     else el.setAttribute(k, v === true ? '' : v);
@@ -134,6 +137,7 @@ const routes = {
   tasks: renderTasks,
   clients: renderClients,
   client: renderClient,
+  calendar: renderCalendar,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -203,6 +207,7 @@ function shell(active, content) {
     ['templates', 'Шаблоны'],
     ['plans', 'Медиапланы'],
     ['tasks', 'Задачи'],
+    ['calendar', 'Календарь'],
     ['leads', 'Квалификатор'],
     ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
   ].filter(Boolean);
@@ -1053,7 +1058,7 @@ function renderAccount() {
     msg,
     submit,
   );
-  app.replaceChildren(...shell('account', [h('div', { class: 'page-head' }, h('h1', {}, 'Учётная запись')), form]));
+  app.replaceChildren(...shell('account', [h('div', { class: 'page-head' }, h('h1', {}, 'Учётная запись')), notificationsPanel(), form]));
 }
 
 // ---------- тестовый режим ----------
