@@ -555,6 +555,42 @@ details.menu summary::-webkit-details-marker { display: none; }
   .dialog-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- задачи и клиенты ---------- */
+.task-board { grid-auto-columns: minmax(270px, 1fr); }
+.task-board .column { min-height: 64vh; }
+.quick-add { padding: 10px 10px 0; }
+.quick-add .input { min-height: 36px; padding: 6px 10px; font-size: 14px; background: var(--surface); }
+.client-side .quick-add, .panel > div > .quick-add { padding: 0 0 12px; }
+.task-card { gap: 8px; }
+.task-card.urgent { border-left: 4px solid var(--danger); }
+.task-name { font-weight: 600; font-size: 14px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.task-client { font-size: 13px; color: var(--muted); }
+.urgent-chip { justify-self: start; font-size: 11px; font-weight: 700; color: var(--danger); }
+.avatar { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+.card-meta { display: inline-flex; gap: 10px; align-items: center; }
+.due { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.due.today { color: #8a5a00; font-weight: 700; }
+.due.overdue { color: var(--danger); font-weight: 700; }
+.task-title { font-size: 17px; font-weight: 600; min-height: 0; }
+.drawer .spacer { flex: 1; }
+.small { font-size: 13px; margin: 0; }
+.comment-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 14px; }
+.comment-form .textarea { min-height: 44px; }
+.task-feed li.event span { color: var(--muted); }
+.task-feed b { font-weight: 600; color: var(--text); }
+.comment-text { display: block; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+.client-layout { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.client-side { display: grid; gap: 16px; }
+.task-group h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+.task-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.task-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.task-link { text-align: left; text-decoration: none; color: var(--text); font-weight: 500; }
+.task-link:hover { text-decoration: underline; }
+.task-meta { display: inline-flex; gap: 10px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+@media (max-width: 900px) {
+  .client-layout { grid-template-columns: 1fr; }
+}
+
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 
 /* ---------- мобильные ---------- */

@@ -133,6 +133,49 @@ const MIGRATIONS = [
      updated_by  TEXT,
      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );`,
+
+  // Клиенты агентства и задачи команды по ним (доска в духе YouGile)
+  `CREATE TABLE clients (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     name        TEXT NOT NULL,
+     contact     TEXT,
+     phone       TEXT,
+     email       TEXT,
+     site        TEXT,
+     notes       TEXT,
+     manager_id  INTEGER REFERENCES admin_users(id),
+     lead_id     INTEGER REFERENCES leads(id),
+     archived    INTEGER NOT NULL DEFAULT 0,
+     created_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE tasks (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     client_id    INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     title        TEXT NOT NULL,
+     description  TEXT,
+     status       TEXT NOT NULL DEFAULT 'todo',
+     priority     INTEGER NOT NULL DEFAULT 0,
+     assignee_id  INTEGER REFERENCES admin_users(id),
+     due          TEXT,
+     created_by   TEXT,
+     created_by_id INTEGER REFERENCES admin_users(id),
+     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+     done_at      TEXT
+   );
+   CREATE INDEX tasks_client ON tasks (client_id);
+   CREATE INDEX tasks_assignee ON tasks (assignee_id, status);
+   CREATE TABLE task_comments (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     kind        TEXT NOT NULL DEFAULT 'comment',
+     text        TEXT NOT NULL,
+     author      TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX task_comments_task ON task_comments (task_id);`,
 ];
 
 /** Номер текущей версии схемы базы. */

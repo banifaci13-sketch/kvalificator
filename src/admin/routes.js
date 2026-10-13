@@ -12,6 +12,7 @@ import { createYandexOAuth } from './yandex.js';
 import { AuthError, ROLES } from './auth.js';
 import { docsRoutes } from './docs-routes.js';
 import { mediaplanRoutes } from './mediaplan-routes.js';
+import { crmRoutes } from './crm-routes.js';
 
 const SESSION_COOKIE = 'kval_admin';
 const STATE_COOKIE = 'kval_oauth_state';
@@ -42,7 +43,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -302,6 +303,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
+    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 

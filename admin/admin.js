@@ -3,6 +3,7 @@
 
 import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
+import { renderTasks, renderClients, renderClient, leadClient } from './tasks.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -130,6 +131,9 @@ const routes = {
   plans: renderPlans,
   plan: renderPlan,
   benchmarks: renderBenchmarks,
+  tasks: renderTasks,
+  clients: renderClients,
+  client: renderClient,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -149,9 +153,13 @@ const SECTION_TABS = {
     ['plans', 'Медиапланы'],
     ['benchmarks', 'Нормативы'],
   ],
+  tasks: [
+    ['tasks', 'Доска'],
+    ['clients', 'Клиенты'],
+  ],
 };
 // Страницы внутри раздела без своей вкладки
-const PAGE_SECTION = { doc: 'docs', plan: 'plans' };
+const PAGE_SECTION = { doc: 'docs', plan: 'plans', client: 'tasks' };
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
@@ -194,6 +202,7 @@ function shell(active, content) {
     ['docs', 'Документы'],
     ['templates', 'Шаблоны'],
     ['plans', 'Медиапланы'],
+    ['tasks', 'Задачи'],
     ['leads', 'Квалификатор'],
     ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
   ].filter(Boolean);
@@ -705,6 +714,7 @@ function fillLead(body, title, lead, events) {
     ),
     lead.tags.length ? h('div', {}, lead.tags.map((t) => h('span', { class: 'tag' }, t))) : null,
     form,
+    leadClient(lead),
     leadDocuments(lead),
     h('section', {}, h('h3', {}, 'Ответы'), h('dl', { class: 'answers' }, answers)),
     h('section', {}, h('h3', {}, 'Источник'), h('dl', { class: 'answers' }, source.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]))),

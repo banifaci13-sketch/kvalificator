@@ -13,6 +13,7 @@ import { createReports } from './admin/reports.js';
 import { loadBrand } from './brand/index.js';
 import { createDocLibrary } from './docs/library.js';
 import { createMediaplans } from './mediaplan/store.js';
+import { createCrm } from './crm/store.js';
 import { closeBrowser } from './docs/browser.js';
 import { dirname, resolve } from 'node:path';
 
@@ -49,6 +50,7 @@ const app = await buildServer({
     brand,
     library,
     mediaplans: createMediaplans({ db: db.raw, library }),
+    crm: createCrm({ db: db.raw }),
   },
 });
 
