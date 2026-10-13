@@ -5,6 +5,7 @@
 import { bestMatch } from './commands.js';
 import { SECTIONS } from './phrases.js';
 import { emptyPlan, emptyRow } from '../mediaplan/calc.js';
+import { outline } from './kb.js';
 import { LEAD_STATUSES } from '../admin/reports.js';
 
 const MSK = 3 * 3600e3;
@@ -404,6 +405,22 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     },
 
     // ---------- регламенты ----------
+    kb_apply(user, cmd) {
+      if (!kb || !crm) return { reply: 'Регламенты недоступны.' };
+      const list = kb.list();
+      const r = bestMatch(cmd.query, list, (d) => d.title);
+      if (!r.item && r.candidates.length) return { reply: 'Какой регламент запустить?', options: r.candidates.map((d) => ({ label: d.title, command: `запусти регламент ${d.title}${cmd.clientQuery ? ` для ${cmd.clientQuery}` : ''}` })) };
+      if (!r.item) return { reply: `Регламента «${cmd.query}» нет. Список — в разделе «Регламенты».`, notFound: true };
+      if (cmd.clientQuery && !cmd.client && !cmd.internal) return { reply: `Не нашёл проект «${cmd.clientQuery}». Добавить клиента? «добавь клиента ${cmd.clientQuery}».`, notFound: true };
+      if (!cmd.clientQuery) return { reply: `В какой проект запустить «${r.item.title}»?`, options: crm.listClients().slice(0, 6).map((c) => ({ label: c.name, command: `запусти регламент ${r.item.title} для ${c.name}` })).concat([{ label: 'Общие задачи', command: `запусти регламент ${r.item.title} в общие` }]) };
+      const doc = kb.get(r.item.id);
+      const res = crm.tasksFromSteps({ clientId: cmd.client?.id ?? null, steps: outline(doc), source: doc.title, assigneeId: user.id }, user);
+      const key = cmd.client?.id ?? 'none';
+      return {
+        reply: [`Запустил «${doc.title}» в проекте «${cmd.client?.name ?? 'Общие задачи'}»: новая доска и ${res.tasks.length} ${res.tasks.length === 1 ? 'задача' : res.tasks.length < 5 ? 'задачи' : 'задач'}, ответственный — вы.`, ...res.tasks.map((t) => `• ${t.title}`)].join('\n'),
+        actions: [{ type: 'link', title: `Доска «${res.board.name}»`, href: `#/tasks?project=${key}&board=${res.board.id}` }],
+      };
+    },
     kb_open(user, cmd) {
       if (!kb) return { reply: 'Регламенты недоступны.' };
       const list = kb.list();
@@ -426,6 +443,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     if (calendar) g.push('', 'Встречи', '• «встреча с Ромашкой завтра в 15 в Телемосте»', '• «перенеси встречу с Таллером на четверг», «отмени планёрку», «встречи на неделе»');
     if (mediaplans || library) g.push('', 'Медиапланы и документы', '• «создай медиаплан для Таллера на квартал», «медиаплан для интернет-магазина»', '• «создай КП для Юнистрима», «сделай отчёт для Таллера за сентябрь», «открой медиаплан Таллер»');
     if (reports) g.push('', 'Заявки', '• «новые заявки», «горячие заявки за неделю», «сколько заявок за месяц»', '• «возьми заявку 123», «заявка 123 — спам», «заведи клиента по заявке 123»');
+    if (kb) g.push('', 'Регламенты', '• «запусти регламент запуска рекламы для Таллера» — шаги задачами с чек-листами', '• «открой регламент по КП»');
     g.push('', 'Новости', '• «опубликуй в новости: запустили РСЯ для Таллера», «покажи новости»');
     g.push('', 'Кабинет', '• «открой календарь», «перейди в медиапланы», «что нового», «включи тёмную тему»');
     g.push('', 'Остальное — свободным вопросом: помогу разложить задачу, составить текст и найду ответ в регламентах или в интернете.');

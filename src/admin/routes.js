@@ -62,6 +62,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
   const notify = createNotifications({ db: db.raw });
   crm?.useNotify?.(notify);
   const news = createNews({ db: db.raw, files });
+  const kb = createKb({ db: db.raw });
   news.useNotify(notify);
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -439,7 +440,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource, media });
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans, brand });
-    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
+    if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb });
 
     // ---------- уведомления (колокольчик) ----------
     api.get('/admin/api/notifications', async (req) => ({ items: notify.list(req.user.id), unread: notify.unread(req.user.id) }));
@@ -529,7 +530,6 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
     // ИИ-ассистент в боковой панели: поручения, помощь по регламентам, поиск в интернете
     {
-      const kb = createKb({ db: db.raw });
       const search = createSearch(config.search);
       const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
       const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news });

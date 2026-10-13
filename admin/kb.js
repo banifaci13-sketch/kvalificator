@@ -2,7 +2,7 @@
 // когда помогает с задачами. Добавляет и правит администратор: текстом или файлом .md / .txt.
 
 import { h, api, app, shell, toast, navigate, ctx, fmtDateTime, confirmDialog } from './admin.js';
-import { fill } from './docs.js';
+import { fill, formDialog } from './docs.js';
 
 /** Простая разметка: «# заголовок», списки «- » и «1.», **жирный**, абзацы. */
 function render(body) {
@@ -90,6 +90,7 @@ export async function renderKb(params) {
         { class: 'kb-doc-head' },
         h('h1', {}, doc.title),
         h('span', { class: 'spacer' }),
+        h('button', { type: 'button', class: 'btn btn-s btn-primary', onclick: () => applyDialog(doc) }, 'Запустить в проекте'),
         isAdmin ? h('a', { class: 'btn btn-s', href: `#/kb?id=${doc.id}&edit=1` }, 'Изменить') : null,
       ),
       h('p', { class: 'muted small' }, `Обновил ${doc.updated_by ?? '—'}, ${fmtDateTime(doc.updated_at)}`),
@@ -156,4 +157,50 @@ export async function renderKb(params) {
     );
     title.focus();
   }
+}
+
+/** Регламент → задачи проекта: шаг — задача, пункты шага — её чек-лист. */
+async function applyDialog(doc) {
+  let outline;
+  let projects;
+  let team;
+  try {
+    [outline, projects, team] = await Promise.all([api(`/admin/api/kb/${doc.id}/outline`), api('/admin/api/projects').then((d) => d.projects), api('/admin/api/team').then((d) => d.team)]);
+  } catch (err) {
+    return toast(err.message);
+  }
+  if (!outline.steps.length) return toast('В регламенте нет шагов: разделите его заголовками «# Шаг …» и списками «- пункт»');
+  const project = h('select', { class: 'select', id: 'ap-project' }, projects.map((p) => h('option', { value: p.internal ? 'none' : p.id }, p.name)));
+  const board = h('select', { class: 'select', id: 'ap-board' });
+  const who = h('select', { class: 'select', id: 'ap-who' }, h('option', { value: '' }, 'Не назначать'), team.map((u) => h('option', { value: u.id, selected: u.id === ctx.me.id }, u.id === ctx.me.id ? `${u.name} (я)` : u.name)));
+  const loadBoards = async () => {
+    fill(board, h('option', { value: '' }, `Новая доска «${doc.title.slice(0, 60)}»`));
+    try {
+      const { boards } = await api(`/admin/api/projects/${project.value}/boards`);
+      for (const b of boards) board.append(h('option', { value: b.id }, `Доска «${b.name}»`));
+    } catch {}
+  };
+  project.addEventListener('change', loadBoards);
+  loadBoards();
+  formDialog({
+    title: `Запустить «${doc.title}»`,
+    submitLabel: 'Создать задачи',
+    body: [
+      h('p', { class: 'muted' }, 'Каждый шаг регламента станет задачей, пункты шага — её чек-листом.'),
+      h('ol', { class: 'apply-steps' }, outline.steps.map((st) => h('li', {}, h('span', {}, st.title), st.items.length ? h('span', { class: 'muted small' }, ` · ${st.items.length} в чек-листе`) : null))),
+      h('div', { class: 'dialog-grid' },
+        h('div', { class: 'field' }, h('label', { for: 'ap-project' }, 'Проект'), project),
+        h('div', { class: 'field' }, h('label', { for: 'ap-board' }, 'Куда'), board),
+        h('div', { class: 'field' }, h('label', { for: 'ap-who' }, 'Исполнитель'), who),
+      ),
+    ],
+    onSubmit: async () => {
+      const res = await api(`/admin/api/kb/${doc.id}/apply`, {
+        method: 'POST',
+        body: { clientId: project.value === 'none' ? null : Number(project.value), boardId: board.value ? Number(board.value) : null, assigneeId: who.value ? Number(who.value) : null },
+      });
+      toast(`Создано задач: ${res.tasks.length}`);
+      navigate('tasks', new URLSearchParams({ project: project.value, board: String(res.board.id) }));
+    },
+  });
 }

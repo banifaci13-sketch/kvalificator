@@ -236,6 +236,11 @@ export function parsePhrase(message, { clients = [], team = [], now = new Date()
   }
 
   // ---------- регламенты ----------
+  // «запусти регламент запуска рекламы для Таллера» — шаги регламента задачами в проект клиента
+  if ((m = /^(?:запусти|примени|разверни|создай задачи по|сделай задачи по)\s+(?:процесс\S*|регламент\S*)\s+(.+?)(?:\s+(?:для|в проект[еа]?|в|по)\s+(?:клиент[ауе]?\s+|проект[ауе]?\s+)?(.+))?$/i.exec(text))) {
+    const client = m[2] ? clientIn(m[2], clients) : null;
+    return { intent: 'kb_apply', query: strip(m[1]), client, internal: m[2] ? /^общ/i.test(m[2]) : false, clientQuery: m[2] ? strip(m[2]) : null };
+  }
   if ((m = /^(?:открой|покажи|найди)?\s*регламент\S*\s+(?:по|про|о|об)?\s*(.+)$/i.exec(text))) return { intent: 'kb_open', query: strip(m[1]) };
 
   return null;

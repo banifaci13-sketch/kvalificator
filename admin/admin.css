@@ -1560,3 +1560,24 @@ select.select {
 select.select[data-open] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 6.5l5-5 5 5' fill='none' stroke='%2314B8C4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .mp-table select.select { padding-right: 26px; background-position: right 8px center; }
 .chip-repeat { font-size: 13px; padding: 1px 7px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent-text); }
+
+/* чек-лист задачи */
+.checklist { display: grid; gap: 8px; margin: 4px 0 8px; }
+.checklist-head { display: flex; align-items: center; gap: 10px; }
+.checklist-head h3 { margin: 0; font-size: 15px; }
+.checklist-head .spacer { flex: 1; }
+.checklist-bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.checklist-bar i { display: block; height: 100%; background: var(--good); border-radius: 3px; transition: width .2s; }
+.checklist-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.checklist-items li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-s); }
+.checklist-items li:hover { background: var(--surface-2); }
+.checklist-items .check { flex: 1; min-width: 0; align-items: flex-start; }
+.checklist-text { overflow-wrap: anywhere; }
+.checklist-items li.is-done .checklist-text { color: var(--muted); text-decoration: line-through; }
+.checklist-del { width: 28px; height: 28px; opacity: 0; }
+.checklist-items li:hover .checklist-del, .checklist-del:focus-visible { opacity: 1; }
+.checklist-del .icon { width: 15px; height: 15px; }
+.chip-check { background: var(--surface-3); color: var(--muted); }
+.chip-check.all { background: color-mix(in srgb, var(--good) 15%, var(--surface)); color: var(--good); }
+.apply-steps { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 4px; max-height: 240px; overflow: auto; }
+.drawer .work { align-items: start; }

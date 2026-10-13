@@ -263,6 +263,12 @@ test('ассистент выполняет действия по раздела
   assert.equal(theme.prefs.theme, 'dark');
   assert.equal(s.auth.getUser(s.anna.id).prefs.theme, 'dark');
   assert.match((await say('что по Юнистриму')).reply, /Медиапланов: 1/);
+  s.kb.create({ title: 'Запуск рекламы', body: '# Бриф\n- Цели\n- Доступы\n\n# Настройка\n- Метрика\n- Кампании' }, s.anna);
+  const run = await say('запусти регламент запуска рекламы для Таллера');
+  assert.match(run.reply, /Запустил «Запуск рекламы» в проекте «Таллер»: новая доска и 2 задачи/);
+  const steps = s.crm.listTasks({ clientId: s.talle.id }).filter((t) => t.title === 'Бриф' || t.title === 'Настройка');
+  assert.equal(steps.length, 2);
+  assert.deepEqual(s.crm.checklist(steps.find((t) => t.title === 'Бриф').id).map((c) => c.text), ['Цели', 'Доступы']);
   const help = await say('что ты умеешь');
   assert.match(help.reply, /добавь клиента/);
   assert.match(help.reply, /возьми заявку/);

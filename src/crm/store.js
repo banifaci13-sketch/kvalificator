@@ -123,6 +123,11 @@ export function createCrm({ db }) {
       "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, due_time = ?, done_at = ?, repeat = ?, updated_at = datetime('now') WHERE id = ?",
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
+    checklist: db.prepare('SELECT id, text, done, done_by FROM task_checklist WHERE task_id = ? ORDER BY position, id'),
+    checkItem: db.prepare('SELECT * FROM task_checklist WHERE id = ?'),
+    addCheck: db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM task_checklist WHERE task_id = ?))'),
+    setCheck: db.prepare('UPDATE task_checklist SET text = ?, done = ?, done_by = ? WHERE id = ?'),
+    removeCheck: db.prepare('DELETE FROM task_checklist WHERE id = ?'),
     comments: db.prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY id'),
     // связи задачи: название берётся из самого медиаплана, документа или встречи; удалённые не показываются
     links: db.prepare(
@@ -473,6 +478,56 @@ export function createCrm({ db }) {
     return t;
   }
 
+  // ---------- чек-лист задачи ----------
+  const checklist = (taskId) => q.checklist.all(Number(taskId)).map((c) => ({ ...c, done: Boolean(c.done) }));
+  const MAX_CHECK = 100;
+  /** Добавить пункты чек-листа (по одному или списком из регламента). */
+  function addChecklist(taskId, items, user, { source = null } = {}) {
+    const t = getTask(taskId);
+    const list = (Array.isArray(items) ? items : [items]).map((x) => text(x, 300)).filter(Boolean);
+    if (!list.length) throw new CrmError('Пустой пункт');
+    if (checklist(t.id).length + list.length > MAX_CHECK) throw new CrmError(`В чек-листе не больше ${MAX_CHECK} пунктов`);
+    tx(() => {
+      for (const x of list) q.addCheck.run(t.id, x, t.id);
+      if (source) q.addComment.run(t.id, 'event', `Чек-лист из регламента «${source}»: ${list.length} ${list.length === 1 ? 'пункт' : list.length < 5 ? 'пункта' : 'пунктов'}`, user.name);
+    });
+    return checklist(t.id);
+  }
+  function updateCheck(id, patch, user) {
+    const c = q.checkItem.get(Number(id));
+    if (!c) throw new CrmError('Пункт не найден');
+    const body = patch.text !== undefined ? text(patch.text, 300) : c.text;
+    if (!body) throw new CrmError('Пустой пункт');
+    const done = patch.done !== undefined ? Boolean(patch.done) : Boolean(c.done);
+    q.setCheck.run(body, Number(done), done ? (c.done ? c.done_by : user.name) : null, c.id);
+    return checklist(c.task_id);
+  }
+  function removeCheck(id) {
+    const c = q.checkItem.get(Number(id));
+    if (!c) throw new CrmError('Пункт не найден');
+    q.removeCheck.run(c.id);
+    return checklist(c.task_id);
+  }
+
+  /**
+   * Процесс из регламента — задачами в проект: по задаче на шаг, пункты шага — чек-лист.
+   * board: id доски или null — новая доска с названием регламента.
+   */
+  function tasksFromSteps({ clientId = null, boardId = null, boardName = null, assigneeId = null, steps, source }, user) {
+    if (!steps?.length) throw new CrmError('В регламенте нет шагов: разделите его заголовками «# Шаг» и списками');
+    if (steps.length > 40) throw new CrmError('Слишком много шагов — не больше 40');
+    const board = boardId ? getBoard(boardId) : createBoard({ clientId, name: boardName ?? source });
+    const created = [];
+    // доска показывает новые задачи сверху — создаём с конца, чтобы шаг 1 оказался первым
+    for (const st of [...steps].reverse()) {
+      const description = [st.notes?.join('\n'), `По регламенту «${source}»${st.intro?.length ? `: ${st.intro.join(' ')}` : '.'}`].filter(Boolean).join('\n\n');
+      const t = createTask({ title: st.title, description, boardId: board.id, assigneeId }, user);
+      if (st.items?.length) addChecklist(t.id, st.items.slice(0, MAX_CHECK), user);
+      created.unshift(t);
+    }
+    return { board: getBoard(board.id), tasks: created };
+  }
+
   /** Привязать к задаче медиаплан, документ или встречу; событие пишется в историю задачи. */
   function linkTask(taskId, { kind, refId }, user) {
     const t = getTask(taskId);
@@ -517,7 +572,9 @@ export function createCrm({ db }) {
                 c.name AS client_name, u.name AS assignee_name,
                 col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments,
-                (SELECT COUNT(*) FROM task_links l WHERE l.task_id = t.id) AS links
+                (SELECT COUNT(*) FROM task_links l WHERE l.task_id = t.id) AS links,
+                (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id) AS check_total,
+                (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id AND k.done = 1) AS check_done
          ${TASK_JOINS}
          WHERE ${where.join(' AND ')}
          ORDER BY t.status = 'done', t.priority DESC, t.due IS NULL, t.due, t.due_time IS NULL, t.due_time, t.id DESC LIMIT 500`,
@@ -544,7 +601,12 @@ export function createCrm({ db }) {
     },
     clientTasks: (id) => listTasks({ clientId: id }),
     listTasks,
-    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)) }),
+    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)), checklist: checklist(id) }),
+    checklist,
+    addChecklist,
+    updateCheck,
+    removeCheck,
+    tasksFromSteps,
     linkTask,
     unlinkTask: (taskId, linkId) => {
       const l = q.link.get(Number(linkId), Number(taskId));

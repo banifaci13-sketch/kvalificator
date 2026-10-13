@@ -453,6 +453,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   fill(
     body,
     fields,
+    checklistSection(task, () => (changed = true)),
     toolsSection(task, () => {
       changed = true;
       // перерисовать карточку задачи со свежими связями
@@ -463,6 +464,80 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     h('section', {}, h('h3', {}, 'Обсуждение и история'), commentForm, feed),
   );
   renderFeed();
+}
+
+// ---------- чек-лист задачи ----------
+
+function checklistSection(task, onChanged) {
+  let items = task.checklist ?? [];
+  const box = h('section', { class: 'checklist' });
+  const input = h('input', { class: 'input', maxlength: 300, placeholder: 'Новый пункт и Enter', 'aria-label': 'Новый пункт чек-листа' });
+  const save = async (url, method, body) => {
+    try {
+      items = (await api(url, { method, body })).checklist;
+      onChanged();
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  input.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter' || !input.value.trim()) return;
+    e.preventDefault();
+    const text = input.value.trim();
+    input.value = '';
+    await save(`/admin/api/tasks/${task.id}/checklist`, 'POST', { items: [text] });
+    box.querySelector('.checklist-add input')?.focus();
+  });
+  const fromKb = h('button', {
+    type: 'button', class: 'btn btn-s',
+    onclick: async () => {
+      let docs = [];
+      try {
+        docs = (await api('/admin/api/kb')).docs;
+      } catch (err) {
+        return toast(err.message);
+      }
+      if (!docs.length) return toast('Регламентов пока нет — их добавляет администратор в разделе «Регламенты»');
+      const pick = h('select', { class: 'select', id: 'cl-doc' }, docs.map((d) => h('option', { value: d.id }, d.title)));
+      formDialog({
+        title: 'Чек-лист из регламента',
+        submitLabel: 'Добавить пункты',
+        body: [h('p', { class: 'muted' }, 'Пункты списков из регламента добавятся в чек-лист этой задачи.'), h('div', { class: 'field' }, h('label', { for: 'cl-doc' }, 'Регламент'), pick)],
+        onSubmit: async () => {
+          items = (await api(`/admin/api/tasks/${task.id}/checklist`, { method: 'POST', body: { docId: Number(pick.value) } })).checklist;
+          onChanged();
+          draw();
+          toast('Чек-лист добавлен');
+        },
+      });
+    },
+  }, 'Из регламента');
+  function draw() {
+    const done = items.filter((c) => c.done).length;
+    const pct = items.length ? Math.round((done / items.length) * 100) : 0;
+    fill(
+      box,
+      h('div', { class: 'checklist-head' }, h('h3', {}, 'Чек-лист'), items.length ? h('span', { class: 'muted small num' }, `${done} из ${items.length}`) : null, h('span', { class: 'spacer' }), fromKb),
+      items.length ? h('div', { class: 'checklist-bar', role: 'progressbar', 'aria-valuenow': String(pct), 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('i', { style: `width:${pct}%` })) : null,
+      h(
+        'ul',
+        { class: 'checklist-items' },
+        items.map((c) =>
+          h(
+            'li',
+            { class: c.done ? 'is-done' : '' },
+            h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: c.done, onchange: (e) => save(`/admin/api/checklist/${c.id}`, 'PATCH', { done: e.target.checked }) }), h('span', { class: 'checklist-text' }, c.text)),
+            c.done && c.done_by ? h('span', { class: 'muted small' }, c.done_by) : null,
+            h('button', { type: 'button', class: 'icon-btn checklist-del', 'aria-label': `Удалить пункт «${c.text}»`, title: 'Удалить пункт', onclick: () => save(`/admin/api/checklist/${c.id}`, 'DELETE') }, icon('trash')),
+          ),
+        ),
+      ),
+      h('div', { class: 'checklist-add' }, input),
+    );
+  }
+  draw();
+  return box;
 }
 
 // ---------- карточка задачи на доске ----------
@@ -599,6 +674,7 @@ function stickers(t, onChange) {
     prio,
     t.comments ? h('span', { class: 'chip', title: 'Комментарии' }, `💬 ${t.comments}`) : null,
     t.links ? h('span', { class: 'chip chip-link', title: 'Медиапланы, документы и встречи по задаче' }, icon('docs'), t.links) : null,
+    t.check_total ? h('span', { class: `chip chip-check${t.check_done === t.check_total ? ' all' : ''}`, title: `Чек-лист: выполнено ${t.check_done} из ${t.check_total}` }, '☑ ', `${t.check_done}/${t.check_total}`) : null,
     t.repeat ? h('span', { class: 'chip chip-repeat', title: `Повтор: ${(team?.repeats?.[t.repeat] ?? '').toLowerCase()}` }, '↻') : null,
     h('span', { class: 'spacer' }),
     who,

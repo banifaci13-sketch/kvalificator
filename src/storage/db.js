@@ -407,6 +407,18 @@ const MIGRATIONS = [
   // Повторяющиеся задачи: правило повтора и ссылка на уже созданную следующую (чтобы не плодить копии)
   `ALTER TABLE tasks ADD COLUMN repeat TEXT;
    ALTER TABLE tasks ADD COLUMN repeat_next INTEGER;`,
+
+  // Чек-лист задачи: пункты с галочками (в том числе из регламентов агентства)
+  `CREATE TABLE task_checklist (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     text       TEXT NOT NULL,
+     done       INTEGER NOT NULL DEFAULT 0,
+     position   INTEGER NOT NULL DEFAULT 0,
+     done_by    TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX task_checklist_task ON task_checklist (task_id, position);`,
 ];
 
 /** Номер текущей версии схемы базы. */

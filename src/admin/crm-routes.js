@@ -2,6 +2,7 @@
 // задачи команды и комментарии.
 // Подключается внутри авторизованной части админки (req.user уже есть).
 
+import { outline, KbError } from '../assistant/kb.js';
 import { REPEATS, CrmError, PRIORITIES, COLUMN_COLORS, LINK_KINDS } from '../crm/store.js';
 import { leadValues } from '../docs/library.js';
 
@@ -51,9 +52,10 @@ const columnBody = {
   },
 };
 
-export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
+export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof CrmError) return reply.code(400).send({ error: err.message });
+    if (err instanceof KbError) return reply.code(404).send({ error: err.message });
     throw err;
   });
 
@@ -145,6 +147,39 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
     if (req.user.role !== 'admin') return reply.code(403).send({ error: 'Удалить клиента может администратор — остальные могут перенести его в архив' });
     crm.deleteClient(req.params.id);
     return { ok: true };
+  });
+
+  // ---------- чек-лист задачи и процессы из регламентов ----------
+  api.post('/admin/api/tasks/:id/checklist', {
+    schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { items: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'string', maxLength: 300 } }, docId: { type: 'integer' } } } },
+  }, async (req) => {
+    if (req.body.docId) {
+      if (!kb) throw new CrmError('Регламенты недоступны');
+      const doc = kb.get(req.body.docId);
+      const items = outline(doc).flatMap((st) => (st.items.length ? st.items : st.title !== doc.title ? [st.title] : []));
+      if (!items.length) throw new CrmError('В регламенте нет пунктов-списков — добавьте строки «- пункт»');
+      return { checklist: crm.addChecklist(req.params.id, items, req.user, { source: doc.title }) };
+    }
+    if (!req.body.items) throw new CrmError('Нет пунктов');
+    return { checklist: crm.addChecklist(req.params.id, req.body.items, req.user) };
+  });
+  api.patch('/admin/api/checklist/:id', {
+    schema: { params: idParams, body: { type: 'object', minProperties: 1, additionalProperties: false, properties: { text: { type: 'string', maxLength: 300 }, done: { type: 'boolean' } } } },
+  }, async (req) => ({ checklist: crm.updateCheck(req.params.id, req.body, req.user) }));
+  api.delete('/admin/api/checklist/:id', { schema: { params: idParams } }, async (req) => ({ checklist: crm.removeCheck(req.params.id) }));
+
+  // Регламент → задачи проекта: шаг — задача, пункты — чек-лист
+  api.get('/admin/api/kb/:id/outline', { schema: { params: idParams } }, async (req) => {
+    if (!kb) throw new CrmError('Регламенты недоступны');
+    const doc = kb.get(req.params.id);
+    return { title: doc.title, steps: outline(doc) };
+  });
+  api.post('/admin/api/kb/:id/apply', {
+    schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { clientId: nullableId, boardId: nullableId, assigneeId: nullableId } } },
+  }, async (req) => {
+    if (!kb) throw new CrmError('Регламенты недоступны');
+    const doc = kb.get(req.params.id);
+    return crm.tasksFromSteps({ clientId: req.body.clientId ?? null, boardId: req.body.boardId ?? null, assigneeId: req.body.assigneeId ?? null, steps: outline(doc), source: doc.title }, req.user);
   });
 
   // ---------- задачи ----------
