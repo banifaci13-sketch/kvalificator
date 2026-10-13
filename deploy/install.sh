@@ -102,7 +102,25 @@ if command -v ufw >/dev/null && ufw status | grep -q active; then
   echo "  ✓ ufw: открыты 22, 80, 443"
 fi
 
-# ---------- 5. Запуск ----------
+# ---------- 5. Порты 80 и 443 ----------
+# Caddy должен сам слушать 80/443, чтобы выпустить HTTPS-сертификат. На свежих серверах
+# хостинг часто заранее ставит nginx или apache — их нужно отключить.
+busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
+if [[ -n "$busy" ]]; then
+  warn "Порты 80/443 заняты другой программой:"
+  echo "$busy" | sed 's/^/    /'
+  for svc in nginx apache2 httpd caddy lighttpd; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      if [[ "$(ask "Остановить и отключить $svc? Он мешает HTTPS квалификатора (yes/no)" yes)" == yes ]]; then
+        systemctl disable --now "$svc" && echo "  ✓ $svc остановлен и больше не запускается сам"
+      fi
+    fi
+  done
+  busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
+  [[ -z "$busy" ]] || die "Порты 80/443 всё ещё заняты. Остановите программу из списка выше и запустите установку снова."
+fi
+
+# ---------- 6. Запуск ----------
 mkdir -p data
 chown -R 1000:1000 data   # в контейнере сервер работает от пользователя node (uid 1000)
 say "Собираю и запускаю (первый раз — пара минут)"
@@ -116,16 +134,21 @@ done
 [[ ${ok:-0} == 1 ]] || { docker compose logs --tail 50 app; die "Сервер не запустился — см. лог выше"; }
 echo "  ✓ сервер работает"
 
-# ---------- 6. Первый сотрудник ----------
-if [[ -n "${ADMIN_LOGIN:-}" ]]; then
+# ---------- 7. Первый администратор ----------
+# Спрашиваем, если в админке ещё никого нет (в том числе при повторном запуске с прежним .env)
+admin_cli() { docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/admin.js "$@" </dev/null; }
+if [[ -z "$(admin_cli list 2>/dev/null)" && -z "${ADMIN_LOGIN:-}" ]]; then
+  ADMIN_LOGIN=$(ask "Логин администратора админки (латиница или e-mail)" "admin")
+fi
+if [[ -n "${ADMIN_LOGIN:-}" && -z "$(admin_cli list 2>/dev/null)" ]]; then
   say "Создаю администратора $ADMIN_LOGIN"
   # Без терминала команда сама генерирует пароль и печатает его один раз
-  if docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/admin.js add "$ADMIN_LOGIN" "Администратор" --admin </dev/null; then
+  if admin_cli add "$ADMIN_LOGIN" "Администратор" --admin; then
     warn "Сохраните пароль выше: он показывается один раз. Новый пароль: docker compose exec app node scripts/admin.js passwd $ADMIN_LOGIN"
   fi
 fi
 
-# ---------- 7. Ежедневный бэкап ----------
+# ---------- 8. Ежедневный бэкап ----------
 project=$(pwd)
 cat > /etc/cron.d/kvalificator-backup <<CRON
 # Копия базы квалификатора каждый день в 03:17, хранится 14 последних
@@ -133,7 +156,7 @@ cat > /etc/cron.d/kvalificator-backup <<CRON
 CRON
 echo "  ✓ бэкап базы каждый день в 03:17 → $project/data/backups"
 
-# ---------- 8. Проверка настроек ----------
+# ---------- 9. Проверка настроек ----------
 say "Проверка настроек"
 docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/check.js || true
 
