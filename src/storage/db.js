@@ -308,6 +308,25 @@ const MIGRATIONS = [
      UNIQUE (task_id, kind, ref_id)
    );
    CREATE INDEX task_links_ref ON task_links (kind, ref_id);`,
+
+  // ИИ-ассистент: регламенты агентства (база знаний) и история диалога каждого сотрудника
+  `CREATE TABLE kb_docs (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     title       TEXT NOT NULL,
+     body        TEXT NOT NULL,
+     updated_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE assistant_messages (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id     INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+     role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+     text        TEXT NOT NULL,
+     meta        TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX assistant_messages_user ON assistant_messages (user_id, id);`,
 ];
 
 /** Номер текущей версии схемы базы. */

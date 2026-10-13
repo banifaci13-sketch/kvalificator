@@ -30,21 +30,23 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
     enabled: true,
     provider,
     model,
-    /** system — инструкция; user — запрос. Возвращает { text, usage }. */
-    async complete({ system, user, maxTokens = 4000, temperature = 0.3 }) {
+    /**
+     * system — инструкция; user — запрос; history — прошлые реплики диалога [{ role: 'user'|'assistant', text }];
+     * lite — лёгкая модель (быстрый разбор поручений). Возвращает { text, usage }.
+     */
+    async complete({ system, user, history = [], maxTokens = 4000, temperature = 0.3, lite = false }) {
+      const turns = [...history.filter((m) => m.text), { role: 'user', text: user }];
       if (provider === 'yandexgpt') {
+        const uri = lite && config.yandexLiteModel ? config.yandexLiteModel : model;
         const body = await call(
           'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
           {
             method: 'POST',
             headers: { authorization: `Api-Key ${config.yandexApiKey}`, 'x-folder-id': config.yandexFolderId, 'content-type': 'application/json' },
             body: JSON.stringify({
-              modelUri: `gpt://${config.yandexFolderId}/${model}`,
+              modelUri: `gpt://${config.yandexFolderId}/${uri}`,
               completionOptions: { stream: false, temperature, maxTokens: String(maxTokens) },
-              messages: [
-                { role: 'system', text: system },
-                { role: 'user', text: user },
-              ],
+              messages: [{ role: 'system', text: system }, ...turns.map((m) => ({ role: m.role, text: m.text }))],
             }),
           },
           'YandexGPT',
@@ -58,7 +60,7 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
         {
           method: 'POST',
           headers: { 'x-api-key': config.anthropicApiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+          body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: turns.map((m) => ({ role: m.role, content: m.text })) }),
         },
         'Claude',
       );

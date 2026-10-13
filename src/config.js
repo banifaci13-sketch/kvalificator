@@ -72,6 +72,14 @@ export function loadConfig(env = process.env) {
       yandexModel: env.YANDEX_GPT_MODEL || 'yandexgpt/latest',
       anthropicApiKey: env.ANTHROPIC_API_KEY || null,
       anthropicModel: env.ANTHROPIC_MODEL || 'claude-opus-5-5',
+      // лёгкая модель — для разбора поручений, когда правила не справились
+      yandexLiteModel: env.YANDEX_GPT_LITE_MODEL || 'yandexgpt-lite/latest',
+    },
+    // Поиск в интернете для ассистента — Yandex Search API (тот же Yandex Cloud).
+    // По умолчанию — ключ и каталог YandexGPT: сервисному аккаунту нужна роль search-api.webSearch.user.
+    search: {
+      apiKey: env.YANDEX_SEARCH_API_KEY || env.YANDEX_GPT_API_KEY || null,
+      folderId: env.YANDEX_SEARCH_FOLDER_ID || env.YANDEX_GPT_FOLDER_ID || null,
     },
     logLevel: env.LOG_LEVEL || 'info',
   };

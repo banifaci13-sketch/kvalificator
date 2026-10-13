@@ -6,6 +6,8 @@ import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderProjects, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
 import { renderIntegrations } from './integrations.js';
+import { assistantEntry } from './assistant.js';
+import { renderKb } from './kb.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -149,6 +151,7 @@ const routes = {
   staff: renderStaff,
   account: renderAccount,
   appearance: renderAppearance,
+  kb: renderKb,
 };
 // Разделы со своими вкладками: ключ — первая вкладка (на неё ведёт пункт меню)
 const SECTION_TABS = {
@@ -232,6 +235,7 @@ const ICONS = {
   priority: 'M5 20v-4M10 20v-8M15 20V8M20 20V4',
   person: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1',
   trash: 'M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3',
+  kb: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 5v16M8 7h7M8 11h5',
 };
 function icon(name) {
   return s('svg', { class: 'icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' }, s('path', { d: ICONS[name] }));
@@ -300,6 +304,7 @@ function shell(active, content) {
     ['tasks', 'Задачи'],
     ['calendar', 'Календарь'],
     ['leads', 'Квалификатор'],
+    ['kb', 'Регламенты'],
     ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
   ].filter(Boolean);
   return [
@@ -315,6 +320,7 @@ function shell(active, content) {
           h('a', { href: `#/${id}`, title: label, 'aria-current': id === section ? 'page' : null }, icon(id), h('span', { class: 'nav-label' }, label)),
         ),
       ),
+      assistantEntry(),
       h(
         'div',
         { class: 'side-foot' },
@@ -1262,6 +1268,27 @@ function renderAppearance() {
       h(
         'section',
         { class: 'panel' },
+        h('h2', {}, 'Ассистент'),
+        h('p', { class: 'sub' }, 'Как его зовут и как он к вам обращается.'),
+        h(
+          'div',
+          { class: 'field' },
+          h('label', { for: 'pf-name' }, 'Имя ассистента'),
+          h('input', {
+            class: 'input', id: 'pf-name', maxlength: 24, value: prefs.assistantName ?? '', placeholder: 'Ассистент',
+            onchange: (e) => {
+              const v = e.target.value.trim();
+              if (v && !/^[A-Za-zА-Яа-яЁё0-9 .-]{1,24}$/.test(v)) return toast('Имя — до 24 букв и цифр');
+              set({ assistantName: v });
+            },
+          }),
+        ),
+        tiles('address', [['vy', 'На «вы»'], ['ty', 'На «ты»']], 'tiles-2 tiles-plain'),
+        h('label', { class: 'check pf-search' }, h('input', { type: 'checkbox', checked: prefs.webSearch !== 'off', onchange: (e) => set({ webSearch: e.target.checked ? 'on' : 'off' }) }), 'Искать в интернете, когда нужны свежие данные'),
+      ),
+      h(
+        'section',
+        { class: 'panel' },
         h('h2', {}, 'Стартовый раздел'),
         h('p', { class: 'sub' }, 'Что открывается после входа.'),
         h('select', { class: 'select', 'aria-label': 'Стартовый раздел', onchange: (e) => set({ start: e.target.value }) }, APPEARANCE.start.map(([v, l]) => h('option', { value: v, selected: prefs.start === v }, l))),
@@ -1279,7 +1306,7 @@ function renderAppearance() {
         h('span', { class: 'spacer' }),
         h('button', {
           type: 'button', class: 'btn',
-          onclick: () => set({ theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'docs' }),
+          onclick: () => set({ theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'docs', assistantName: '', address: 'vy', webSearch: 'on' }),
         }, 'Вернуть как было'),
       ),
       h('p', { class: 'lead-text' }, 'Настройки только ваши: коллеги их не видят. Они сохраняются в профиле и действуют на любом устройстве, где вы вошли.'),
@@ -1412,6 +1439,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon };
+export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, renderRoute as rerender };
 
 boot();

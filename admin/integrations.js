@@ -50,6 +50,17 @@ export async function renderIntegrations() {
       ],
     ),
     card(
+      'Поиск в интернете для ассистента',
+      s.search,
+      s.search ? 'Yandex Search API' : null,
+      'Ассистент ищет свежие сведения — требования площадок, новости, данные о компаниях — и отвечает со ссылками на источники.',
+      [
+        ['В Yandex Cloud сервисному аккаунту YandexGPT добавьте роль ', code('search-api.webSearch.user'), ' — тот же ключ подойдёт и для поиска.'],
+        ['Или впишите отдельные ', code('YANDEX_SEARCH_API_KEY=…'), ' и ', code('YANDEX_SEARCH_FOLDER_ID=…'), '.'],
+        ['Примените: ', code(APPLY), '.'],
+      ],
+    ),
+    card(
       'Яндекс Телемост',
       s.telemost,
       null,

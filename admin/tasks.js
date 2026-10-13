@@ -5,6 +5,7 @@
 import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
+import { setAssistantTask } from './assistant.js';
 
 let team = null;
 async function loadTeam() {
@@ -88,7 +89,7 @@ const DOC_TITLES = { kp: 'Коммерческое предложение', stra
 export const suggestTools = (task) => TOOLS.filter((t) => t.match.some((re) => re.test(`${task.title ?? ''} ${task.description ?? ''}`)));
 
 /** Создать из задачи медиаплан, документ или встречу — сразу с клиентом проекта — и привязать к задаче. */
-async function createFromTask(tool, task, onLinked) {
+export async function createFromTask(tool, task, onLinked) {
   const client = task.client_name ?? '';
   const link = async (refId) => {
     await api(`/admin/api/tasks/${task.id}/links`, { method: 'POST', body: { kind: tool.kind, refId } });
@@ -225,6 +226,7 @@ export function linkedTasksBar(kind, refId) {
 
 let panel = null;
 function closeTask() {
+  if (panel) setAssistantTask(null);
   panel?.els.forEach((el) => el.remove());
   document.removeEventListener('keydown', panel?.onKey);
   const after = panel?.onClose;
@@ -425,6 +427,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   }, 'Удалить задачу');
 
   fill(heading, `Задача #${task.id}`);
+  setAssistantTask(task);
   fill(
     body,
     fields,

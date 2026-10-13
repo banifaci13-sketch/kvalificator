@@ -8,7 +8,12 @@ export const PREF_OPTIONS = {
   density: ['comfortable', 'compact'],
   sidebar: ['full', 'icons'],
   start: ['docs', 'tasks', 'mytasks', 'calendar', 'plans', 'leads'],
+  // ассистент: на «вы» или на «ты», искать ли в интернете
+  address: ['vy', 'ty'],
+  webSearch: ['on', 'off'],
 };
+// имя ассистента — свободное, но короткое и без разметки
+const NAME_RE = /^[A-Za-zА-Яа-яЁё0-9 .-]{1,24}$/;
 
 export const DEFAULT_PREFS = {
   theme: 'system',
@@ -17,6 +22,9 @@ export const DEFAULT_PREFS = {
   density: 'comfortable',
   sidebar: 'full',
   start: 'docs',
+  assistantName: '',
+  address: 'vy',
+  webSearch: 'on',
 };
 
 // своё фото фоном — картинка из медиатеки: «media:<id>»
@@ -35,7 +43,8 @@ export function readPrefs(raw) {
   const out = { ...DEFAULT_PREFS };
   for (const key of Object.keys(DEFAULT_PREFS)) {
     const v = saved?.[key];
-    if (PREF_OPTIONS[key].includes(v) || (key === 'background' && MEDIA_BG.test(v ?? ''))) out[key] = v;
+    if (key === 'assistantName') out[key] = typeof v === 'string' && (v === '' || NAME_RE.test(v)) ? v : '';
+    else if (PREF_OPTIONS[key].includes(v) || (key === 'background' && MEDIA_BG.test(v ?? ''))) out[key] = v;
   }
   return out;
 }
@@ -44,6 +53,10 @@ export function readPrefs(raw) {
 export function checkPrefsPatch(patch, { mediaExists = () => false } = {}) {
   for (const [key, v] of Object.entries(patch)) {
     if (!(key in DEFAULT_PREFS)) throw new PrefsError(`Неизвестная настройка «${key}»`);
+    if (key === 'assistantName') {
+      if (v === '' || NAME_RE.test(v)) continue;
+      throw new PrefsError('Имя ассистента — до 24 букв и цифр');
+    }
     if (PREF_OPTIONS[key].includes(v)) continue;
     const m = key === 'background' && MEDIA_BG.exec(v ?? '');
     if (m && mediaExists(Number(m[1]))) continue;

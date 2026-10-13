@@ -1,0 +1,303 @@
+// ИИ-ассистент кабинета. Три слоя, как в боте «Сара»:
+//   1. правила — частые поручения разбираются сразу и работают без ИИ (src/assistant/commands.js);
+//   2. модель — свободный разговор и помощь по задачам с опорой на регламенты агентства;
+//   3. поиск в интернете — Yandex Search API, ответ со ссылками на источники.
+// Если подходят несколько задач, ассистент переспрашивает, а не угадывает: закрыть не ту хуже.
+// В модель уходят только обезличенные тексты: почты и телефоны заменяются метками.
+
+import { parseCommand, bestMatch } from './commands.js';
+import { createMask } from '../ai/decks.js';
+
+const MSK = 3 * 3600e3;
+const pad = (n) => String(n).padStart(2, '0');
+const todayMsk = (now = new Date()) => new Date(now.getTime() + MSK).toISOString().slice(0, 10);
+const addDays = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400e3).toISOString().slice(0, 10);
+const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const fmtDue = (t) => (t.due ? `${fmtDay(t.due)}${t.due_time ? ` к ${t.due_time}` : ''}` : 'без срока');
+const mskTime = (dbTime) => {
+  const d = new Date(`${String(dbTime).replace(' ', 'T')}Z`);
+  const m = new Date(d.getTime() + MSK);
+  return { date: m.toISOString().slice(0, 10), time: `${pad(m.getUTCHours())}:${pad(m.getUTCMinutes())}` };
+};
+const taskHref = (t) => `#/tasks?project=${t.client_id ?? 'none'}`;
+
+export const DEFAULT_NAME = 'Ассистент';
+
+const HELP = [
+  'Что я умею без подготовки:',
+  '• «поставь задачу подготовить КП для Таллера на пятницу» — задача в проекте клиента;',
+  '• «поручи Даниилу сделать медиаплан до 20.10» — с исполнителем;',
+  '• «закрой задачу по лендингу», «перенеси отчёт на понедельник в 12»;',
+  '• «встреча с Ромашкой завтра в 15 в Телемосте»;',
+  '• «что у меня сегодня», «что на неделе», «просроченные»;',
+  '• «найди в интернете требования SberAds к баннерам».',
+].join('\n');
+
+export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log = null }) {
+  const q = {
+    history: db.prepare('SELECT role, text, meta, created_at FROM assistant_messages WHERE user_id = ? ORDER BY id DESC LIMIT ?'),
+    add: db.prepare('INSERT INTO assistant_messages (user_id, role, text, meta) VALUES (?, ?, ?, ?)'),
+    clear: db.prepare('DELETE FROM assistant_messages WHERE user_id = ?'),
+    lastFocus: db.prepare("SELECT meta FROM assistant_messages WHERE user_id = ? AND role = 'assistant' AND meta LIKE '%\"focus\"%' ORDER BY id DESC LIMIT 1"),
+  };
+
+  const history = (userId, limit = 40) =>
+    q
+      .history.all(userId, limit)
+      .reverse()
+      .map((m) => ({ role: m.role, text: m.text, ...(m.meta ? JSON.parse(m.meta) : {}), created_at: m.created_at }));
+
+  /** Последняя задача или встреча, о которой шла речь: «перенеси на пятницу» без названия. */
+  const focus = (userId) => {
+    const row = q.lastFocus.get(userId);
+    return row ? JSON.parse(row.meta).focus ?? null : null;
+  };
+
+  const team = () => (auth ? auth.listUsers().filter((u) => !u.disabled) : []);
+  const clients = () => (crm ? crm.listClients() : []);
+
+  // ---------- поручения ----------
+
+  function agenda(user, range) {
+    if (!crm) return { reply: 'Задачи недоступны.' };
+    const today = todayMsk();
+    const open = crm.listTasks({ mine: user.id, open: true });
+    const until = { today, tomorrow: addDays(today, 1), week: addDays(today, 7), overdue: today, open: '9999-12-31' }[range];
+    const from = range === 'tomorrow' ? addDays(today, 1) : null;
+    const nowMsk = new Date(Date.now() + MSK).toISOString().slice(0, 16).replace('T', ' ');
+    let tasks = open.filter((t) => (range === 'open' ? true : t.due && t.due <= until && (!from || t.due >= from)));
+    if (range === 'overdue') tasks = open.filter((t) => t.due && `${t.due} ${t.due_time ?? '23:59'}` < nowMsk);
+    let meetings = [];
+    if (calendar && range !== 'overdue' && range !== 'open') {
+      const start = from ?? today;
+      meetings = calendar
+        .list({ from: `${start}T00:00:00+03:00`, to: `${addDays(until, 1)}T00:00:00+03:00`, userId: user.id })
+        .filter((m) => !m.cancelled);
+    }
+    const title = { today: 'На сегодня', tomorrow: 'На завтра', week: 'На неделю', overdue: 'Просрочено', open: 'Ваши открытые задачи' }[range];
+    if (!tasks.length && !meetings.length) {
+      return { reply: range === 'overdue' ? 'Просроченных задач нет.' : `${title}: ни задач, ни встреч. Можно взяться за то, что без срока.` };
+    }
+    const lines = [`${title}:`];
+    for (const m of meetings) {
+      const t = mskTime(m.starts_at);
+      lines.push(`• ${range === 'today' || range === 'tomorrow' ? '' : `${fmtDay(t.date)}, `}${t.time} — встреча «${m.title}»${m.client_name ? ` (${m.client_name})` : ''}`);
+    }
+    for (const t of tasks) {
+      const late = t.due && `${t.due} ${t.due_time ?? '23:59'}` < nowMsk;
+      lines.push(`• ${late ? '🔴 ' : ''}${t.title}${t.client_name ? ` — ${t.client_name}` : ''}, ${fmtDue(t)}`);
+    }
+    return {
+      reply: lines.join('\n'),
+      actions: [
+        ...meetings.slice(0, 8).map((m) => ({ type: 'meeting', id: m.id, title: m.title, href: `#/calendar?meeting=${m.id}` })),
+        ...tasks.slice(0, 12).map((t) => ({ type: 'task', id: t.id, title: t.title, href: taskHref(t) })),
+      ],
+    };
+  }
+
+  function createTask(user, cmd) {
+    const task = crm.createTask(
+      { title: cmd.title, clientId: cmd.client?.id ?? null, assigneeId: cmd.assignee?.id ?? user.id, due: cmd.date, dueTime: cmd.date ? cmd.time : null, priority: cmd.priority },
+      user,
+    );
+    const who = !cmd.assignee || cmd.assignee.id === user.id ? 'вы' : cmd.assignee.name;
+    const parts = [`проект «${task.client_name ?? 'Общие задачи'}»`, `срок — ${fmtDue(task)}`, `ответственный — ${who}`];
+    if (task.priority >= 3) parts.push(task.priority === 4 ? 'критично' : 'важно');
+    return {
+      reply: `Поставил задачу «${task.title}»: ${parts.join(', ')}.`,
+      actions: [{ type: 'task', id: task.id, title: task.title, href: taskHref(task), client: task.client_name, created: true }],
+      focus: { type: 'task', id: task.id },
+    };
+  }
+
+  /** Задача по словам; если неоднозначно — варианты для уточнения. */
+  function findTask(user, query) {
+    const ref = /#(\d+)/.exec(query ?? '');
+    if (ref) {
+      try {
+        return { task: crm.getTask(Number(ref[1])) };
+      } catch {
+        return { error: `Задачи #${ref[1]} нет.` };
+      }
+    }
+    const pronoun = !query || /^(е[её]|эту|ту|последнюю|её же)$/i.test(query.trim());
+    if (pronoun) {
+      const f = focus(user.id);
+      if (f?.type === 'task') return { task: crm.getTask(f.id) };
+      return { error: 'Уточните, какую задачу — назовите пару слов из названия.' };
+    }
+    const text = (t) => `${t.title} ${t.client_name ?? ''}`;
+    const mine = crm.listTasks({ mine: user.id, open: true });
+    let m = bestMatch(query, mine, text);
+    if (!m.item && !m.candidates.length) m = bestMatch(query, crm.listTasks({ open: true }), text);
+    if (m.item) return { task: m.item };
+    if (m.candidates.length) return { ambiguous: m.candidates };
+    return { error: `Не нашёл задачу «${query}». Назовите иначе или откройте раздел «Задачи».` };
+  }
+
+  const choose = (candidates, verb) => ({
+    reply: `Нашёл несколько похожих — какую ${verb}?`,
+    options: candidates.map((t) => ({ label: `${t.title}${t.client_name ? ` — ${t.client_name}` : ''}`, command: `${verb === 'закрыть' ? 'закрой задачу' : 'перенеси задачу'} #${t.id}` })),
+  });
+
+  function taskDone(user, cmd) {
+    const r = findTask(user, cmd.query);
+    if (r.error) return { reply: r.error };
+    if (r.ambiguous) return choose(r.ambiguous, 'закрыть');
+    const t = crm.updateTask(r.task.id, { done: true }, user);
+    return { reply: `Готово: «${t.title}» отмечена выполненной.`, actions: [{ type: 'task', id: t.id, title: t.title, href: taskHref(t) }], focus: { type: 'task', id: t.id } };
+  }
+
+  function taskMove(user, cmd) {
+    if (!cmd.date && !cmd.time) return { reply: 'На когда перенести? Например: «перенеси отчёт на пятницу в 12».' };
+    const r = findTask(user, cmd.query);
+    if (r.error) return { reply: r.error };
+    if (r.ambiguous) {
+      const when = [cmd.date ? fmtDay(cmd.date) : '', cmd.time ? `в ${cmd.time}` : ''].join(' ').trim();
+      return { reply: `Нашёл несколько похожих — какую перенести на ${when}?`, options: r.ambiguous.map((t) => ({ label: `${t.title}${t.client_name ? ` — ${t.client_name}` : ''}`, command: `перенеси задачу #${t.id} ${cmd.date ? cmd.date.split('-').reverse().slice(0, 2).join('.') : ''} ${cmd.time ? `в ${cmd.time}` : ''}`.trim() })) };
+    }
+    const due = cmd.date ?? r.task.due ?? todayMsk();
+    const t = crm.updateTask(r.task.id, { due, dueTime: cmd.time ?? r.task.due_time ?? null }, user);
+    return { reply: `Перенёс «${t.title}» на ${fmtDue(t)}.`, actions: [{ type: 'task', id: t.id, title: t.title, href: taskHref(t) }], focus: { type: 'task', id: t.id } };
+  }
+
+  function createMeeting(user, cmd) {
+    if (!calendar) return { reply: 'Календарь недоступен.' };
+    if (!cmd.date || !cmd.time) return { reply: 'Когда встреча? Например: «встреча с Таллером в четверг в 15».' };
+    const m = calendar.create(
+      { title: cmd.title, startsAt: `${cmd.date}T${cmd.time}:00+03:00`, clientId: cmd.client?.id ?? null, format: cmd.format, provider: cmd.provider, participants: [user.id] },
+      user,
+    );
+    const video = cmd.provider ? ` Ссылку ${cmd.provider === 'telemost' ? 'Телемоста' : 'Zoom'} создайте кнопкой в карточке встречи.` : '';
+    return {
+      reply: `Запланировал «${m.title}» на ${fmtDay(cmd.date)} в ${cmd.time} (по Москве), напомню в Telegram за сутки и за 15 минут.${video}`,
+      actions: [{ type: 'meeting', id: m.id, title: m.title, href: `#/calendar?meeting=${m.id}` }],
+      focus: { type: 'meeting', id: m.id },
+    };
+  }
+
+  function moveMeeting(user, cmd) {
+    if (!calendar) return { reply: 'Календарь недоступен.' };
+    const today = todayMsk();
+    const upcoming = calendar
+      .list({ from: `${today}T00:00:00+03:00`, to: `${addDays(today, 60)}T00:00:00+03:00`, userId: user.id })
+      .filter((m) => !m.cancelled);
+    const f = focus(user.id);
+    let m = !cmd.query && f?.type === 'meeting' ? upcoming.find((x) => x.id === f.id) : null;
+    if (!m) {
+      const r = bestMatch(cmd.query, upcoming, (x) => `${x.title} ${x.client_name ?? ''}`);
+      if (r.candidates.length > 1) return { reply: 'Какую встречу перенести?', options: r.candidates.map((x) => ({ label: `${x.title} — ${fmtDay(mskTime(x.starts_at).date)} ${mskTime(x.starts_at).time}`, command: `открыть встречу #${x.id}` })) };
+      m = r.item;
+    }
+    if (!m) return { reply: `Не нашёл встречу «${cmd.query}» в ближайшие два месяца.` };
+    const cur = mskTime(m.starts_at);
+    const date = cmd.date ?? cur.date;
+    const time = cmd.time ?? cur.time;
+    const moved = calendar.update(m.id, { startsAt: `${date}T${time}:00+03:00` });
+    return { reply: `Перенёс «${moved.title}» на ${fmtDay(date)} в ${time}. Участникам придут напоминания по новому времени.`, actions: [{ type: 'meeting', id: m.id, title: moved.title, href: `#/calendar?meeting=${m.id}` }], focus: { type: 'meeting', id: m.id } };
+  }
+
+  // ---------- поиск и разговор ----------
+
+  async function webSearch(user, query, prefs) {
+    if (prefs?.webSearch === 'off') return { reply: 'Поиск в интернете выключен в настройках ассистента («Внешний вид» → «Ассистент»).' };
+    if (!search?.enabled) return { reply: 'Поиск в интернете пока не подключён. Администратор включает его на странице «Сотрудники» → «Подключения».' };
+    const { results } = await search.search(query, { count: 5 });
+    if (!results.length) return { reply: `По запросу «${query}» ничего не нашлось.` };
+    const sources = results.map((r) => ({ title: r.title, url: r.url }));
+    if (!ai?.enabled) {
+      return { reply: `Нашёл по запросу «${query}»:\n${results.map((r, i) => `${i + 1}. ${r.title} — ${r.snippet}`).join('\n')}`, sources };
+    }
+    const context = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n');
+    const { text } = await ai.complete({
+      system: `${systemPrompt(user, prefs)}\nНиже — результаты поиска в интернете. Ответь на вопрос по ним, кратко; после утверждений ставь номер источника в квадратных скобках, например [2]. Если в результатах ответа нет — так и скажи.`,
+      user: `Вопрос: ${query}\n\nРезультаты поиска:\n${context}`,
+      maxTokens: 1500,
+    });
+    track(user, 'assistant_search', query, text);
+    return { reply: text.trim(), sources };
+  }
+
+  function systemPrompt(user, prefs = {}) {
+    const name = prefs.assistantName || DEFAULT_NAME;
+    const you = prefs.address === 'ty' ? 'Обращайся к собеседнику на «ты».' : 'Обращайся к собеседнику на «вы».';
+    return [
+      `Ты — ${name}, рабочий ИИ-ассистент сотрудников агентства интернет-маркетинга Soroka Marketing (контекстная и таргетированная реклама, SEO, аналитика, маркетплейсы).`,
+      'Помогаешь с задачами: разложить задачу на шаги, подсказать порядок работы по регламентам агентства, составить текст, ТЗ, письмо клиенту, идеи для рекламы.',
+      'Отвечай по-русски, коротко и по делу, списками, где это удобно. Не выдумывай цифры, ставки, сроки и факты о клиентах; если данных нет — скажи прямо и предложи, где их взять.',
+      'Регламенты агентства (если приведены ниже) — главный источник о том, как в агентстве принято работать; ссылайся на них по названию.',
+      'В кабинете есть разделы: Документы (КП, стратегии, отчёты по шаблонам), Медиапланы (калькулятор с Excel), Задачи (проекты по клиентам), Календарь (встречи с Zoom и Телемостом), Квалификатор (заявки с сайта). Если задачу удобнее решить в разделе — подскажи, в каком.',
+      'Метки вида {{email_1}} или {{phone_1}} — скрытые контакты; используй их как есть.',
+      you,
+      prefs.webSearch !== 'off' && search?.enabled
+        ? 'Если для ответа нужны свежие данные из интернета (правила и требования площадок, цены, новости, сведения о компании), ответь ровно одной строкой без пояснений: ПОИСК: <поисковый запрос>.'
+        : 'Поиска в интернете нет — отвечай по своим знаниям и предупреждай, если сведения могли устареть.',
+    ].join('\n');
+  }
+
+  function track(user, action, input, output, error = null) {
+    log?.run(user.id, action, ai?.provider ?? null, ai?.model ?? null, String(input ?? '').length, String(output ?? '').length, 0, error ? 0 : 1, error);
+  }
+
+  async function chat(user, message, context, prefs) {
+    if (!ai?.enabled) {
+      return { reply: `Свободный разговор и помощь по задачам заработают, когда администратор подключит YandexGPT («Сотрудники» → «Подключения»).\n\n${HELP}` };
+    }
+    const mask = createMask({});
+    const kbParts = kb ? kb.search(`${message} ${context?.task?.title ?? ''}`) : [];
+    const kbText = kbParts.length ? `\n\nРегламенты агентства (фрагменты):\n${kbParts.map((c) => `— «${c.title}», раздел «${c.section}»:\n${c.text}`).join('\n\n')}` : '';
+    const ctxText = context?.task
+      ? `\n\nСотрудник сейчас смотрит задачу «${context.task.title}»${context.task.client ? ` (клиент «${context.task.client}»)` : ''}${context.task.description ? `. Описание: ${context.task.description}` : ''}.`
+      : context?.page
+        ? `\n\nСотрудник сейчас в разделе «${context.page}».`
+        : '';
+    // прошлые реплики без только что записанного вопроса — он уходит отдельно
+    const past = history(user.id, 13).slice(0, -1).map((m) => ({ role: m.role, text: mask.maskText(m.text) }));
+    const system = systemPrompt(user, prefs) + mask.maskText(kbText + ctxText);
+    let { text } = await ai.complete({ system, user: mask.maskText(message), history: past, maxTokens: 2000 });
+    track(user, 'assistant', message, text);
+    const wantSearch = /^\s*ПОИСК:\s*(.+)$/im.exec(text);
+    if (wantSearch && search?.enabled && prefs?.webSearch !== 'off') {
+      const found = await webSearch(user, wantSearch[1].trim(), prefs);
+      return { ...found, searched: wantSearch[1].trim(), kb: kbParts.map((c) => c.title) };
+    }
+    text = mask.restore(text.replace(/^\s*ПОИСК:.*$/im, '').trim());
+    return { reply: text, kb: [...new Set(kbParts.map((c) => c.title))] };
+  }
+
+  return {
+    history: (userId) => history(userId),
+    clear: (userId) => q.clear.run(userId),
+    /**
+     * Сообщение сотрудника. context — где он сейчас: { page, task: { id, title, client, description } }.
+     * Ответ: { reply, actions?, options?, sources?, kb? }.
+     */
+    async handle(user, message, { context = {}, prefs = {}, now = new Date() } = {}) {
+      const text = String(message ?? '').trim().slice(0, 4000);
+      if (!text) return { reply: 'Напишите, что нужно сделать.' };
+      q.add.run(user.id, 'user', text, null);
+      let out;
+      try {
+        const cmd = /^(помощь|что ты умеешь|help|\/help|команды)\??$/i.test(text) ? { intent: 'help' } : parseCommand(text, { clients: clients(), team: team(), now });
+        const open = /^открыть встречу #(\d+)$/i.exec(text);
+        if (open) out = { reply: 'Открываю встречу.', actions: [{ type: 'meeting', id: Number(open[1]), title: 'Встреча', href: `#/calendar?meeting=${open[1]}` }], navigate: `#/calendar?meeting=${open[1]}` };
+        else if (cmd.intent === 'help') out = { reply: HELP };
+        else if (cmd.intent === 'agenda') out = agenda(user, cmd.range);
+        else if (cmd.intent === 'task_create') out = crm ? createTask(user, cmd) : { reply: 'Задачи недоступны.' };
+        else if (cmd.intent === 'task_done') out = taskDone(user, cmd);
+        else if (cmd.intent === 'task_move') out = taskMove(user, cmd);
+        else if (cmd.intent === 'meeting') out = createMeeting(user, cmd);
+        else if (cmd.intent === 'meeting_move') out = moveMeeting(user, cmd);
+        else if (cmd.intent === 'search') out = await webSearch(user, cmd.query, prefs);
+        else out = await chat(user, text, context, prefs);
+      } catch (err) {
+        track(user, 'assistant', text, '', err.message);
+        out = { reply: `Не получилось: ${err.message}`, error: true };
+      }
+      const { reply, ...meta } = out;
+      q.add.run(user.id, 'assistant', reply, Object.keys(meta).length ? JSON.stringify(meta) : null);
+      return out;
+    },
+  };
+}

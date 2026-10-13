@@ -17,6 +17,10 @@ import { crmRoutes } from './crm-routes.js';
 import { calendarRoutes } from './calendar-routes.js';
 import { aiRoutes } from './ai-routes.js';
 import { DEFAULT_PREFS, PrefsError, checkPrefsPatch } from './prefs.js';
+import { assistantRoutes } from './assistant-routes.js';
+import { createAssistant } from '../assistant/index.js';
+import { createKb } from '../assistant/kb.js';
+import { createSearch } from '../assistant/search.js';
 import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
@@ -339,6 +343,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
           ai: { enabled: Boolean(ai?.enabled), provider: ai?.provider ?? null, model: ai?.model ?? null },
           zoom: Boolean(video?.available.zoom),
           telemost: Boolean(video?.available.telemost),
+          search: Boolean(config.search?.apiKey && config.search?.folderId),
           telegram: { enabled: config.telegram.botEnabled, bot: config.telegram.botUsername ?? null, managerChat: Boolean(config.telegram.managerChatId) },
           pdf,
           publicUrl: config.publicUrl,
@@ -408,6 +413,15 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
+
+    // ИИ-ассистент в боковой панели: поручения, помощь по регламентам, поиск в интернете
+    {
+      const kb = createKb({ db: db.raw });
+      const search = createSearch(config.search);
+      const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log });
+      await api.register(assistantRoutes, { assistant, kb, ai, search });
+    }
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 
