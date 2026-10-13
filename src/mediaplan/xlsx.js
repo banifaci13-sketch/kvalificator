@@ -146,8 +146,9 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
   const a = ref(A);
 
   // ---------- допущения ----------
+  const ecom = spec.kind === 'ecom';
   const as = createSheet(A);
-  as.widths = [44, 16, 12, 10, 10, 12, 60];
+  as.widths = [52, 16, 12, 10, 10, 12, 60];
   as.set(0, 1, 'Допущения медиаплана', S.title);
   as.set(0, 2, 'Жёлтые ячейки — исходные данные: измените их, и пересчитаются все листы.', S.note);
   const settings = spec.settings ?? {};
@@ -155,13 +156,14 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
     [4, 'Период, месяцев', Math.max(1, spec.months ?? 1), S.keyNum],
     [5, 'Комиссия агентства', frac(settings.agencyFee) ?? 0, S.keyPct],
     [6, 'НДС (0 — без НДС)', frac(settings.vat) ?? 0, S.keyPct],
-    [7, 'Конверсия лида в продажу', frac(settings.saleRate) ?? 0, S.keyPct],
-    [8, 'Средний чек, ₽', settings.avgCheck ?? 0, S.keyNum],
+    [7, ecom ? 'Не используется в интернет-магазине' : 'Конверсия лида в продажу', ecom ? 0 : frac(settings.saleRate) ?? 0, S.keyPct],
+    [8, ecom ? 'Средний чек по умолчанию, ₽' : 'Средний чек, ₽', settings.avgCheck ?? 0, S.keyNum],
+    [9, 'Бюджеты в таблицах указаны с НДС (1 — да, 0 — нет)', settings.budgetWithVat ? 1 : 0, S.keyNum],
   ];
   for (const [r, label, v, s] of inputs) as.set(0, r, label, S.label).set(1, r, v, s);
-  as.set(0, 10, 'На чём основан прогноз', S.labelBold);
-  as.set(0, 11, spec.assumptions || 'Не указано', S.wrap);
-  let r = 13;
+  as.set(0, 11, 'На чём основан прогноз', S.labelBold);
+  as.set(0, 12, spec.assumptions || 'Не указано', S.wrap);
+  let r = 14;
   if (benchmarks.length) {
     as.set(0, r, 'Нормативы агентства по каналам', S.labelBold);
     r += 1;
@@ -172,20 +174,26 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
       as.set(5, r, String(b.updated_at ?? '').slice(0, 10), S.label).set(6, r, b.note, S.label);
     }
   }
+  // бюджет без НДС: если в таблице введён с НДС, делим на (1 + НДС)
+  const VAT = `${a}$B$6`;
+  const netOf = (cell) => `${cell}/(1+${VAT}*${a}$B$9)`;
 
   // ---------- сценарии ----------
   const totals = [];
-  const scenarioSheets = spec.scenarios.map((sc, si) => {
+  const scenarioSheets = spec.scenarios.map((sc, si) => (ecom ? ecomSheet(sc, si) : leadsSheet(sc, si)));
+
+  function leadsSheet(sc, si) {
     const sh = createSheet(names[si]);
     sh.widths = [36, 9, 16, 11, 11, 9, 13, 14, 12, 10, 13, 13];
     sh.freezeRow = 4;
     sh.set(0, 1, `Медиаплан: ${plan.client || plan.title} — ${sc.name}`, S.title);
-    sh.set(0, 2, 'Синие ячейки — исходные данные; чёрные — формулы; бюджеты в месяц, без комиссии и НДС.', S.note);
+    sh.set(0, 2, `Синие ячейки — исходные данные; чёрные — формулы; бюджеты в месяц, ${settings.budgetWithVat ? 'с НДС' : 'без НДС'}, без комиссии.`, S.note);
     ['Канал', 'Модель', 'Бюджет в месяц, ₽', 'CPC, ₽', 'CPM, ₽', 'CTR', 'Конверсия в лид', 'Показы', 'Клики', 'Лиды', 'Цена клика, ₽', 'CPL, ₽'].forEach((t, c) => sh.set(c, 4, t, S.head));
     const first = 5;
     const rows = sc.rows.length ? sc.rows : [{ model: 'cpc' }];
     rows.forEach((row, i) => {
       const n = first + i;
+      const net = netOf(`C${n}`);
       sh.set(0, n, row.channel || '', S.inText)
         .set(1, n, row.model === 'cpm' ? 'CPM' : 'CPC', S.inText)
         .set(2, n, row.budget ?? null, S.inNum)
@@ -193,11 +201,11 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
         .set(4, n, row.cpm ?? null, S.inMoney2)
         .set(5, n, frac(row.ctr), S.inPct)
         .set(6, n, frac(row.cr), S.inPct)
-        .set(7, n, { f: `IF(B${n}="CPM",IF(E${n}>0,C${n}/E${n}*1000,0),IF(AND(D${n}>0,F${n}>0),C${n}/D${n}/F${n},0))` }, S.num)
-        .set(8, n, { f: `IF(B${n}="CPM",IF(E${n}>0,C${n}/E${n}*1000*F${n},0),IF(D${n}>0,C${n}/D${n},0))` }, S.num)
+        .set(7, n, { f: `IF(B${n}="CPM",IF(E${n}>0,${net}/E${n}*1000,0),IF(AND(D${n}>0,F${n}>0),${net}/D${n}/F${n},0))` }, S.num)
+        .set(8, n, { f: `IF(B${n}="CPM",IF(E${n}>0,${net}/E${n}*1000*F${n},0),IF(D${n}>0,${net}/D${n},0))` }, S.num)
         .set(9, n, { f: `I${n}*G${n}` }, S.num)
-        .set(10, n, { f: `IF(I${n}>0,C${n}/I${n},0)` }, S.money2)
-        .set(11, n, { f: `IF(J${n}>0,C${n}/J${n},0)` }, S.num);
+        .set(10, n, { f: `IF(I${n}>0,${net}/I${n},0)` }, S.money2)
+        .set(11, n, { f: `IF(J${n}>0,${net}/J${n},0)` }, S.num);
     });
     const last = first + rows.length - 1;
     const t = last + 1;
@@ -206,16 +214,16 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
     sh.set(2, t, { f: `SUM(C${first}:C${last})` }, S.totNum);
     for (const c of [3, 4, 5, 6]) sh.set(c, t, null, S.totBlank);
     for (const [c, L] of [[7, 'H'], [8, 'I'], [9, 'J']]) sh.set(c, t, { f: `SUM(${L}${first}:${L}${last})` }, S.totNum);
-    sh.set(10, t, { f: `IF(I${t}>0,C${t}/I${t},0)` }, S.totMoney2).set(11, t, { f: `IF(J${t}>0,C${t}/J${t},0)` }, S.totNum);
+    sh.set(10, t, { f: `IF(I${t}>0,${netOf(`C${t}`)}/I${t},0)` }, S.totMoney2).set(11, t, { f: `IF(J${t}>0,${netOf(`C${t}`)}/J${t},0)` }, S.totNum);
 
     // за период: комиссия, НДС, продажи — по допущениям
     const p = t + 2;
     sh.set(0, p, 'За период', S.labelBold);
     const lines = [
       ['Месяцев', { f: `${a}$B$4` }, S.linkNum],
-      ['Медиабюджет, ₽', { f: `C${t}*C${p + 1}` }, S.num],
+      ['Медиабюджет без НДС, ₽', { f: `${netOf(`C${t}`)}*C${p + 1}` }, S.num],
       ['Комиссия агентства, ₽', { f: `C${p + 2}*${a}$B$5` }, S.num],
-      ['НДС, ₽', { f: `(C${p + 2}+C${p + 3})*${a}$B$6` }, S.num],
+      ['НДС, ₽', { f: `(C${p + 2}+C${p + 3})*${VAT}` }, S.num],
       ['Итого к оплате, ₽', { f: `SUM(C${p + 2}:C${p + 4})` }, S.boldNum],
       ['Лиды за период', { f: `J${t}*C${p + 1}` }, S.num],
       ['Стоимость лида с комиссией и НДС, ₽', { f: `IF(C${p + 6}>0,C${p + 5}/C${p + 6},0)` }, S.num],
@@ -223,28 +231,90 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '' } = {})
       ['Выручка, ₽', { f: `C${p + 8}*${a}$B$8` }, S.num],
       ['ДРР (доля рекламных расходов в выручке)', { f: `IF(C${p + 9}>0,C${p + 5}/C${p + 9},0)` }, S.pct],
     ];
-    lines.forEach(([label, f, s], i) => sh.set(0, p + 1 + i, label, i === 4 ? S.labelBold : S.label).set(2, p + 1 + i, f, s));
-    totals.push({ sheet: names[si], month: t, total: p + 5, leads: p + 6, drr: p + 10 });
+    lines.forEach(([label, f, st], i) => sh.set(0, p + 1 + i, label, i === 4 ? S.labelBold : S.label).set(2, p + 1 + i, f, st));
+    totals.push({ sheet: names[si], cells: [`C${t}`, `J${t}`, `L${t}`, `C${p + 5}`, `C${p + 6}`, `C${p + 10}`] });
     return sh;
-  });
+  }
+
+  // Интернет-магазин: как в медиапланах агентства для e-com — корзины, продажи, выручка, ДРР по строкам
+  function ecomSheet(sc, si) {
+    const sh = createSheet(names[si]);
+    sh.widths = [18, 40, 8, 15, 10, 10, 8, 11, 11, 12, 15, 15, 11, 10, 12, 10, 12, 15, 9];
+    sh.freezeRow = 4;
+    sh.set(0, 1, `Медиаплан: ${plan.client || plan.title} — ${sc.name}`, S.title);
+    sh.set(0, 2, `Синие ячейки — исходные данные; чёрные — формулы. Бюджет в месяц ${settings.budgetWithVat ? 'с НДС' : 'без НДС'}; CPC и CPM — без НДС; CR1 и CR2 — от кликов.`, S.note);
+    [
+      'Площадка', 'Таргетинг', 'Модель', 'Бюджет в месяц, ₽', 'CPC, ₽', 'CPM, ₽', 'CTR', 'CR1 (в корзину)', 'CR2 (в продажу)', 'Ср. чек, ₽',
+      'Стоимость без НДС, ₽', 'Стоимость с НДС, ₽', 'Клики', 'Корзины', 'CPA (цена корзины), ₽', 'Продажи', 'CPS (цена продажи), ₽', 'Выручка, ₽', 'ДРР',
+    ].forEach((t, c) => sh.set(c, 4, t, S.head));
+    const first = 5;
+    const rows = sc.rows.length ? sc.rows : [{ model: 'cpc' }];
+    rows.forEach((row, i) => {
+      const n = first + i;
+      sh.set(0, n, row.channel || '', S.inText)
+        .set(1, n, String(row.targeting ?? '').replace(/\n+/g, '; '), S.inText)
+        .set(2, n, row.model === 'cpm' ? 'CPM' : 'CPC', S.inText)
+        .set(3, n, row.budget ?? null, S.inNum)
+        .set(4, n, row.cpc ?? null, S.inMoney2)
+        .set(5, n, row.cpm ?? null, S.inMoney2)
+        .set(6, n, frac(row.ctr), S.inPct)
+        .set(7, n, frac(row.cart), S.inPct)
+        .set(8, n, frac(row.sale), S.inPct)
+        .set(9, n, row.check ?? null, S.inNum)
+        .set(10, n, { f: netOf(`D${n}`) }, S.money2)
+        .set(11, n, { f: `K${n}*(1+${VAT})` }, S.money2)
+        .set(12, n, { f: `IF(C${n}="CPM",IF(F${n}>0,K${n}/F${n}*1000*G${n},0),IF(E${n}>0,K${n}/E${n},0))` }, S.num)
+        .set(13, n, { f: `M${n}*H${n}` }, S.num)
+        .set(14, n, { f: `IF(N${n}>0,L${n}/N${n},0)` }, S.money2)
+        .set(15, n, { f: `M${n}*I${n}` }, S.num)
+        .set(16, n, { f: `IF(P${n}>0,L${n}/P${n},0)` }, S.num)
+        .set(17, n, { f: `P${n}*IF(J${n}>0,J${n},${a}$B$8)` }, S.money2)
+        .set(18, n, { f: `IF(R${n}>0,L${n}/R${n},0)` }, S.pct);
+    });
+    const last = first + rows.length - 1;
+    const t = last + 1;
+    sh.validations.push({ sqref: `C${first}:C${last + 20}`, list: ['CPC', 'CPM'] });
+    sh.set(0, t, 'Итого в месяц', S.totLabel);
+    for (const c of [1, 2, 5, 6, 7, 8, 9]) sh.set(c, t, null, S.totBlank);
+    for (const [c, L] of [[3, 'D'], [10, 'K'], [11, 'L'], [12, 'M'], [13, 'N'], [15, 'P'], [17, 'R']]) sh.set(c, t, { f: `SUM(${L}${first}:${L}${last})` }, c >= 10 && c !== 12 && c !== 13 && c !== 15 ? S.totMoney2 : S.totNum);
+    sh.set(4, t, { f: `IF(M${t}>0,K${t}/M${t},0)` }, S.totMoney2);
+    sh.set(14, t, { f: `IF(N${t}>0,L${t}/N${t},0)` }, S.totMoney2);
+    sh.set(16, t, { f: `IF(P${t}>0,L${t}/P${t},0)` }, S.totNum);
+    sh.set(18, t, { f: `IF(R${t}>0,L${t}/R${t},0)` }, S.pct);
+
+    const p = t + 2;
+    sh.set(0, p, 'За период', S.labelBold);
+    const lines = [
+      ['Месяцев', { f: `${a}$B$4` }, S.linkNum],
+      ['Медиабюджет без НДС, ₽', { f: `K${t}*D${p + 1}` }, S.num],
+      ['Комиссия агентства, ₽', { f: `D${p + 2}*${a}$B$5` }, S.num],
+      ['НДС, ₽', { f: `(D${p + 2}+D${p + 3})*${VAT}` }, S.num],
+      ['Итого к оплате, ₽', { f: `SUM(D${p + 2}:D${p + 4})` }, S.boldNum],
+      ['Продажи за период', { f: `P${t}*D${p + 1}` }, S.num],
+      ['Выручка за период, ₽', { f: `R${t}*D${p + 1}` }, S.num],
+      ['Цена продажи с комиссией и НДС, ₽', { f: `IF(D${p + 6}>0,D${p + 5}/D${p + 6},0)` }, S.num],
+      ['ДРР с комиссией', { f: `IF(D${p + 7}>0,D${p + 5}/D${p + 7},0)` }, S.pct],
+    ];
+    lines.forEach(([label, f, st], i) => sh.set(0, p + 1 + i, label, i === 4 ? S.labelBold : S.label).set(3, p + 1 + i, f, st));
+    totals.push({ sheet: names[si], cells: [`L${t}`, `P${t}`, `R${t}`, `D${p + 5}`, `D${p + 7}`, `D${p + 9}`] });
+    return sh;
+  }
 
   // ---------- сводка ----------
   const sum = createSheet('Сводка');
-  sum.widths = [34, 18, 14, 14, 22, 16, 12];
+  sum.widths = [34, 20, 16, 16, 24, 18, 12];
   sum.set(0, 1, `Медиаплан: ${plan.client || plan.title}`, S.title);
   const dateStr = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' });
   sum.set(0, 2, `Прогноз агентства, ${dateStr}${author ? `. Подготовил: ${author}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`, S.note);
-  ['Сценарий', 'Бюджет в месяц, ₽', 'Лиды в месяц', 'CPL, ₽', 'Итого к оплате за период, ₽', 'Лиды за период', 'ДРР'].forEach((t, c) => sum.set(c, 4, t, S.head));
+  const heads = ecom
+    ? ['Сценарий', 'Бюджет в месяц с НДС, ₽', 'Продажи в месяц', 'Выручка в месяц, ₽', 'Итого к оплате за период, ₽', 'Выручка за период, ₽', 'ДРР']
+    : ['Сценарий', 'Бюджет в месяц, ₽', 'Лиды в месяц', 'CPL, ₽', 'Итого к оплате за период, ₽', 'Лиды за период', 'ДРР'];
+  heads.forEach((t, c) => sum.set(c, 4, t, S.head));
   totals.forEach((x, i) => {
     const rr = 5 + i;
     const sr = ref(x.sheet);
-    sum.set(0, rr, spec.scenarios[i].name, S.label)
-      .set(1, rr, { f: `${sr}C${x.month}` }, S.linkNum)
-      .set(2, rr, { f: `${sr}J${x.month}` }, S.linkNum)
-      .set(3, rr, { f: `${sr}L${x.month}` }, S.linkNum)
-      .set(4, rr, { f: `${sr}C${x.total}` }, S.linkNum)
-      .set(5, rr, { f: `${sr}C${x.leads}` }, S.linkNum)
-      .set(6, rr, { f: `${sr}C${x.drr}` }, S.linkPct);
+    sum.set(0, rr, spec.scenarios[i].name, S.label);
+    x.cells.forEach((cell, c) => sum.set(c + 1, rr, { f: `${sr}${cell}` }, c === 5 ? S.linkPct : S.linkNum));
   });
 
   const sheets = [sum, ...scenarioSheets, as];

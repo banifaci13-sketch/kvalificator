@@ -3,7 +3,7 @@
 
 import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
 import { fill, parseNum, formDialog } from './docs.js';
-import { calcScenario, calcRow, emptyPlan, emptyRow, MODELS } from '/admin/lib/mediaplan-calc.js';
+import { calcScenario, calcRow, emptyPlan, emptyRow, MODELS, KINDS } from '/admin/lib/mediaplan-calc.js';
 
 const SAVE_DELAY = 600;
 const MAX_ROWS = 8;
@@ -38,6 +38,7 @@ export async function renderPlans() {
     const title = h('input', { class: 'input', id: 'p-title', maxlength: 200, placeholder: 'Медиаплан на IV квартал' });
     const client = h('input', { class: 'input', id: 'p-client', maxlength: 200 });
     const months = h('input', { class: 'input num', id: 'p-months', inputmode: 'numeric', value: '3' });
+    const kind = h('select', { class: 'select', id: 'p-kind' }, KINDS.map(([k, l]) => h('option', { value: k }, l)));
     const lead = h('select', { class: 'select', id: 'p-lead', onchange: () => { if (lead.value) client.value = lead.selectedOptions[0].dataset.company; } }, h('option', { value: '' }, 'Без заявки'));
     const error = h('p', { class: 'error', role: 'alert', hidden: true });
     const submit = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Создать и открыть');
@@ -49,7 +50,9 @@ export async function renderPlans() {
           e.preventDefault();
           submit.disabled = true;
           try {
-            const spec = { ...emptyPlan(), months: Math.round(parseNum(months.value) || 1) };
+            const spec = { ...emptyPlan(kind.value), months: Math.round(parseNum(months.value) || 1) };
+            // интернет-магазин: бюджеты обычно считают с НДС, как в кабинетах при пополнении
+            if (kind.value === 'ecom') spec.settings = { ...spec.settings, vat: 22, budgetWithVat: true };
             const body = { title: title.value.trim(), client: client.value.trim(), spec };
             if (lead.value) body.leadId = Number(lead.value);
             const { mediaplan } = await api('/admin/api/mediaplans', { method: 'POST', body });
@@ -69,6 +72,7 @@ export async function renderPlans() {
         h('div', { class: 'field' }, h('label', { for: 'p-lead' }, 'Заявка клиента'), lead),
         h('div', { class: 'field' }, h('label', { for: 'p-client' }, 'Клиент'), client),
         h('div', { class: 'field' }, h('label', { for: 'p-months' }, 'Период, месяцев'), months),
+        h('div', { class: 'field' }, h('label', { for: 'p-kind' }, 'Что считаем'), kind, h('span', { class: 'hint' }, 'Интернет-магазин: корзины, продажи, выручка и ДРР по каждой площадке')),
       ),
       error,
       h('div', { class: 'work-actions' }, submit, h('button', { type: 'button', class: 'btn', onclick: () => { fill(creator); newBtn.hidden = false; } }, 'Отмена')),
@@ -98,7 +102,7 @@ export async function renderPlans() {
       h(
         'table',
         { class: 'leads docs' },
-        h('thead', {}, h('tr', {}, ['Медиаплан', 'Период', 'Сценариев', 'К оплате за период', 'Лидов', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)))),
+        h('thead', {}, h('tr', {}, ['Медиаплан', 'Период', 'Сценариев', 'К оплате за период', 'Результат', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)))),
         h(
           'tbody',
           {},
@@ -111,7 +115,7 @@ export async function renderPlans() {
               h('td', { class: 'nowrap' }, monthsText(p.months ?? 1)),
               h('td', { class: 'num' }, p.scenarios),
               h('td', { class: 'num nowrap' }, rub(p.total)),
-              h('td', { class: 'num' }, n0(p.leads)),
+              h('td', { class: 'num nowrap' }, p.kind === 'ecom' ? `${n0(p.sales)} продаж` : `${n0(p.leads)} лидов`),
               h('td', { class: 'num nowrap' }, fmtDateTime(p.updated_at), h('span', { class: 'task' }, p.updated_by)),
             );
           }),
@@ -209,8 +213,30 @@ export async function renderPlan(params) {
     h('div', { class: 'field' }, h('label', { for: 'mp-months' }, 'Период, мес.'), months),
     h('div', { class: 'field' }, h('label', { for: 'mp-fee' }, 'Комиссия агентства, %'), numInput(spec.settings, 'agencyFee', { label: 'Комиссия агентства', id: 'mp-fee', placeholder: 'нет' })),
     h('div', { class: 'field' }, h('label', { for: 'mp-vat' }, 'НДС, %'), numInput(spec.settings, 'vat', { label: 'НДС', id: 'mp-vat', placeholder: 'без НДС' })),
-    h('div', { class: 'field' }, h('label', { for: 'mp-sale' }, 'Конверсия в продажу, %'), numInput(spec.settings, 'saleRate', { label: 'Конверсия лида в продажу', id: 'mp-sale', placeholder: 'не считать' })),
-    h('div', { class: 'field' }, h('label', { for: 'mp-check' }, 'Средний чек, ₽'), numInput(spec.settings, 'avgCheck', { label: 'Средний чек', id: 'mp-check', placeholder: 'не считать' })),
+    spec.kind === 'ecom'
+      ? null
+      : h('div', { class: 'field' }, h('label', { for: 'mp-sale' }, 'Конверсия в продажу, %'), numInput(spec.settings, 'saleRate', { label: 'Конверсия лида в продажу', id: 'mp-sale', placeholder: 'не считать' })),
+    h('div', { class: 'field' }, h('label', { for: 'mp-check' }, spec.kind === 'ecom' ? 'Средний чек, ₽' : 'Средний чек, ₽'), numInput(spec.settings, 'avgCheck', { label: 'Средний чек', id: 'mp-check', placeholder: 'не считать' })),
+    h(
+      'div',
+      { class: 'field mp-kind' },
+      h('label', { for: 'mp-kind' }, 'Вид плана'),
+      h('select', {
+        class: 'select', id: 'mp-kind',
+        onchange: async (e) => {
+          spec.kind = e.target.value;
+          changed();
+          await save().catch(() => {});
+          renderPlan(params);
+        },
+      }, KINDS.map(([k, l]) => h('option', { value: k, selected: k === (spec.kind ?? 'leads') }, l))),
+    ),
+    h(
+      'label',
+      { class: 'check mp-vat-flag' },
+      h('input', { type: 'checkbox', checked: Boolean(spec.settings.budgetWithVat), onchange: (e) => { spec.settings.budgetWithVat = e.target.checked; changed(); renderScenario(); } }),
+      'Бюджеты ввожу с НДС',
+    ),
   );
 
   const tabs = h('div', { class: 'mp-tabs', role: 'tablist', 'aria-label': 'Сценарии' });
@@ -251,7 +277,7 @@ export async function renderPlan(params) {
       ),
       settings,
       h('div', { class: 'mp-tabs-row' }, tabs),
-      h('div', { class: 'mp-layout' }, scenarioBox, results),
+      h('div', { class: `mp-layout${spec.kind === 'ecom' ? ' wide' : ''}` }, scenarioBox, results),
       compare,
       h('section', { class: 'panel mp-notes' }, h('div', { class: 'field' }, h('label', { for: 'mp-assumptions' }, 'На чём основан прогноз'), assumptions, h('span', { class: 'hint' }, 'Попадает в Excel и под таблицу на слайде.'))),
     ]),
@@ -281,23 +307,76 @@ export async function renderPlan(params) {
     );
   }
 
+  // Колонки таблицы зависят от вида плана: лиды (услуги) или интернет-магазин
+  function columns() {
+    const budgetSub = spec.settings.budgetWithVat ? '₽ в мес., с НДС' : '₽ в мес., без НДС';
+    const common = [
+      { key: 'budget', title: 'Бюджет', sub: budgetSub, unit: '₽', ph: budgetSub.replace(/^₽ /, '') },
+      { key: 'cpc', title: 'CPC', sub: 'клик без НДС, ₽', unit: '₽', ph: '₽', rate: 'cpc' },
+      { key: 'cpm', title: 'CPM', sub: '1000 показов, ₽', unit: '₽', ph: '₽', rate: 'cpm' },
+      { key: 'ctr', title: 'CTR', sub: 'кликабельность, %', unit: '%', ph: '%' },
+    ];
+    if (spec.kind === 'ecom') {
+      return {
+        inputs: [
+          common[0],
+          // одна ставка: CPC при закупке кликов, CPM — показов
+          { key: 'rate', title: 'Ставка', sub: 'CPC или CPM без НДС, ₽', unit: '₽', ph: '₽' },
+          common[3],
+          { key: 'cart', title: 'CR1', sub: 'клик → корзина, %', unit: '%', ph: '%' },
+          { key: 'sale', title: 'CR2', sub: 'клик → продажа, %', unit: '%', ph: '%' },
+          { key: 'check', title: 'Ср. чек', sub: '₽; пусто — общий', unit: '₽', ph: spec.settings.avgCheck ? String(spec.settings.avgCheck) : '₽' },
+        ],
+        outputs: [
+          { key: 'clicks', title: 'Клики', fmt: n0 },
+          { key: 'carts', title: 'Корзины', fmt: n0 },
+          { key: 'cpa', title: 'CPA', sub: 'цена корзины', fmt: rub },
+          { key: 'sales', title: 'Продажи', fmt: n0 },
+          { key: 'cps', title: 'CPS', sub: 'цена продажи', fmt: rub },
+          { key: 'revenue', title: 'Выручка', fmt: rub },
+          { key: 'drr', title: 'ДРР', fmt: pctText },
+        ],
+      };
+    }
+    return {
+      inputs: [...common, { key: 'cr', title: 'Конверсия', sub: 'клик → лид, %', unit: '%', ph: '%' }],
+      outputs: [
+        { key: 'impressions', title: 'Показы', fmt: n0 },
+        { key: 'clicks', title: 'Клики', fmt: n0 },
+        { key: 'leads', title: 'Лиды', fmt: n0 },
+        { key: 'cpl', title: 'CPL', sub: 'цена лида, ₽', fmt: rub },
+      ],
+    };
+  }
+
   function renderScenario() {
     const sc = spec.scenarios[current];
-    const calc = () => sc.rows.map(calcRow);
+    const ecom = spec.kind === 'ecom';
+    const { inputs, outputs } = columns();
+    const calc = () => sc.rows.map((r) => calcRow(r, spec));
     const out = {};
     const bodyRows = sc.rows.map((row, i) => {
-      const cpc = numInput(row, 'cpc', { label: `Цена клика, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽' });
-      const cpm = numInput(row, 'cpm', { label: `Цена 1000 показов, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽' });
+      const name = row.channel || `${ecom ? 'площадка' : 'канал'} ${i + 1}`;
+      // «Ставка» пишет в cpc или cpm — по модели закупки строки
+      const rateProxy = {
+        get rate() { return row.model === 'cpm' ? row.cpm : row.cpc; },
+        set rate(v) { if (row.model === 'cpm') row.cpm = v; else row.cpc = v; },
+      };
+      const fields = Object.fromEntries(inputs.map((c) => [c.key, numInput(c.key === 'rate' ? rateProxy : row, c.key, { label: `${c.title}, ${name}`, unit: c.unit, placeholder: c.ph })]));
       // ставка нужна только для выбранной модели закупки — вторая выключается с пометкой
       const syncModel = () => {
-        cpc.disabled = row.model !== 'cpc';
-        cpm.disabled = row.model !== 'cpm';
-        cpc.placeholder = cpc.disabled ? 'не нужна' : '₽';
-        cpm.placeholder = cpm.disabled ? 'не нужна' : '₽';
+        if (fields.rate) {
+          fields.rate.value = rateProxy.rate == null ? '' : String(rateProxy.rate).replace('.', ',');
+          fields.rate.title = row.model === 'cpm' ? 'Цена 1000 показов без НДС, ₽' : 'Цена клика без НДС, ₽';
+          return;
+        }
+        fields.cpc.disabled = row.model !== 'cpc';
+        fields.cpm.disabled = row.model !== 'cpm';
+        fields.cpc.placeholder = fields.cpc.disabled ? 'не нужна' : '₽';
+        fields.cpm.placeholder = fields.cpm.disabled ? 'не нужна' : '₽';
       };
       syncModel();
-      const cells = { impressions: h('td', { class: 'num calc' }), clicks: h('td', { class: 'num calc' }), leads: h('td', { class: 'num calc' }), cpl: h('td', { class: 'num calc' }) };
-      out[i] = cells;
+      out[i] = Object.fromEntries(outputs.map((c) => [c.key, h('td', { class: 'num calc' })]));
       const b = benchmarks.find((x) => x.id === row.benchmark);
       return h(
         'tr',
@@ -305,42 +384,39 @@ export async function renderPlan(params) {
         h(
           'td',
           { class: 'mp-channel' },
-          h('input', { class: 'input', value: row.channel ?? '', maxlength: 120, 'aria-label': `Канал ${i + 1}`, placeholder: 'Канал', oninput: (e) => { row.channel = e.target.value; changed(); } }),
+          h('input', { class: 'input', value: row.channel ?? '', maxlength: 120, 'aria-label': `${ecom ? 'Площадка' : 'Канал'} ${i + 1}`, placeholder: ecom ? 'Площадка' : 'Канал', oninput: (e) => { row.channel = e.target.value; changed(); } }),
+          ecom
+            ? h('textarea', {
+                class: 'textarea mp-targeting', rows: 2, maxlength: 1000, 'aria-label': `Таргетинг, ${name}`,
+                placeholder: 'Таргетинг: по сегменту на строку',
+                oninput: (e) => { row.targeting = e.target.value; changed(); },
+              }, row.targeting ?? '')
+            : null,
           b ? h('span', { class: 'hint', title: b.note }, 'по нормативу') : null,
         ),
-        h('td', {}, h('select', { class: 'select', 'aria-label': `Модель закупки, канал ${i + 1}`, onchange: (e) => { row.model = e.target.value; syncModel(); changed(); } }, MODELS.map(([v, l]) => h('option', { value: v, selected: v === row.model, title: l }, v.toUpperCase())))),
-        h('td', {}, numInput(row, 'budget', { label: `Бюджет в месяц, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽ в месяц' })),
-        h('td', {}, cpc),
-        h('td', {}, cpm),
-        h('td', {}, numInput(row, 'ctr', { label: `CTR, ${row.channel || `канал ${i + 1}`}`, unit: '%', placeholder: '%' })),
-        h('td', {}, numInput(row, 'cr', { label: `Конверсия в лид, ${row.channel || `канал ${i + 1}`}`, unit: '%', placeholder: '%' })),
-        cells.impressions, cells.clicks, cells.leads, cells.cpl,
-        h('td', {}, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Удалить канал ${i + 1}`, title: 'Удалить канал', onclick: () => { sc.rows.splice(i, 1); changed(); renderScenario(); } }, '×')),
+        h('td', {}, h('select', { class: 'select', 'aria-label': `Модель закупки, ${name}`, onchange: (e) => { row.model = e.target.value; syncModel(); changed(); } }, MODELS.map(([v, l]) => h('option', { value: v, selected: v === row.model, title: l }, v.toUpperCase())))),
+        inputs.map((c) => h('td', {}, fields[c.key])),
+        outputs.map((c) => out[i][c.key]),
+        h('td', {}, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Удалить: ${name}`, title: 'Удалить строку', onclick: () => { sc.rows.splice(i, 1); changed(); renderScenario(); } }, '×')),
       );
     });
-    const totalCells = { budget: h('td', { class: 'num' }), impressions: h('td', { class: 'num' }), clicks: h('td', { class: 'num' }), leads: h('td', { class: 'num' }), cpl: h('td', { class: 'num' }) };
+    const totalBudget = h('td', { class: 'num' });
+    const totalCells = Object.fromEntries(outputs.map((c) => [c.key, h('td', { class: 'num' })]));
     updateRows = () => {
-      const rows = calc();
-      rows.forEach((r, i) => {
+      calc().forEach((r, i) => {
         // строку только что добавили или удалили — таблица перерисуется следом
         if (!out[i]) return;
-        out[i].impressions.textContent = n0(r.impressions);
-        out[i].clicks.textContent = n0(r.clicks);
-        out[i].leads.textContent = n0(r.leads);
-        out[i].cpl.textContent = rub(r.cpl);
+        for (const c of outputs) out[i][c.key].textContent = c.fmt(r[c.key]);
       });
       const { month } = calcScenario(sc, spec);
-      totalCells.budget.textContent = rub(month.budget);
-      totalCells.impressions.textContent = n0(month.impressions);
-      totalCells.clicks.textContent = n0(month.clicks);
-      totalCells.leads.textContent = n0(month.leads);
-      totalCells.cpl.textContent = rub(month.cpl);
+      totalBudget.textContent = rub(month.budget);
+      for (const c of outputs) totalCells[c.key].textContent = c.fmt(month[c.key]);
     };
 
     const fromBench = h(
       'select',
       {
-        class: 'select', 'aria-label': 'Добавить канал из нормативов', disabled: sc.rows.length >= MAX_ROWS,
+        class: 'select', 'aria-label': 'Добавить из нормативов', disabled: sc.rows.length >= MAX_ROWS,
         onchange: (e) => {
           const b = benchmarks.find((x) => String(x.id) === e.target.value);
           if (!b) return;
@@ -350,10 +426,11 @@ export async function renderPlan(params) {
           scenarioBox.querySelector('tbody tr:last-child td:nth-child(3) input')?.focus();
         },
       },
-      h('option', { value: '' }, benchmarks.length ? 'Канал из нормативов…' : 'Нормативов пока нет'),
+      h('option', { value: '' }, benchmarks.length ? 'Из нормативов…' : 'Нормативов пока нет'),
       benchmarks.map((b) => h('option', { value: b.id }, b.channel)),
     );
 
+    const th = (c, cls) => h('th', { scope: 'col', class: cls }, c.title, c.sub ? h('span', { class: 'th-sub' }, c.sub) : null);
     fill(
       scenarioBox,
       h(
@@ -378,50 +455,47 @@ export async function renderPlan(params) {
         { class: 'grid-wrap' },
         h(
           'table',
-          { class: 'mp-table' },
+          { class: `mp-table${ecom ? ' ecom' : ''}` },
           // ширины колонок: поля ввода стоят ровно под своими заголовками
-          h('colgroup', {}, ['channel', 'model', 'budget', 'rate', 'rate', 'pct', 'pct', 'out', 'out', 'out', 'out', 'act'].map((c) => h('col', { class: `c-${c}` }))),
+          h(
+            'colgroup',
+            {},
+            h('col', { class: 'c-channel' }),
+            h('col', { class: 'c-model' }),
+            inputs.map((c) => h('col', { class: c.key === 'budget' || c.key === 'check' ? 'c-budget' : c.unit === '%' ? 'c-pct' : 'c-rate' })),
+            outputs.map((c) => h('col', { class: c.key === 'revenue' ? 'c-budget' : 'c-out' })),
+            h('col', { class: 'c-act' }),
+          ),
           h(
             'thead',
             {},
             h(
               'tr',
               { class: 'mp-groups' },
-              h('th', { colspan: 7, scope: 'colgroup' }, 'Вводите'),
-              h('th', { colspan: 4, scope: 'colgroup', class: 'calc' }, 'Считается само, в месяц'),
+              h('th', { colspan: inputs.length + 2, scope: 'colgroup' }, 'Вводите'),
+              h('th', { colspan: outputs.length, scope: 'colgroup', class: 'calc' }, 'Считается само, в месяц'),
               h('th'),
             ),
             h(
               'tr',
               {},
-              [
-                ['Канал', ''],
-                ['Закупка', 'клики или показы'],
-                ['Бюджет', '₽ в месяц'],
-                ['CPC', 'цена клика, ₽'],
-                ['CPM', '1000 показов, ₽'],
-                ['CTR', 'кликабельность, %'],
-                ['Конверсия', 'клик → лид, %'],
-              ].map(([t, sub], i) => h('th', { scope: 'col', class: i > 1 ? 'num' : '' }, t, sub ? h('span', { class: 'th-sub' }, sub) : null)),
-              [
-                ['Показы', ''],
-                ['Клики', ''],
-                ['Лиды', ''],
-                ['CPL', 'цена лида, ₽'],
-              ].map(([t, sub]) => h('th', { scope: 'col', class: 'calc num' }, t, sub ? h('span', { class: 'th-sub' }, sub) : null)),
+              h('th', { scope: 'col' }, ecom ? 'Площадка' : 'Канал', ecom ? h('span', { class: 'th-sub' }, 'и таргетинг') : null),
+              h('th', { scope: 'col' }, 'Закупка', h('span', { class: 'th-sub' }, 'клики или показы')),
+              inputs.map((c) => th(c, 'num')),
+              outputs.map((c) => th(c, 'calc num')),
               h('th', {}, h('span', { class: 'sr-only' }, 'Действия')),
             ),
           ),
           h('tbody', {}, bodyRows),
-          h('tfoot', {}, h('tr', {}, h('td', { colspan: 2 }, 'Итого в месяц'), totalCells.budget, h('td', { colspan: 4 }), totalCells.impressions, totalCells.clicks, totalCells.leads, totalCells.cpl, h('td'))),
+          h('tfoot', {}, h('tr', {}, h('td', { colspan: 2 }, 'Итого в месяц'), totalBudget, h('td', { colspan: inputs.length - 1 }), outputs.map((c) => totalCells[c.key]), h('td'))),
         ),
       ),
       h(
         'div',
         { class: 'mp-add' },
-        h('button', { type: 'button', class: 'btn btn-s', disabled: sc.rows.length >= MAX_ROWS, onclick: () => { sc.rows.push(emptyRow()); changed(); renderScenario(); scenarioBox.querySelector('tbody tr:last-child input')?.focus(); } }, '+ канал'),
+        h('button', { type: 'button', class: 'btn btn-s', disabled: sc.rows.length >= MAX_ROWS, onclick: () => { sc.rows.push(emptyRow()); changed(); renderScenario(); scenarioBox.querySelector('tbody tr:last-child input')?.focus(); } }, ecom ? '+ площадка' : '+ канал'),
         fromBench,
-        sc.rows.length >= MAX_ROWS ? h('span', { class: 'hint' }, `Не больше ${MAX_ROWS} каналов — больше не поместится на слайд`) : null,
+        sc.rows.length >= MAX_ROWS ? h('span', { class: 'hint' }, `Не больше ${MAX_ROWS} строк — больше не поместится на слайд`) : null,
       ),
     );
     updateRows();
@@ -438,9 +512,16 @@ export async function renderPlan(params) {
       results,
       h('h2', { class: 'sr-only' }, 'Итоги сценария'),
       card(rub(period.total), `К оплате за ${monthsText(period.months)}`, `медиа ${rub(period.media)}${period.fee ? ` + комиссия ${rub(period.fee)}` : ''}${period.vat ? ` + НДС ${rub(period.vat)}` : ''}`, true),
-      card(n0(period.leads), 'лидов за период', period.clicks != null ? `${n0(period.clicks)} кликов` : null),
-      card(rub(period.cpl), 'стоимость лида', 'с комиссией и НДС'),
-      period.revenue != null ? card(rub(period.revenue), 'выручка', `${n0(period.sales)} продаж`) : null,
+      spec.kind === 'ecom'
+        ? [
+            card(n0(period.sales), 'продаж за период', period.cps != null ? `${rub(period.cps)} за продажу` : null),
+            card(n0(period.carts), 'корзин за период', period.cpa != null ? `${rub(period.cpa)} за корзину` : null),
+          ]
+        : [
+            card(n0(period.leads), 'лидов за период', period.clicks != null ? `${n0(period.clicks)} кликов` : null),
+            card(rub(period.cpl), 'стоимость лида', 'с комиссией и НДС'),
+          ],
+      period.revenue != null ? card(rub(period.revenue), 'выручка', spec.kind === 'ecom' ? null : `${n0(period.sales)} продаж`) : null,
       period.drr != null ? card(pctText(period.drr), 'ДРР', 'доля рекламы в выручке') : null,
     );
     renderCompare();
@@ -461,7 +542,9 @@ export async function renderPlan(params) {
           h(
             'table',
             { class: 'mp-compare' },
-            h('thead', {}, h('tr', {}, ['Сценарий', 'Бюджет в месяц', 'К оплате за период', 'Лидов за период', 'CPL с комиссией и НДС', 'ДРР'].map((t) => h('th', { scope: 'col' }, t)))),
+            h('thead', {}, h('tr', {}, (spec.kind === 'ecom'
+              ? ['Сценарий', 'Бюджет в месяц', 'К оплате за период', 'Продаж за период', 'Выручка за период', 'ДРР']
+              : ['Сценарий', 'Бюджет в месяц', 'К оплате за период', 'Лидов за период', 'CPL с комиссией и НДС', 'ДРР']).map((t) => h('th', { scope: 'col' }, t)))),
             h(
               'tbody',
               {},
@@ -472,8 +555,8 @@ export async function renderPlan(params) {
                   h('td', {}, r.name),
                   h('td', { class: 'num' }, rub(r.month.budget)),
                   h('td', { class: 'num' }, rub(r.period.total)),
-                  h('td', { class: 'num' }, n0(r.period.leads)),
-                  h('td', { class: 'num' }, rub(r.period.cpl)),
+                  h('td', { class: 'num' }, n0(spec.kind === 'ecom' ? r.period.sales : r.period.leads)),
+                  h('td', { class: 'num' }, rub(spec.kind === 'ecom' ? r.period.revenue : r.period.cpl)),
                   h('td', { class: 'num' }, pctText(r.period.drr)),
                 ),
               ),

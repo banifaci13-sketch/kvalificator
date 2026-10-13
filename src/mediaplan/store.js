@@ -1,6 +1,6 @@
 // Медиапланы и нормативы агентства в базе; превращение медиаплана в слайды презентации.
 
-import { calcScenario, MODELS } from './calc.js';
+import { calcScenario, MODELS, KINDS } from './calc.js';
 import { fmtNumber, fmtMoney, fmtMoneyShort } from '../docs/templates.js';
 import { DocError, leadValues } from '../docs/library.js';
 
@@ -79,11 +79,13 @@ export function createMediaplans({ db, library }) {
     if (!sc) throw new DocError('Сценарий не найден');
     const { rows, period } = calcScenario(sc, plan.spec);
     const m = period.months;
+    if (plan.spec.kind === 'ecom') return ecomSlides(plan, sc, rows, period);
     const lines = sc.rows
       .map((r, i) => ({ r, c: rows[i] }))
       .filter(({ r, c }) => r.channel?.trim() && c.budget)
       .map(({ r, c }) => {
-        const row = { channel: r.channel.trim(), budget: Math.round(c.budget * m) };
+        // в таблице лидов бюджеты без НДС — как и написано в допущениях
+        const row = { channel: r.channel.trim(), budget: Math.round(c.net * m) };
         if (c.impressions != null) row.impressions = Math.round(c.impressions * m);
         if (c.clicks != null) row.clicks = Math.round(c.clicks * m);
         if (c.leads != null) row.leads = Math.round(c.leads * m);
@@ -97,12 +99,47 @@ export function createMediaplans({ db, library }) {
     const kpis = [];
     if (period.leads != null) kpis.push({ value: fmtNumber(Math.round(period.leads)), label: 'лидов за период', delta: '' });
     if (period.cpl != null) kpis.push({ value: fmtMoney(period.cpl), label: 'стоимость лида с комиссией и НДС', delta: '' });
-    kpis.push({ value: fmtMoneyShort(period.total), label: 'бюджет с комиссией и НДС', delta: fmtMoney(period.total) });
+    kpis.push({ value: fmtMoneyShort(period.total), label: 'бюджет с комиссией и НДС', delta: exact(period.total) });
     if (period.drr != null) kpis.push({ value: `${fmtNumber(+(period.drr * 100).toFixed(1))} %`, label: 'ДРР — доля рекламы в выручке', delta: '' });
     const suffix = plan.spec.scenarios.length > 1 ? `: ${sc.name}` : '';
     return [
       { type: 'kpi', title: `Прогноз на ${periodText}${suffix}`, kpis: kpis.slice(0, 4), ...common },
       { type: 'mediaplan', title: `Медиаплан по каналам${suffix}`, rows: lines, assumptions: own ? `${base} ${own}` : base, ...common },
+    ];
+  }
+
+  /** Интернет-магазин: прогноз продаж, выручки и ДРР; таблица по площадкам с бюджетом с НДС. */
+  function ecomSlides(plan, sc, rows, period) {
+    const m = period.months;
+    const round = (v) => (v == null ? undefined : Math.round(v));
+    const lines = sc.rows
+      .map((r, i) => ({ r, c: rows[i] }))
+      .filter(({ r, c }) => r.channel?.trim() && c.budget)
+      .map(({ r, c }) => {
+        const segments = String(r.targeting ?? '').split(/\n|;/).map((x) => x.trim()).filter(Boolean);
+        const targeting = segments.join(', ');
+        const row = { channel: r.channel.trim(), budget: Math.round(c.gross * m) };
+        if (targeting) row.targeting = targeting.length > 80 ? `${targeting.slice(0, 78)}…` : targeting;
+        for (const [k, v] of [['clicks', c.clicks], ['carts', c.carts], ['sales', c.sales], ['revenue', c.revenue]]) {
+          const x = round(v == null ? null : v * m);
+          if (x !== undefined) row[k] = x;
+        }
+        return row;
+      });
+    if (!lines.length) throw new DocError('В сценарии нет площадок с бюджетом');
+    const periodText = `${m} ${plural(m, 'месяц', 'месяца', 'месяцев')}`;
+    const base = `Прогноз на ${periodText} по нормативам агентства: ставки, конверсии в корзину и в продажу, средний чек. Бюджеты с НДС, без комиссии агентства.`;
+    const own = plan.spec.assumptions?.trim();
+    const common = { dataStatus: 'forecast', source: 'Расчёт агентства', period: periodText };
+    const kpis = [];
+    if (period.sales != null) kpis.push({ value: fmtNumber(Math.round(period.sales)), label: 'продаж за период', delta: period.cps != null ? `${fmtMoney(period.cps)} за продажу` : '' });
+    if (period.revenue != null) kpis.push({ value: fmtMoneyShort(period.revenue), label: 'выручка', delta: exact(period.revenue) });
+    kpis.push({ value: fmtMoneyShort(period.total), label: 'бюджет с НДС и комиссией', delta: exact(period.total) });
+    if (period.drr != null) kpis.push({ value: `${fmtNumber(+(period.drr * 100).toFixed(1))} %`, label: 'ДРР — доля рекламы в выручке', delta: '' });
+    const suffix = plan.spec.scenarios.length > 1 ? `: ${sc.name}` : '';
+    return [
+      { type: 'kpi', title: `Прогноз на ${periodText}${suffix}`, kpis: kpis.slice(0, 4), ...common },
+      { type: 'ecomplan', title: `Медиаплан по площадкам${suffix}`, rows: lines, assumptions: own ? `${base} ${own}` : base, ...common },
     ];
   }
 
@@ -124,7 +161,7 @@ export function createMediaplans({ db, library }) {
     const next = [];
     let inserted = false;
     for (const s of doc.spec.slides) {
-      if (s.type === 'kpi' || s.type === 'mediaplan') {
+      if (s.type === 'kpi' || s.type === 'mediaplan' || s.type === 'ecomplan') {
         if (!inserted) next.push(...slides);
         inserted = true;
       } else next.push(s);
@@ -137,7 +174,7 @@ export function createMediaplans({ db, library }) {
       const spec = JSON.parse(r.spec);
       const main = calcScenario(spec.scenarios[0], spec);
       const { spec: _, ...rest } = r;
-      return { ...rest, months: spec.months, scenarios: spec.scenarios.length, total: main.period.total, leads: main.period.leads };
+      return { ...rest, kind: spec.kind ?? 'leads', months: spec.months, scenarios: spec.scenarios.length, total: main.period.total, leads: main.period.leads, sales: main.period.sales ?? null, revenue: main.period.revenue ?? null };
     }),
     get,
     create,
@@ -155,6 +192,11 @@ export function createMediaplans({ db, library }) {
     slidesFor,
     toDocument,
   };
+}
+
+/** Точная сумма под округлённой — только если округление что-то скрыло. */
+function exact(v) {
+  return fmtMoneyShort(v) === fmtMoney(v) ? '' : fmtMoney(v);
 }
 
 function checkNum(v, label) {
@@ -175,7 +217,9 @@ export function validatePlan(spec) {
   if (spec.scenarios.length > LIMITS.scenarios) throw new DocError(`Не больше ${LIMITS.scenarios} сценариев`);
   const months = spec.months ?? 1;
   if (!Number.isInteger(months) || months < 1 || months > LIMITS.months) throw new DocError(`Период — от 1 до ${LIMITS.months} месяцев`);
+  if (spec.kind != null && !KINDS.some(([k]) => k === spec.kind)) throw new DocError('Неизвестный вид медиаплана');
   const s = spec.settings ?? {};
+  if (s.budgetWithVat != null && typeof s.budgetWithVat !== 'boolean') throw new DocError('Неверная настройка НДС');
   checkPct(s.agencyFee, 'Комиссия агентства');
   checkPct(s.vat, 'НДС');
   checkPct(s.saleRate, 'Конверсия в продажу');
@@ -190,6 +234,10 @@ export function validatePlan(spec) {
       checkNum(r.cpm, 'CPM');
       checkPct(r.ctr, 'CTR');
       checkPct(r.cr, 'Конверсия в лид');
+      checkPct(r.cart, 'Конверсия в корзину');
+      checkPct(r.sale, 'Конверсия в продажу');
+      checkNum(r.check, 'Средний чек');
+      if (r.targeting != null && (typeof r.targeting !== 'string' || r.targeting.length > 1000)) throw new DocError('Таргетинг — текст до 1000 символов');
     });
   });
   if (JSON.stringify(spec).length > 100_000) throw new DocError('Медиаплан слишком большой');

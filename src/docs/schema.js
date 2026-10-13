@@ -108,6 +108,23 @@ export const SLIDE_FIELDS = {
     { key: 'assumptions', label: 'Допущения', type: 'textarea', hint: 'На чём основан прогноз' },
     DATA_STATUS, SOURCE, PERIOD,
   ],
+  ecomplan: [
+    TITLE,
+    {
+      key: 'rows', label: 'Площадки', type: 'repeater', max: 8, item: 'Площадка',
+      fields: [
+        { key: 'channel', label: 'Площадка', type: 'text' },
+        { key: 'targeting', label: 'Таргетинг', type: 'text', hint: 'Сегменты через запятую' },
+        { key: 'budget', label: 'Бюджет с НДС, ₽', type: 'number' },
+        { key: 'clicks', label: 'Клики', type: 'number' },
+        { key: 'carts', label: 'Корзины', type: 'number' },
+        { key: 'sales', label: 'Продажи', type: 'number' },
+        { key: 'revenue', label: 'Выручка, ₽', type: 'number' },
+      ],
+    },
+    { key: 'assumptions', label: 'Допущения', type: 'textarea', hint: 'Конверсии в корзину и в продажу, средний чек — откуда' },
+    DATA_STATUS, SOURCE, PERIOD,
+  ],
   proposal: [
     TITLE,
     { key: 'lead', label: 'Пояснение', type: 'text' },
@@ -161,7 +178,7 @@ export function slideCatalog() {
 
 export function emptySlide(type) {
   const base = { type, title: '' };
-  if (SLIDE_TYPES[type]?.data) base.dataStatus = type === 'mediaplan' ? 'forecast' : 'fact';
+  if (SLIDE_TYPES[type]?.data) base.dataStatus = type === 'mediaplan' || type === 'ecomplan' ? 'forecast' : 'fact';
   if (type === 'chart' || type === 'analytics') base.chart = { type: 'column', categories: [], series: [{ name: '', values: [] }] };
   // списки — пустые, у повторяющихся блоков одна пустая карточка: так форму сразу видно целиком
   for (const f of SLIDE_FIELDS[type] ?? []) {

@@ -1,10 +1,15 @@
 // Расчёт медиаплана. Чистый модуль без зависимостей: тот же код считает в админке (браузер),
 // в выгрузке Excel и при вставке в презентацию — цифры везде одинаковые.
 //
-// Строка канала: бюджет в месяц и модель закупки.
-//   CPC: клики = бюджет / CPC;            показы = клики / CTR (если CTR задан)
-//   CPM: показы = бюджет / CPM × 1000;    клики = показы × CTR
-//   лиды = клики × конверсия в лид;  CPL = бюджет / лиды
+// Два вида плана:
+//   leads — услуги: клики → лиды (конверсия в лид), CPL; продажи и выручка — по плану в целом.
+//   ecom  — интернет-магазин: клики → корзины (CR1) и клики → продажи (CR2), средний чек,
+//           выручка и ДРР по каждой строке. Так считают медиапланы для e-commerce в агентстве.
+//
+// Бюджет строки — в месяц. Его вводят без НДС или с НДС (settings.budgetWithVat); клики считаются
+// от бюджета без НДС, потому что ставки CPC/CPM в кабинетах — без НДС.
+//   CPC: клики = бюджет без НДС / CPC;          показы = клики / CTR (если CTR задан)
+//   CPM: показы = бюджет без НДС / CPM × 1000;  клики = показы × CTR
 // Проценты (CTR, конверсии, комиссия, НДС) хранятся в процентах: 2.5 — это 2,5 %.
 
 export const MODELS = [
@@ -12,14 +17,21 @@ export const MODELS = [
   ['cpm', 'Показы (CPM)'],
 ];
 
+export const KINDS = [
+  ['leads', 'Лиды (услуги)'],
+  ['ecom', 'Интернет-магазин'],
+];
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const pct = (v) => (num(v) == null ? null : v / 100);
 const div = (a, b) => (a != null && b ? a / b : null);
+const mul = (a, b) => (a != null && b != null ? a * b : null);
 
-export function emptyPlan() {
+export function emptyPlan(kind = 'leads') {
   return {
+    kind,
     months: 1,
-    settings: { agencyFee: null, vat: null, saleRate: null, avgCheck: null },
+    settings: { agencyFee: null, vat: null, budgetWithVat: false, saleRate: null, avgCheck: null },
     scenarios: [{ name: 'Основной', rows: [emptyRow()] }],
     assumptions: '',
   };
@@ -28,67 +40,96 @@ export function emptyPlan() {
 export function emptyRow(b = null) {
   return {
     channel: b?.channel ?? '',
+    targeting: '',
     model: b?.model ?? 'cpc',
     budget: null,
     cpc: b?.cpc ?? null,
     cpm: b?.cpm ?? null,
     ctr: b?.ctr ?? null,
     cr: b?.cr ?? null,
+    cart: null,
+    sale: null,
+    check: null,
     benchmark: b?.id ?? null,
   };
 }
 
 /** Расчёт одной строки (в месяц). Пустые входные данные дают null, а не ноль. */
-export function calcRow(r) {
+export function calcRow(r, plan = {}) {
+  const s = plan.settings ?? {};
+  const vatRate = pct(s.vat) ?? 0;
   const budget = num(r.budget);
+  const net = budget == null ? null : s.budgetWithVat ? budget / (1 + vatRate) : budget;
+  const gross = budget == null ? null : s.budgetWithVat ? budget : budget * (1 + vatRate);
   const ctr = pct(r.ctr);
   let impressions = null;
   let clicks = null;
   if (r.model === 'cpm') {
-    impressions = div(budget, num(r.cpm)) == null ? null : (budget / r.cpm) * 1000;
+    impressions = div(net, num(r.cpm)) == null ? null : (net / r.cpm) * 1000;
     clicks = impressions != null && ctr != null ? impressions * ctr : null;
   } else {
-    clicks = div(budget, num(r.cpc));
+    clicks = div(net, num(r.cpc));
     impressions = clicks != null && ctr ? clicks / ctr : null;
   }
-  const cr = pct(r.cr);
-  const leads = clicks != null && cr != null ? clicks * cr : null;
-  return { budget, impressions, clicks, leads, cpc: div(budget, clicks), cpl: div(budget, leads) };
+  const out = { budget, net, gross, impressions, clicks, cpc: div(net, clicks) };
+  if (plan.kind === 'ecom') {
+    const carts = mul(clicks, pct(r.cart));
+    const sales = mul(clicks, pct(r.sale));
+    const check = num(r.check) ?? num(s.avgCheck);
+    const revenue = mul(sales, check);
+    return { ...out, carts, cpa: div(gross, carts), sales, cps: div(gross, sales), check, revenue, drr: div(gross, revenue) };
+  }
+  const leads = mul(clicks, pct(r.cr));
+  return { ...out, leads, cpl: div(net, leads) };
 }
 
 const sum = (rows, k) => (rows.some((r) => r[k] != null) ? rows.reduce((n, r) => n + (r[k] ?? 0), 0) : null);
+const times = (v, m) => (v == null ? null : v * m);
 
 /** Сценарий целиком: строки, итог в месяц, итог за период с комиссией и НДС, продажи. */
 export function calcScenario(scenario, plan) {
   const months = Math.max(1, num(plan.months) ?? 1);
   const s = plan.settings ?? {};
-  const rows = scenario.rows.map(calcRow);
-  const month = {
-    budget: sum(rows, 'budget'),
-    impressions: sum(rows, 'impressions'),
-    clicks: sum(rows, 'clicks'),
-    leads: sum(rows, 'leads'),
-  };
-  month.cpc = div(month.budget, month.clicks);
-  month.cpl = div(month.budget, month.leads);
+  const ecom = plan.kind === 'ecom';
+  const rows = scenario.rows.map((r) => calcRow(r, plan));
+  const month = {};
+  for (const k of ['budget', 'net', 'gross', 'impressions', 'clicks', ...(ecom ? ['carts', 'sales', 'revenue'] : ['leads'])]) month[k] = sum(rows, k);
+  month.cpc = div(month.net, month.clicks);
+  if (ecom) {
+    month.cpa = div(month.gross, month.carts);
+    month.cps = div(month.gross, month.sales);
+    month.drr = div(month.gross, month.revenue);
+  } else {
+    month.cpl = div(month.net, month.leads);
+  }
 
-  const media = (month.budget ?? 0) * months;
+  const media = (month.net ?? 0) * months;
   const fee = media * (pct(s.agencyFee) ?? 0);
   const vat = (media + fee) * (pct(s.vat) ?? 0);
   const total = media + fee + vat;
-  const leads = month.leads == null ? null : month.leads * months;
-  const sales = leads != null && pct(s.saleRate) != null ? leads * pct(s.saleRate) : null;
-  const revenue = sales != null && num(s.avgCheck) != null ? sales * s.avgCheck : null;
   const period = {
-    months, media, fee, vat, total, leads,
-    clicks: month.clicks == null ? null : month.clicks * months,
-    impressions: month.impressions == null ? null : month.impressions * months,
-    // стоимость лида с комиссией и НДС — во сколько лид обходится клиенту
-    cpl: div(total, leads),
-    sales, revenue,
-    // ДРР — доля рекламных расходов в выручке
-    drr: div(total, revenue),
+    months, media, fee, vat, total,
+    clicks: times(month.clicks, months),
+    impressions: times(month.impressions, months),
   };
+  if (ecom) {
+    Object.assign(period, {
+      leads: null,
+      carts: times(month.carts, months),
+      sales: times(month.sales, months),
+      revenue: times(month.revenue, months),
+    });
+    period.cpa = div(total, period.carts);
+    period.cps = div(total, period.sales);
+  } else {
+    const leads = times(month.leads, months);
+    const sales = leads != null && pct(s.saleRate) != null ? leads * pct(s.saleRate) : null;
+    const revenue = sales != null && num(s.avgCheck) != null ? sales * s.avgCheck : null;
+    // стоимость лида с комиссией и НДС — во сколько лид обходится клиенту
+    Object.assign(period, { leads, cpl: div(total, leads), sales, revenue });
+  }
+  // ДРР — доля рекламных расходов в выручке
+  period.drr = div(total, period.revenue);
   return { rows, month, period };
 }
 

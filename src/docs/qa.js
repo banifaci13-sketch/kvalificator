@@ -37,7 +37,7 @@ export function checkContent(deck, brand) {
     if (type.data && s.source && /^(источник|нет|-|—)$/i.test(s.source.trim())) errors.push(at(i, 'источник данных указан формально'));
     if (s.type === 'case' && s.verified !== true) errors.push(at(i, 'кейс не подтверждён: отметьте «Проверено», только реальные кейсы с согласия клиента'));
     if (s.chart) checkChart(s.chart, (m) => errors.push(at(i, m)));
-    if (s.type === 'mediaplan' && s.dataStatus === 'fact') warnings.push(at(i, 'медиаплан помечен как «Факт» — обычно это прогноз'));
+    if ((s.type === 'mediaplan' || s.type === 'ecomplan') && s.dataStatus === 'fact') warnings.push(at(i, 'медиаплан помечен как «Факт» — обычно это прогноз'));
     if (s.type === 'kpi' && s.kpis?.length > 4) warnings.push(at(i, 'больше 4 KPI — лишние не поместятся'));
   });
   return { errors, warnings };

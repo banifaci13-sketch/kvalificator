@@ -58,7 +58,7 @@ async function setup() {
 }
 
 test('расчёт: клики и показы по модели закупки, пустые данные — не ноль', () => {
-  assert.deepEqual(calcRow({ model: 'cpc', budget: 300000, cpc: 60, ctr: 5, cr: 4 }), { budget: 300000, impressions: 100000, clicks: 5000, leads: 200, cpc: 60, cpl: 1500 });
+  assert.deepEqual(calcRow({ model: 'cpc', budget: 300000, cpc: 60, ctr: 5, cr: 4 }), { budget: 300000, net: 300000, gross: 300000, impressions: 100000, clicks: 5000, leads: 200, cpc: 60, cpl: 1500 });
   const cpm = calcRow({ model: 'cpm', budget: 150000, cpm: 200, ctr: 0.8, cr: 2 });
   assert.equal(cpm.impressions, 750000);
   assert.equal(Math.round(cpm.clicks), 6000);
@@ -145,4 +145,59 @@ test('медиаплан в презентацию: новый документ 
   const target = library.createDocument({ spec: { meta: {}, slides: [{ type: 'cover', title: 'Отчёт' }] } }, 'Анна');
   const appended = await req({ method: 'POST', url: `/admin/api/mediaplans/${id}/to-document`, payload: { scenario: 0, documentId: target.id } });
   assert.deepEqual(appended.json().document.spec.slides.map((s) => s.type), ['cover', 'kpi', 'mediaplan']);
+});
+
+test('интернет-магазин: расчёт совпадает с медиапланом агентства (SberAds)', () => {
+  // строки из рабочего медиаплана агентства: бюджет с НДС 22 %, CPC без НДС, CR1 и CR2 — от кликов
+  const plan = {
+    kind: 'ecom',
+    months: 1,
+    settings: { vat: 22, budgetWithVat: true, avgCheck: 5500 },
+    scenarios: [{
+      name: 'Основной',
+      rows: [
+        { channel: 'SberAds', targeting: 'Покупают посуду и кухонные принадлежности', model: 'cpc', budget: 20000, cpc: 33, cart: 15, sale: 1.85 },
+        { channel: 'SberAds', targeting: 'Интересуются правильным питанием', model: 'cpc', budget: 10000, cpc: 33, cart: 15, sale: 1.75 },
+        { channel: 'SberAds', targeting: 'Здоровый образ жизни\nФитнес\nФитнес-клубы', model: 'cpc', budget: 10000, cpc: 33, cart: 15, sale: 1.6 },
+        { channel: 'SberAds', targeting: 'Обустройство жилища\nТовары для дома', model: 'cpc', budget: 10000, cpc: 33, cart: 15, sale: 1.6 },
+      ],
+    }],
+  };
+  const { rows, month, period } = calcScenario(plan.scenarios[0], plan);
+  const r = rows[0];
+  assert.equal(r.net.toFixed(2), '16393.44', 'стоимость без НДС');
+  assert.equal(Math.round(r.clicks), 497);
+  assert.equal(Math.round(r.carts), 75);
+  assert.equal(r.cpa.toFixed(2), '268.40', 'цена корзины');
+  assert.equal(Math.round(r.cps), 2176, 'цена продажи');
+  assert.equal(r.revenue.toFixed(2), '50546.45');
+  assert.equal((r.drr * 100).toFixed(2), '39.57');
+  assert.equal((rows[1].drr * 100).toFixed(2), '41.83');
+  assert.equal((rows[2].drr * 100).toFixed(2), '45.75');
+  assert.equal(month.gross, 50000);
+  assert.equal(month.net.toFixed(2), '40983.61');
+  assert.equal(Math.round(month.clicks), 1242);
+  assert.equal(Math.round(month.carts), 186);
+  assert.equal(month.revenue.toFixed(2), '118169.40');
+  assert.equal((month.drr * 100).toFixed(1), '42.3');
+  assert.equal(Math.round(period.total), 50000, 'к оплате без комиссии = бюджет с НДС');
+});
+
+test('интернет-магазин: слайды и Excel', async () => {
+  const { as } = await setup();
+  const req = await as('anna');
+  const spec = {
+    kind: 'ecom', months: 2, settings: { vat: 22, budgetWithVat: true, avgCheck: 5500 },
+    scenarios: [{ name: 'Основной', rows: [{ channel: 'SberAds', targeting: 'Посуда\nКухня', model: 'cpc', budget: 20000, cpc: 33, cart: 15, sale: 1.85 }] }],
+  };
+  const id = (await req({ method: 'POST', url: '/admin/api/mediaplans', payload: { title: 'E-com', client: 'Магазин посуды', spec } })).json().mediaplan.id;
+  const doc = (await req({ method: 'POST', url: `/admin/api/mediaplans/${id}/to-document`, payload: {} })).json().document;
+  const ecom = doc.spec.slides.find((s) => s.type === 'ecomplan');
+  assert.deepEqual(ecom.rows, [{ channel: 'SberAds', budget: 40000, targeting: 'Посуда, Кухня', clicks: 994, carts: 149, sales: 18, revenue: 101093 }]);
+  assert.deepEqual(checkContent(doc.spec, brand).errors, []);
+  const file = await req({ url: `/admin/api/mediaplans/${id}/xlsx` });
+  const zip = await JSZip.loadAsync(file.rawPayload);
+  const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
+  assert.match(sheet, /CR1 \(в корзину\)/);
+  assert.match(sheet, /<f>IF\(R5&gt;0,L5\/R5,0\)<\/f>/, 'ДРР по строке — формулой');
 });

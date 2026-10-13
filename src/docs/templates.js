@@ -10,6 +10,7 @@ export const SLIDE_TYPES = {
   case: { label: 'Кейс', theme: 'light', required: ['title', 'client', 'task', 'solution', 'results', 'source'], data: true },
   strategy: { label: 'Стратегия', theme: 'light', required: ['title', 'pillars'] },
   mediaplan: { label: 'Медиаплан', theme: 'light', required: ['title', 'rows', 'dataStatus'], data: true },
+  ecomplan: { label: 'Медиаплан: интернет-магазин', theme: 'light', required: ['title', 'rows', 'dataStatus'], data: true },
   proposal: { label: 'Коммерческое предложение', theme: 'light', required: ['title', 'items'] },
   closing: { label: 'Следующий шаг и контакты', theme: 'dark', required: ['title'] },
 };
@@ -203,6 +204,46 @@ const BUILDERS = {
         w: L.CW,
         colW: [520, 220, 200, 180, 180, 160, 220],
         header: ['Канал', 'Бюджет', 'Показы', 'Клики', 'CPC', 'Лиды', 'CPL'],
+        align: ['left', 'right', 'right', 'right', 'right', 'right', 'right'],
+        rows: rows.slice(0, 8).map(line),
+        total: line(totals),
+        rowH: 64,
+      },
+      slide.assumptions
+        ? text('assumptions', { x: L.M, y: 288 + 64 * (Math.min(rows.length, 8) + 2) + 24, w: L.CW, h: 96 }, 'small', slide.assumptions, { color: 'steel' })
+        : null,
+      ...dataFooter(slide, ctx),
+    ].filter(Boolean);
+  },
+
+  // Интернет-магазин: площадка и таргетинг, бюджет с НДС, клики → корзины → продажи → выручка, ДРР
+  ecomplan(slide, ctx) {
+    const { L, brand } = ctx;
+    const cur = brand.documents.currency;
+    const rows = slide.rows;
+    const sum = (k) => (rows.every((r) => typeof r[k] === 'number') ? rows.reduce((n, r) => n + r[k], 0) : null);
+    const n = (v) => (v != null ? fmtNumber(v) : '—');
+    const drr = (b, rev) => (typeof b === 'number' && typeof rev === 'number' && rev > 0 ? `${fmtNumber(+((b / rev) * 100).toFixed(1))} %` : '—');
+    const line = (r) => [
+      r.targeting ? `${r.channel}\n${r.targeting}` : r.channel,
+      fmtMoney(r.budget, cur),
+      n(r.clicks),
+      n(r.carts),
+      n(r.sales),
+      r.revenue != null ? fmtMoney(r.revenue, cur) : '—',
+      drr(r.budget, r.revenue),
+    ];
+    const totals = { channel: 'Итого', budget: sum('budget'), clicks: sum('clicks'), carts: sum('carts'), sales: sum('sales'), revenue: sum('revenue') };
+    return [
+      contentTitle(slide, L),
+      {
+        kind: 'table',
+        name: 'ecomplan',
+        x: L.M,
+        y: 288,
+        w: L.CW,
+        colW: [520, 240, 170, 170, 170, 260, 150],
+        header: ['Площадка и таргетинг', 'Бюджет с НДС', 'Клики', 'Корзины', 'Продажи', 'Выручка', 'ДРР'],
         align: ['left', 'right', 'right', 'right', 'right', 'right', 'right'],
         rows: rows.slice(0, 8).map(line),
         total: line(totals),

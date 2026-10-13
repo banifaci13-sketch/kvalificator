@@ -521,7 +521,7 @@ details.menu summary::-webkit-details-marker { display: none; }
 .mp-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: bottom; }
 .mp-table th.num { text-align: right; padding-right: 12px; }
 .mp-table th.calc { color: var(--text); background: var(--surface-2); }
-.mp-table .th-sub { display: block; font-weight: 400; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.mp-table .th-sub { display: block; font-weight: 400; font-size: 11px; color: var(--muted); white-space: normal; line-height: 1.25; }
 .mp-table tr.mp-groups th { font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--muted); border-bottom: 0; padding-bottom: 0; }
 .mp-table tr.mp-groups th.calc { color: var(--text); border-radius: var(--radius-s) var(--radius-s) 0 0; text-align: center; padding: 6px 4px 2px; }
 .mp-table td { padding: 4px; vertical-align: top; }
@@ -657,6 +657,18 @@ details.menu summary::-webkit-details-marker { display: none; }
 .ai-fix { margin-left: 4px; vertical-align: baseline; min-height: 26px; padding: 2px 8px; font-size: 12px; }
 .create-fields .full { grid-column: 1 / -1; }
 
+.mp-targeting { min-height: 0; margin-top: 4px; font-size: 13px; padding: 4px 8px; resize: vertical; }
+.mp-table.ecom { min-width: 1480px; }
+.mp-table.ecom col.c-pct { width: 84px; }
+.mp-table.ecom col.c-rate { width: 92px; }
+.mp-table.ecom col.c-budget { width: 112px; }
+.mp-table.ecom col.c-out { width: 88px; }
+.mp-settings .mp-vat-flag { align-self: end; padding-bottom: 22px; }
+@media (min-width: 1201px) { .mp-settings { grid-template-columns: minmax(200px, 2fr) repeat(7, minmax(110px, 1fr)); } }
+/* интернет-магазин: таблица широкая — итоги строкой над ней */
+.mp-layout.wide { grid-template-columns: minmax(0, 1fr); }
+.mp-layout.wide .mp-results { order: -1; position: static; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.mp-table.ecom col.c-channel { width: 220px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 
 /* ---------- мобильные ---------- */
