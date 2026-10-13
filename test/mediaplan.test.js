@@ -100,13 +100,14 @@ test('медиаплан: создание, Excel с формулами, про�
   assert.match(file.headers['content-disposition'], /attachment/);
   const zip = await JSZip.loadAsync(file.rawPayload);
   const workbook = await zip.file('xl/workbook.xml').async('string');
-  assert.match(workbook, /name="Сводка"/);
-  assert.match(workbook, /name="Оптимальный"/);
+  const sheetOrder = [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(sheetOrder, ['Оптимальный', 'Минимальный', 'Сводка', 'Допущения'], 'первым открывается сам медиаплан');
   assert.match(workbook, /fullCalcOnLoad="1"/);
-  const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
-  assert.match(sheet, /<f>SUM\(H7:H8\)<\/f><v>450000<\/v>/, 'итоги — формулами, рядом готовое значение');
-  assert.match(sheet, /'Допущения'!\$B\$7/, 'период берётся с листа допущений');
-  assert.match(sheet, /SOROKA/, 'шапка в фирменном стиле');
+  const sheet = await zip.file('xl/worksheets/sheet1.xml').async('string');
+  assert.match(sheet, /<f>SUM\(H3:H4\)<\/f><v>450000<\/v>/, 'итоги — формулами, рядом готовое значение');
+  assert.match(sheet, /'Допущения'!\$C\$3/, 'период берётся с листа допущений');
+  assert.match(sheet, /SOROKA/, 'шапка как в таблицах агентства');
+  assert.match(sheet, /<c r="A2" s="\d+" t="inlineStr"><is><t xml:space="preserve">Площадка/, 'шапка таблицы — сразу во второй строке');
 
   const calcJs = await req({ url: '/admin/lib/mediaplan-calc.js' });
   assert.equal(calcJs.statusCode, 200);
@@ -199,15 +200,17 @@ test('интернет-магазин: слайды и Excel', async () => {
   assert.deepEqual(checkContent(doc.spec, brand).errors, []);
   const file = await req({ url: `/admin/api/mediaplans/${id}/xlsx` });
   const zip = await JSZip.loadAsync(file.rawPayload);
-  const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
+  const workbook = await zip.file('xl/workbook.xml').async('string');
+  assert.doesNotMatch(workbook, /name="Сводка"/, 'один сценарий — без сводки');
+  const sheet = await zip.file('xl/worksheets/sheet1.xml').async('string');
   assert.match(sheet, /CR1 \(в корзину\)/);
   // колонки — как в медиапланах агентства: площадка, таргетинг, клики, CPC, стоимость без и с НДС…
-  const heads = [...sheet.matchAll(/<c r="([A-Z]+)6" s="\d+" t="inlineStr"><is><t xml:space="preserve">([^<]+)</g)].map((m) => m[2]);
+  const heads = [...sheet.matchAll(/<c r="([A-Z]+)2" s="\d+" t="inlineStr"><is><t xml:space="preserve">([^<]+)</g)].map((m) => m[2]);
   assert.deepEqual(heads, ['Площадка', 'Таргетинг', 'Клики', 'CPC', 'Стоимость без НДС', 'Стоимость с НДС', 'CR1 (в корзину)', 'Кол-во корзин', 'CPA (цена доб. в корз.)', 'CR2 (конверсия в продажу)', 'Кол-во продаж', 'CPS (цена продажи)', 'Ср. чек', 'Выручка', 'ДРР']);
-  const drr = sheet.match(/<c r="O7" s="\d+"><f>IF\(N7&gt;0,F7\/N7,0\)<\/f><v>([\d.]+)<\/v>/);
+  const drr = sheet.match(/<c r="O3" s="\d+"><f>IF\(N3&gt;0,F3\/N3,0\)<\/f><v>([\d.]+)<\/v>/);
   assert.ok(drr, 'ДРР по строке — формулой');
   assert.equal((Number(drr[1]) * 100).toFixed(2), '39.57', 'готовое значение видно и без пересчёта');
-  assert.match(sheet, /<f>'Допущения'!\$B\$12<\/f><v>5500<\/v>/, 'средний чек по умолчанию — ссылкой на допущения');
+  assert.match(sheet, /<f>'Допущения'!\$C\$8<\/f><v>5500<\/v>/, 'средний чек по умолчанию — ссылкой на допущения');
 });
 
 test('комиссия агентства: процент и фиксированная часть в месяц', () => {
@@ -229,9 +232,10 @@ test('Excel: логотип бренда в шапке, если он утвер
   const zip = await JSZip.loadAsync(buf);
   assert.ok(zip.file('xl/media/logo.png'), 'логотип — оригинальный файл');
   const drawing = await zip.file('xl/drawings/drawing1.xml').async('string');
-  assert.match(drawing, /cx="1524000" cy="381000"/, 'пропорции 200×50 сохранены: 160×40 px');
-  const sheet = await zip.file('xl/worksheets/sheet2.xml').async('string');
+  assert.match(drawing, /cx="2133600" cy="533400"/, 'пропорции 200×50 сохранены: 224×56 px');
+  const sheet = await zip.file('xl/worksheets/sheet1.xml').async('string');
   assert.match(sheet, /<drawing r:id="rId1"\/>/);
+  assert.ok(zip.file('xl/drawings/drawing2.xml'), 'у каждого листа своя рисовалка');
   assert.doesNotMatch(sheet, />SOROKA</, 'с логотипом текстовая подпись не нужна');
-  assert.match(sheet, /\$B\$9\*C/, 'фиксированная комиссия входит в формулу');
+  assert.match(sheet, /\$C\$5\*C/, 'фиксированная комиссия входит в формулу');
 });

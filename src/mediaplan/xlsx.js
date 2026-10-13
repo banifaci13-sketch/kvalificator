@@ -1,5 +1,6 @@
-// Медиаплан в Excel в фирменном стиле агентства: логотип или подпись в шапке, бирюзовые заголовки
-// и итоги, рамки, ₽ и %. Формулы живые — менеджер меняет бюджет или конверсию, пересчитываются все
+// Медиаплан в Excel — как рабочие таблицы агентства: в первой строке логотип и заголовок, сразу под
+// ними голубая шапка таблицы, тонкие чёрные рамки, цветные сегменты таргетинга, голубая строка «Итого»,
+// Calibri 10, ₽ и %. Формулы живые — менеджер меняет бюджет или конверсию, пересчитываются все
 // листы; рядом с формулами записаны готовые значения, чтобы цифры были видны и без пересчёта.
 // Файл собирается без сторонних библиотек для Excel (OOXML + zip).
 
@@ -7,15 +8,16 @@ import JSZip from 'jszip';
 
 import { calcPlan } from './calc.js';
 
-const FONT = 'Arial';
-// Фирменные цвета: бирюзовый акцент — шапка и итоги таблицы, графит — текст
-const ACCENT = '12C9D6';
-const ACCENT_TEXT = '0A7F89';
-const INK = '20252A';
-const STEEL = '5F6B72';
-const GRID = '9AA6AC';
-const INPUT = 'D9F6F8';
-const TINTS = ['E3F7F9', 'FDE9DF', 'E9E6FA', 'FDF1D2', 'E4F4EA'];
+// Оформление повторяет медиапланы агентства (пример — «МП Таллер СберЭдс»)
+const FONT = 'Calibri';
+const HEAD_FILL = '00B0F0'; // голубая шапка и строка «Итого»
+const INK = '000000';
+const STEEL = '595959';
+const GRID = '000000'; // тонкие чёрные рамки
+const INPUT = 'FFF2CC'; // исходные данные на листе «Допущения»
+const LOGO_GRAY = '8C8C8C';
+// сегменты таргетинга — насыщенные заливки, как в таблицах агентства
+const TINTS = ['00FF00', 'FFFF00', 'F6B26B', 'EA9999', 'A4C2F4', 'B4A7D6'];
 const NUM = '#,##0;-#,##0;"–"';
 const MONEY2 = '#,##0.00 "₽";-#,##0.00 "₽";"–"';
 const MONEY0 = '#,##0 "₽";-#,##0 "₽";"–"';
@@ -106,6 +108,12 @@ function createSheet(name) {
             .map(([c, { value, s }]) => {
               const at = `${colName(c)}${r}`;
               if (value == null) return `<c r="${at}" s="${s}"/>`;
+              if (typeof value === 'object' && value.rich) {
+                const runs = value.rich
+                  .map((r) => `<r><rPr>${r.bold ? '<b/>' : ''}<sz val="${r.size ?? 10}"/><color rgb="FF${r.color ?? INK}"/><rFont val="${FONT}"/></rPr><t xml:space="preserve">${xml(r.text)}</t></r>`)
+                  .join('');
+                return `<c r="${at}" s="${s}" t="inlineStr"><is>${runs}</is></c>`;
+              }
               if (typeof value === 'object') {
                 const v = value.v;
                 if (typeof v === 'string') return `<c r="${at}" s="${s}" t="str"><f>${xml(value.f)}</f><v>${xml(v)}</v></c>`;
@@ -121,8 +129,8 @@ function createSheet(name) {
         .join('');
       const cols = sheet.widths.length ? `<cols>${sheet.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
       const pane = sheet.freezeRow
-        ? `<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${sheet.freezeRow}" topLeftCell="A${sheet.freezeRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
-        : '<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>';
+        ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${sheet.freezeRow}" topLeftCell="A${sheet.freezeRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+        : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
       const merges = sheet.merges.length ? `<mergeCells count="${sheet.merges.length}">${sheet.merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : '';
       const dv = sheet.validations.length
         ? `<dataValidations count="${sheet.validations.length}">${sheet.validations.map((v) => `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${v.sqref}"><formula1>"${v.list.join(',')}"</formula1></dataValidation>`).join('')}</dataValidations>`
@@ -161,12 +169,12 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
   const spec = plan.spec;
   const st = createStyles();
   const cell = { border: 'all' };
+  const HF = HEAD_FILL;
   const S = {
-    wordmark: st.style({ size: 20, bold: true, valign: 'bottom' }),
-    subline: st.style({ size: 8, bold: true, color: ACCENT_TEXT, valign: 'top' }),
-    title: st.style({ size: 14, bold: true }),
+    logoCell: st.style({ wrap: true, valign: 'center' }),
+    title: st.style({ size: 18, align: 'center' }),
     note: st.style({ size: 9, italic: true, color: STEEL }),
-    head: st.style({ bold: true, fill: ACCENT, border: 'all', wrap: true, align: 'center' }),
+    head: st.style({ bold: true, fill: HF, border: 'all', wrap: true, align: 'center' }),
     text: st.style({ ...cell, wrap: true }),
     textC: st.style({ ...cell, align: 'center', wrap: true }),
     label: st.style({ ...cell }),
@@ -176,36 +184,43 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     money0: st.style({ ...cell, fmt: MONEY0, align: 'center' }),
     pct: st.style({ ...cell, fmt: PCT2, align: 'center' }),
     pct1: st.style({ ...cell, fmt: PCT1, align: 'center' }),
-    totLabel: st.style({ bold: true, fill: ACCENT, border: 'all', align: 'center' }),
-    totNum: st.style({ bold: true, fill: ACCENT, border: 'all', fmt: NUM, align: 'center' }),
-    totMoney: st.style({ bold: true, fill: ACCENT, border: 'all', fmt: MONEY2, align: 'center' }),
-    totMoney0: st.style({ bold: true, fill: ACCENT, border: 'all', fmt: MONEY0, align: 'center' }),
-    totPct: st.style({ bold: true, fill: ACCENT, border: 'all', fmt: PCT1, align: 'center' }),
-    totPct2: st.style({ bold: true, fill: ACCENT, border: 'all', fmt: PCT2, align: 'center' }),
-    totBlank: st.style({ fill: ACCENT, border: 'all' }),
+    totLabel: st.style({ bold: true, fill: HF, border: 'all', align: 'center' }),
+    totNum: st.style({ bold: true, fill: HF, border: 'all', fmt: NUM, align: 'center' }),
+    totMoney: st.style({ bold: true, fill: HF, border: 'all', fmt: MONEY2, align: 'center' }),
+    totMoney0: st.style({ bold: true, fill: HF, border: 'all', fmt: MONEY0, align: 'center' }),
+    totPct: st.style({ bold: true, fill: HF, border: 'all', fmt: PCT1, align: 'center' }),
+    totPct2: st.style({ bold: true, fill: HF, border: 'all', fmt: PCT2, align: 'center' }),
+    totBlank: st.style({ fill: HF, border: 'all' }),
     keyNum: st.style({ ...cell, fill: INPUT, fmt: NUM, align: 'center' }),
     keyMoney: st.style({ ...cell, fill: INPUT, fmt: MONEY0, align: 'center' }),
     keyPct: st.style({ ...cell, fill: INPUT, fmt: PCT1, align: 'center' }),
     wrap: st.style({ wrap: true, valign: 'top' }),
     sectionHead: st.style({ bold: true, size: 11 }),
-    // таргетинг подсвечивается мягкими тонами бренда по строкам — как сегменты в таблицах агентства
     tints: TINTS.map((fill) => st.style({ ...cell, fill, wrap: true, align: 'center' })),
   };
   const logoSize = pngSize(logo);
 
-  /** Шапка листа: логотип (или подпись), название и пояснение. Таблица начинается с HEAD. */
-  function brandHeader(sh, title, note) {
-    sh.heights[1] = 34;
-    sh.heights[2] = 14;
-    sh.heights[3] = 24;
+  /**
+   * Первая строка листа — как в таблицах агентства: слева логотип (колонки A–B), справа крупный
+   * заголовок. Шапка таблицы — сразу во второй строке. Без утверждённого файла логотипа —
+   * текстовая подпись, знак-птицу не рисуем.
+   */
+  function brandHeader(sh, title, lastCol) {
+    sh.heights[1] = 48;
+    sh.merge(0, 1, 1, 1);
     if (logoSize) sh.drawing = true;
-    else {
-      sh.set(0, 1, 'SOROKA', S.wordmark);
-      sh.set(0, 2, 'АГЕНТСТВО ИНТЕРНЕТ-МАРКЕТИНГА', S.subline);
-    }
-    sh.set(0, 3, title, S.title);
-    sh.set(0, 4, note, S.note);
+    else
+      sh.set(0, 1, {
+        rich: [
+          { text: 'SOROKA', size: 22, bold: true, color: LOGO_GRAY },
+          { text: '\nАГЕНТСТВО ', size: 7, color: LOGO_GRAY },
+          { text: 'ИНТЕРНЕТ-МАРКЕТИНГА', size: 7, bold: true, color: HEAD_FILL },
+        ],
+      }, S.logoCell);
+    sh.set(2, 1, title, S.title).merge(2, 1, Math.max(2, lastCol), 1);
   }
+  /** Пояснения под таблицей — мелким курсивом, чтобы не мешать самой таблице. */
+  const footnote = (sh, row, text, col = 0) => sh.set(col, row, text, S.note);
 
   const names = sheetNames(spec.scenarios.map((s) => s.name));
   const A = 'Допущения';
@@ -220,10 +235,12 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
 
   // ---------- допущения: исходные данные всего файла ----------
   const as = createSheet(A);
-  as.widths = [46, 18, 12, 10, 10, 12, 56];
-  brandHeader(as, `Допущения: ${clientName}`, 'Ячейки с бирюзовой заливкой — исходные данные: измените их, и пересчитаются все листы.');
-  const AR = { months: 7, fee: 8, fixed: 9, vat: 10, sale: 11, check: 12 };
-  ['Параметр', 'Значение'].forEach((t, c) => as.set(c, 6, t, S.head));
+  as.widths = [16, 50, 16, 12, 12, 12, 50];
+  brandHeader(as, `Допущения: ${clientName}`, 4);
+  // параметры — в колонках B (название) и C (значение): A и B заняты логотипом в первой строке
+  const AR = { months: 3, fee: 4, fixed: 5, vat: 6, sale: 7, check: 8 };
+  as.heights[2] = 30;
+  as.set(1, 2, 'Параметр', S.head).set(2, 2, 'Значение', S.head);
   const inputs = [
     [AR.months, 'Период, месяцев', months, S.keyNum],
     [AR.fee, 'Комиссия агентства, % от медиабюджета', frac(settings.agencyFee) ?? 0, S.keyPct],
@@ -232,26 +249,27 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     [AR.sale, ecom ? 'Конверсия в продажу — задаётся по строкам (CR2)' : 'Конверсия лида в продажу', ecom ? 0 : frac(settings.saleRate) ?? 0, S.keyPct],
     [AR.check, ecom ? 'Средний чек по умолчанию, ₽' : 'Средний чек, ₽', settings.avgCheck ?? 0, S.keyMoney],
   ];
-  for (const [r, label, v, s] of inputs) as.set(0, r, label, S.label).set(1, r, v, s);
-  as.set(0, 14, 'На чём основан прогноз', S.sectionHead);
-  as.set(0, 15, spec.assumptions || 'Не указано', S.wrap).merge(0, 15, 6, 15);
-  as.heights[15] = 48;
-  let r = 17;
+  for (const [r, label, v, s] of inputs) as.set(1, r, label, S.label).set(2, r, v, s);
+  footnote(as, 9, 'Жёлтые ячейки — исходные данные: измените их, и пересчитаются все листы.', 1);
+  as.set(1, 11, 'На чём основан прогноз', S.sectionHead);
+  as.set(1, 12, spec.assumptions || 'Не указано', S.wrap).merge(1, 12, 6, 12);
+  as.heights[12] = 48;
+  let r = 14;
   if (benchmarks.length) {
-    as.set(0, r, 'Нормативы агентства по каналам', S.sectionHead);
+    as.set(1, r, 'Нормативы агентства по каналам', S.sectionHead);
     r += 1;
-    ['Канал', 'CPC, ₽', 'CPM, ₽', 'CTR', 'Конверсия в лид', 'Обновлено', 'Основание'].forEach((t, c) => as.set(c, r, t, S.head));
+    ['Канал', 'CPC, ₽', 'CPM, ₽', 'CTR', 'Конверсия в лид', 'Основание'].forEach((t, c) => as.set(c + 1, r, t, S.head));
     for (const b of benchmarks) {
       r += 1;
-      as.set(0, r, b.channel, S.label).set(1, r, b.cpc, S.money).set(2, r, b.cpm, S.money).set(3, r, frac(b.ctr), S.pct).set(4, r, frac(b.cr), S.pct);
-      as.set(5, r, String(b.updated_at ?? '').slice(0, 10), S.textC).set(6, r, b.note ?? '', S.text);
+      as.set(1, r, b.channel, S.label).set(2, r, b.cpc, S.money).set(3, r, b.cpm, S.money).set(4, r, frac(b.ctr), S.pct).set(5, r, frac(b.cr), S.pct);
+      as.set(6, r, [b.note, b.updated_at ? `обновлено ${String(b.updated_at).slice(0, 10)}` : null].filter(Boolean).join('; '), S.text);
     }
   }
-  const VAT = `${a}$B$${AR.vat}`;
-  const CHECK = `${a}$B$${AR.check}`;
+  const VAT = `${a}$C$${AR.vat}`;
+  const CHECK = `${a}$C$${AR.check}`;
 
   // ---------- сценарии ----------
-  const HEAD = 6;
+  const HEAD = 2;
   const totals = [];
   const scenarioSheets = spec.scenarios.map((sc, si) => scenarioSheet(sc, si));
 
@@ -292,11 +310,7 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     const sh = createSheet(names[si]);
     sh.widths = cols.map((c) => c.w);
     sh.freezeRow = HEAD;
-    brandHeader(
-      sh,
-      `Медиаплан: ${clientName} — ${sc.name}`,
-      `Бюджеты в месяц; ${withVat ? 'вводятся с НДС' : 'вводятся без НДС'}; ставки CPC и CPM — без НДС; ${ecom ? 'CR1 и CR2 — от кликов' : 'конверсия — от кликов'}. Подготовил: ${author || 'Soroka Marketing'}, ${dateStr}.`,
-    );
+    brandHeader(sh, `Медиаплан: ${clientName}${spec.scenarios.length > 1 ? ` — ${sc.name}` : ''}`, cols.length - 1);
     sh.heights[HEAD] = 42;
     cols.forEach((c, i) => sh.set(i, HEAD, c.head, S.head));
 
@@ -394,11 +408,13 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     const P = res.period;
     const V = 2; // колонка значений
     const at = (i) => `${colName(V)}${p + 1 + i}`;
-    sh.set(0, p, 'За период', S.sectionHead);
+    sh.heights[p] = 20;
+    sh.set(0, p, `За период (${P.months} мес.)`, S.head).set(1, p, null, S.head).merge(0, p, 1, p);
+    sh.set(V, p, 'Сумма', S.head).set(V + 1, p, null, S.head).set(V + 2, p, null, S.head).merge(V, p, V + 2, p);
     const lines = [
-      ['Месяцев', { f: `${a}$B$${AR.months}`, v: P.months }, S.num],
+      ['Месяцев', { f: `${a}$C$${AR.months}`, v: P.months }, S.num],
       ['Медиабюджет без НДС, ₽', { f: `${T('net')}*${at(0)}`, v: P.media }, S.money],
-      ['Комиссия агентства, ₽', { f: `${at(1)}*${a}$B$${AR.fee}+${a}$B$${AR.fixed}*${at(0)}`, v: P.fee }, S.money],
+      ['Комиссия агентства, ₽', { f: `${at(1)}*${a}$C$${AR.fee}+${a}$C$${AR.fixed}*${at(0)}`, v: P.fee }, S.money],
       ['НДС, ₽', { f: `(${at(1)}+${at(2)})*${VAT}`, v: P.vat }, S.money],
       ['Итого к оплате, ₽', { f: `SUM(${at(1)}:${at(3)})`, v: P.total }, 'total'],
       ...(ecom
@@ -411,7 +427,7 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
         : [
             ['Лиды за период', { f: `${T('leads')}*${at(0)}`, v: P.leads ?? 0 }, S.num],
             ['Стоимость лида с комиссией и НДС, ₽', { f: `IF(${at(5)}>0,${at(4)}/${at(5)},0)`, v: P.cpl ?? 0 }, S.money0],
-            ['Продажи', { f: `${at(5)}*${a}$B$${AR.sale}`, v: P.sales ?? 0 }, S.num],
+            ['Продажи', { f: `${at(5)}*${a}$C$${AR.sale}`, v: P.sales ?? 0 }, S.num],
             ['Выручка, ₽', { f: `${at(7)}*${CHECK}`, v: P.revenue ?? 0 }, S.money],
             ['ДРР (доля рекламных расходов в выручке)', { f: `IF(${at(8)}>0,${at(4)}/${at(8)},0)`, v: P.drr ?? 0 }, S.pct],
           ]),
@@ -425,6 +441,11 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
       // значение — на три колонки, чтобы большие суммы не превращались в ###
       sh.set(V + 1, row, null, total ? S.totBlank : style).set(V + 2, row, null, total ? S.totBlank : style).merge(V, row, V + 2, row);
     });
+    footnote(
+      sh,
+      p + lines.length + 2,
+      `Бюджеты в месяц ${withVat ? 'с НДС' : 'без НДС'}; ставки CPC и CPM — без НДС; ${ecom ? 'CR1 и CR2 — от кликов' : 'конверсия — от кликов'}. Прогноз агентства от ${dateStr}${author ? `, подготовил ${author}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`,
+    );
     totals.push({
       sheet: names[si],
       cells: ecom
@@ -435,9 +456,10 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
   }
 
   // ---------- сводка ----------
+  // сводка нужна, только когда сценариев несколько
   const sum = createSheet('Сводка');
-  sum.widths = [34, 20, 16, 18, 24, 20, 12];
-  brandHeader(sum, `Медиаплан: ${clientName}`, `Прогноз агентства от ${dateStr}${author ? `, подготовил ${author}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`);
+  sum.widths = [26, 20, 16, 18, 24, 20, 14];
+  brandHeader(sum, `Медиаплан: ${clientName} — сравнение сценариев`, 6);
   sum.heights[HEAD] = 34;
   const heads = ecom
     ? ['Сценарий', 'Бюджет в месяц с НДС, ₽', 'Продажи в месяц', 'Выручка в месяц, ₽', 'Итого к оплате за период, ₽', 'Выручка за период, ₽', 'ДРР с комиссией и НДС']
@@ -451,13 +473,15 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     sum.set(0, rr, spec.scenarios[i].name, S.labelBold);
     x.cells.forEach(([cellRef, v], c) => sum.set(c + 1, rr, { f: `${sr}${cellRef}`, v: v ?? 0 }, sumStyles[c]));
   });
+  footnote(sum, HEAD + totals.length + 2, `Прогноз агентства от ${dateStr}${author ? `, подготовил ${author}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`);
 
-  const sheets = [sum, ...scenarioSheets, as];
+  // первым открывается сам медиаплан, как в рабочих файлах агентства
+  const sheets = [...scenarioSheets, ...(spec.scenarios.length > 1 ? [sum] : []), as];
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${logoSize ? `<Default Extension="png" ContentType="image/png"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>` : ''}</Types>`,
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${logoSize ? `<Default Extension="png" ContentType="image/png"/>${sheets.map((_, i) => `<Override PartName="/xl/drawings/drawing${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`).join('')}` : ''}</Types>`,
   );
   zip.file(
     '_rels/.rels',
@@ -479,32 +503,30 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
   );
+  // логотип — оригинальный файл бренда; у каждого листа своя «рисовалка» со ссылкой на один файл
+  const EMU = 9525;
+  const logoH = 56;
+  const logoW = logoSize ? Math.round((logoSize.width / logoSize.height) * logoH) : 0;
+  if (logoSize) zip.file('xl/media/logo.png', logo);
   sheets.forEach((sh, i) => {
     zip.file(`xl/worksheets/sheet${i + 1}.xml`, sh.xml());
-    if (sh.drawing)
-      zip.file(
-        `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>`,
-      );
-  });
-  if (logoSize) {
-    // логотип — оригинальный файл бренда, высота 40 px, пропорции сохраняются
-    const EMU = 9525;
-    const h = 40;
-    const w = Math.round((logoSize.width / logoSize.height) * h);
-    zip.file('xl/media/logo.png', logo);
+    if (!sh.drawing) return;
     zip.file(
-      'xl/drawings/_rels/drawing1.xml.rels',
+      `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${i + 1}.xml"/></Relationships>`,
+    );
+    zip.file(
+      `xl/drawings/_rels/drawing${i + 1}.xml.rels`,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.png"/></Relationships>`,
     );
     zip.file(
-      'xl/drawings/drawing1.xml',
+      `xl/drawings/drawing${i + 1}.xml`,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>${4 * EMU}</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>${4 * EMU}</xdr:rowOff></xdr:from><xdr:ext cx="${w * EMU}" cy="${h * EMU}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Логотип"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w * EMU}" cy="${h * EMU}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>`,
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>${6 * EMU}</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>${4 * EMU}</xdr:rowOff></xdr:from><xdr:ext cx="${logoW * EMU}" cy="${logoH * EMU}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Логотип"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${logoW * EMU}" cy="${logoH * EMU}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>`,
     );
-  }
+  });
   zip.file('xl/styles.xml', st.xml());
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
