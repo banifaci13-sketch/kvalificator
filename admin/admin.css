@@ -634,6 +634,16 @@ details.menu summary::-webkit-details-marker { display: none; }
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 12px; }
 .account-form h3 { font-size: 14px; margin: 16px 0 8px; }
 
+/* ---------- ИИ ---------- */
+.tag-ai { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+.ai-menu summary { cursor: pointer; }
+.ai-menu summary[aria-disabled="true"] { opacity: .7; cursor: progress; }
+.ai-menu .menu-list { min-width: 220px; }
+.ai-undo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 10px; border-radius: var(--radius-s); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); font-size: 14px; }
+.ai-undo .icon-btn { margin-left: auto; }
+.ai-fix { margin-left: 4px; vertical-align: baseline; min-height: 26px; padding: 2px 8px; font-size: 12px; }
+.create-fields .full { grid-column: 1 / -1; }
+
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 
 /* ---------- мобильные ---------- */

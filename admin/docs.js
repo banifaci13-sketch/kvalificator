@@ -14,6 +14,12 @@ const SAVE_DELAY = 600;
 export const fill = (el, ...children) => el.replaceChildren(...children.flat(Infinity).filter((c) => c != null && c !== false));
 
 let catalog = null;
+let aiInfo = null;
+/** Подключён ли ИИ на сервере (ключ YandexGPT или Claude). */
+export async function loadAi() {
+  aiInfo ??= await api('/admin/api/ai').catch(() => ({ enabled: false }));
+  return aiInfo;
+}
 async function loadCatalog() {
   catalog ??= await api('/admin/api/slide-types');
   return catalog;
@@ -105,6 +111,7 @@ export async function renderDocs(params) {
     if (err.status !== 401) fill(list, h('p', { class: 'error' }, err.message));
     return;
   }
+  await loadAi();
   const tplName = Object.fromEntries(templates.map((t) => [t.id, t.name]));
   count.textContent = `${docs.length} ${plural(docs.length, 'документ', 'документа', 'документов')}`;
 
@@ -159,7 +166,11 @@ export async function renderDocs(params) {
 
 /** Создание документа: выбор шаблона → данные для подстановки → редактор. */
 function createPanel(templates, preselect, onCancel) {
-  const choices = [{ id: '', name: 'Пустой документ', description: 'Слайды добавите сами.', types: [], variables: [] }, ...templates];
+  const choices = [
+    ...(aiInfo?.enabled ? [{ id: 'ai', ai: true, name: 'Собрать с ИИ', description: 'Черновик по брифу и заявке. Цифр ИИ не придумывает — оставит заготовки.', variables: [] }] : []),
+    { id: '', name: 'Пустой документ', description: 'Слайды добавите сами.', types: [], variables: [] },
+    ...templates,
+  ];
   const fields = h('div', { class: 'create-fields' });
   const submit = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Создать и открыть');
   const error = h('p', { class: 'error', role: 'alert', hidden: true });
@@ -171,12 +182,14 @@ function createPanel(templates, preselect, onCancel) {
       'label',
       { class: 'tpl-choice' },
       h('input', { type: 'radio', name: 'tpl', value: t.id, checked: t === chosen, onchange: () => { chosen = t; fillFields(); } }),
-      h('span', { class: 'tpl-name' }, t.name, t.builtin === false ? h('span', { class: 'tag' }, 'свой') : null),
+      h('span', { class: 'tpl-name' }, t.name, t.builtin === false ? h('span', { class: 'tag' }, 'свой') : null, t.ai ? h('span', { class: 'tag tag-ai' }, 'ИИ') : null),
       h('span', { class: 'tpl-desc' }, t.description || `${t.slides} ${plural(t.slides, 'слайд', 'слайда', 'слайдов')}`),
     ),
   );
 
   async function fillFields() {
+    if (chosen.ai) return fillAiFields();
+    submit.textContent = 'Создать и открыть';
     const title = h('input', { class: 'input', id: 'c-title', maxlength: 200, placeholder: chosen.id ? `${chosen.name} — название клиента` : 'Например: Отчёт за сентябрь' });
     const vars = chosen.variables.filter((v) => v.key !== 'date' && v.key !== 'manager');
     const inputs = Object.fromEntries(vars.map((v) => [v.key, h('input', { class: 'input', id: `c-${v.key}`, maxlength: 2000, placeholder: v.from.startsWith('lead.') ? 'Из заявки, если она выбрана' : '' })]));
@@ -224,6 +237,51 @@ function createPanel(templates, preselect, onCancel) {
     }
   }
 
+  async function fillAiFields() {
+    submit.textContent = 'Собрать черновик';
+    const kind = h('select', { class: 'select', id: 'ai-kind' }, Object.entries(aiInfo.kinds).map(([k, l]) => h('option', { value: k }, l)));
+    const count = h('select', { class: 'select', id: 'ai-count' }, [6, 8, 10, 12].map((n) => h('option', { value: n, selected: n === 8 }, `${n} слайдов`)));
+    const lead = h('select', { class: 'select', id: 'ai-lead' }, h('option', { value: '' }, 'Без заявки'));
+    const brief = h('textarea', {
+      class: 'textarea', id: 'ai-brief', rows: 6, maxlength: 6000,
+      placeholder: 'Что за клиент и задача, что предлагаем, какие цифры уже известны (бюджет, текущие заявки, цели), сроки. Названия и контакты можно не писать — подставим сами.',
+    });
+    const title = h('input', { class: 'input', id: 'ai-title', maxlength: 200, placeholder: 'Предложит ИИ' });
+    fill(
+      fields,
+      h('div', { class: 'field' }, h('label', { for: 'ai-kind' }, 'Что готовим'), kind),
+      h('div', { class: 'field' }, h('label', { for: 'ai-lead' }, 'Заявка клиента'), lead, h('span', { class: 'hint' }, 'Ответы квалификатора уйдут в ИИ без названия компании и контактов.')),
+      h('div', { class: 'field full' }, h('label', { for: 'ai-brief' }, 'Бриф'), brief),
+      h('div', { class: 'field' }, h('label', { for: 'ai-count' }, 'Объём'), count),
+      h('div', { class: 'field' }, h('label', { for: 'ai-title' }, 'Название документа'), title),
+      h('p', { class: 'hint' }, `Черновик соберёт ${aiInfo.provider === 'yandexgpt' ? 'YandexGPT' : 'Claude'}. Это займёт до минуты; дальше правьте в редакторе как обычно.`),
+    );
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      submit.disabled = true;
+      submit.textContent = 'ИИ собирает черновик…';
+      error.hidden = true;
+      try {
+        const body = { kind: kind.value, brief: brief.value.trim(), slides: Number(count.value) };
+        if (lead.value) body.leadId = Number(lead.value);
+        if (title.value.trim()) body.title = title.value.trim();
+        const res = await api('/admin/api/ai/draft', { method: 'POST', body });
+        navigate('doc', new URLSearchParams({ id: String(res.document.id) }));
+        toast(res.replaced ? `Черновик готов. Цифр без источника: ${res.replaced} — помечены «[заполнить]»` : 'Черновик готов — проверьте и доработайте');
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+        submit.disabled = false;
+        submit.textContent = 'Собрать черновик';
+      }
+    };
+    leads ??= api('/admin/api/leads').then((d) => d.leads).catch(() => []);
+    for (const l of await leads) {
+      const company = l.answers.company?.raw ?? l.answers.company ?? 'Без названия';
+      lead.append(h('option', { value: l.id }, `#${l.id} ${company}${l.is_test ? ' (тест)' : ''}`));
+    }
+  }
+
   const form = h(
     'form',
     { class: 'panel create' },
@@ -252,7 +310,7 @@ export async function renderDoc(params) {
 
   let doc, exportsList;
   try {
-    await loadCatalog();
+    await Promise.all([loadCatalog(), loadAi()]);
     ({ document: doc, exports: exportsList } = await api(`/admin/api/documents/${id}`));
   } catch (err) {
     if (err.status !== 401) fill(app, shell('docs', [h('p', { class: 'error' }, err.message), h('a', { href: '#/docs' }, 'Все документы')]));
@@ -440,6 +498,80 @@ export async function renderDoc(params) {
     renderForm();
   }
 
+  // ----- ИИ: правка слайда -----
+  let aiUndo = null; // { index, slide, replaced }
+  async function aiEdit(action, index = current, instruction = '') {
+    if (aiBusy) return;
+    aiBusy = true;
+    renderForm();
+    try {
+      await save();
+      const res = await api('/admin/api/ai/slide', { method: 'POST', body: { documentId: id, index, action, instruction } });
+      aiUndo = { index, slide: structuredClone(slides[index]), replaced: res.replaced };
+      slides[index] = res.slide;
+      current = index;
+      changed();
+      renderRail();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      aiBusy = false;
+      renderForm();
+    }
+  }
+  let aiBusy = false;
+
+  function aiMenu() {
+    if (!aiInfo?.enabled) return null;
+    const menu = h(
+      'details',
+      { class: 'menu ai-menu' },
+      h('summary', { class: 'btn btn-s', 'aria-disabled': aiBusy ? 'true' : null }, aiBusy ? 'ИИ думает…' : 'ИИ'),
+      h(
+        'div',
+        { class: 'menu-list' },
+        Object.entries(aiInfo.actions).map(([action, label]) =>
+          h('button', {
+            type: 'button',
+            onclick: () => {
+              menu.open = false;
+              if (action !== 'custom') return aiEdit(action);
+              const text = h('textarea', { class: 'textarea', id: 'ai-instruction', rows: 3, maxlength: 1000, required: true, placeholder: 'Например: перепиши заголовок как вопрос клиенту' });
+              formDialog({
+                title: 'Что сделать со слайдом',
+                submitLabel: 'Попросить ИИ',
+                body: [h('div', { class: 'field' }, h('label', { for: 'ai-instruction' }, 'Просьба'), text), h('p', { class: 'hint' }, 'Цифры, источник и статус данных ИИ не меняет.')],
+                onSubmit: async () => aiEdit('custom', current, text.value),
+              });
+            },
+          }, label),
+        ),
+      ),
+    );
+    if (aiBusy) menu.addEventListener('toggle', () => (menu.open = false));
+    return menu;
+  }
+
+  function aiUndoBar() {
+    if (!aiUndo || aiUndo.index !== current) return null;
+    return h(
+      'div',
+      { class: 'ai-undo', role: 'status' },
+      h('span', {}, 'ИИ изменил слайд.', aiUndo.replaced ? ` Цифр без источника: ${aiUndo.replaced} — заменены на «[заполнить]».` : ''),
+      h('button', {
+        type: 'button', class: 'linkish',
+        onclick: () => {
+          slides[aiUndo.index] = aiUndo.slide;
+          aiUndo = null;
+          changed();
+          renderRail();
+          renderForm();
+        },
+      }, 'Вернуть как было'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Скрыть', onclick: () => { aiUndo = null; renderForm(); } }, '×'),
+    );
+  }
+
   // ----- форма слайда -----
   function renderForm() {
     const sl = slides[current];
@@ -461,10 +593,12 @@ export async function renderDoc(params) {
           { class: 'slide-actions' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Переместить выше', title: 'Выше', disabled: current === 0, onclick: () => moveSlide(-1) }, '↑'),
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Переместить ниже', title: 'Ниже', disabled: current === n - 1, onclick: () => moveSlide(1) }, '↓'),
+          aiMenu(),
           h('button', { type: 'button', class: 'btn btn-s', onclick: duplicateSlide }, 'Копия'),
           h('button', { type: 'button', class: 'btn btn-s', onclick: deleteSlide }, 'Удалить'),
         ),
       ),
+      aiUndoBar(),
       t.data ? h('p', { class: 'hint' }, 'Слайд с цифрами: укажите источник и статус данных — без них выгрузка не пройдёт.') : null,
       h('div', { class: 'fields' }, t.fields.map((f) => field(f, sl, `s${current}`, t.required.includes(f.key)))),
     );
@@ -677,7 +811,11 @@ export async function renderDoc(params) {
     const item = (m) => {
       const n = m.match(/^Слайд (\d+):\s*/);
       if (!n) return h('li', {}, m);
-      return h('li', {}, h('button', { type: 'button', class: 'linkish', onclick: () => select(Number(n[1]) - 1) }, `Слайд ${n[1]}`), ' ', m.slice(n[0].length));
+      // переполненный текст ИИ может сократить прямо отсюда
+      const shorten = aiInfo?.enabled && /не помещается/.test(m)
+        ? h('button', { type: 'button', class: 'btn btn-s ai-fix', onclick: () => { select(Number(n[1]) - 1); aiEdit('shorten', Number(n[1]) - 1); } }, 'Сократить с ИИ')
+        : null;
+      return h('li', {}, h('button', { type: 'button', class: 'linkish', onclick: () => select(Number(n[1]) - 1) }, `Слайд ${n[1]}`), ' ', m.slice(n[0].length), shorten ? ' ' : null, shorten);
     };
     const summary = qa.ok
       ? h('p', { class: 'qa-ok' }, qa.warnings.length ? `Можно выгружать. Замечаний: ${qa.warnings.length}` : 'Можно выгружать')
