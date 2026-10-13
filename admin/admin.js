@@ -248,6 +248,20 @@ function themeSwitch() {
   return box;
 }
 
+function meLink(current) {
+  return h(
+    'a',
+    { class: 'me-link', href: '#/account', title: 'Учётная запись', 'aria-current': current ? 'page' : null },
+    h('span', { class: 'avatar' }, initials(ctx.me.name)),
+    h('span', { class: 'me-text' }, h('span', { class: 'name' }, ctx.me.name), ctx.me.position ? h('span', { class: 'me-pos' }, ctx.me.position) : null),
+  );
+}
+// После правки своих данных — обновить имя и должность в боковой панели
+function refreshMe() {
+  const el = document.querySelector('.sidebar .me-link');
+  el?.replaceWith(meLink(el.getAttribute('aria-current') === 'page'));
+}
+
 function shell(active, content) {
   const section =
     PAGE_SECTION[active] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === active)) ?? active;
@@ -281,12 +295,7 @@ function shell(active, content) {
         h(
           'div',
           { class: 'me' },
-          h(
-            'a',
-            { class: 'me-link', href: '#/account', title: 'Учётная запись', 'aria-current': active === 'account' ? 'page' : null },
-            h('span', { class: 'avatar' }, initials(ctx.me.name)),
-            h('span', { class: 'me-text' }, h('span', { class: 'name' }, ctx.me.name), ctx.me.position ? h('span', { class: 'me-pos' }, ctx.me.position) : null),
-          ),
+          meLink(active === 'account'),
           h('button', { type: 'button', class: 'logout', title: 'Выйти', 'aria-label': 'Выйти', onclick: logout }, icon('logout')),
         ),
       ),
@@ -999,8 +1008,8 @@ function editUser(u, self, onSaved = () => renderStaff()) {
         body: { name: name.value.trim(), login: loginI.value.trim(), position: position.value.trim() || null, phone: phone.value.trim() || null },
       });
       if (self) {
-        Object.assign(ctx.me, { name: user.name, login: user.login });
-        document.querySelector('.user .name').textContent = user.name;
+        Object.assign(ctx.me, { name: user.name, login: user.login, position: user.position });
+        refreshMe();
       }
       toast('Данные сотрудника сохранены');
       onSaved();
@@ -1149,7 +1158,7 @@ function renderAccount() {
             body: { name: nameInput.value.trim(), position: positionInput.value.trim() || null, phone: phoneInput.value.trim() || null },
           });
           Object.assign(ctx.me, { name: user.name, position: user.position, phone: user.phone });
-          document.querySelector('.user .name').textContent = user.name;
+          refreshMe();
           nameMsg.className = 'saved';
           nameMsg.textContent = 'Сохранено';
         } catch (err) {
