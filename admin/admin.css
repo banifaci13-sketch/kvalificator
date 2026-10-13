@@ -1135,3 +1135,29 @@ details.menu summary::-webkit-details-marker { display: none; }
   .appearance { grid-template-columns: minmax(0, 1fr); }
   .tiles-3, .tiles-bg { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- связи: инструменты в задаче и обратная ссылка на задачу ---------- */
+.task-tools { display: grid; gap: 8px; }
+.task-tools h3 { margin: 0; }
+.tool-suggest { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-m); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.tool-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--surface); color: var(--accent-text); flex: none; }
+.tool-icon .icon { width: 17px; height: 17px; }
+.tool-text { display: grid; gap: 1px; min-width: 0; }
+.tool-text b { font-size: 14px; }
+.tool-more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tool-more .btn .icon { width: 15px; height: 15px; }
+.task-links { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+.task-links li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface-2); }
+.task-links li .tool-icon { width: 26px; height: 26px; }
+.task-links a { flex: 1; min-width: 0; font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-links a:hover { text-decoration: underline; }
+.chip-link .icon { width: 13px; height: 13px; }
+.linked-tasks { display: grid; gap: 6px; margin: -6px 0 14px; }
+.linked-task { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: var(--radius-m); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); font-size: 14px; }
+.linked-task > .icon { color: var(--accent-text); width: 18px; height: 18px; }
+.linked-task > span:first-of-type { flex: 1; min-width: 0; }
+.drawer .linked-tasks { margin: 0 0 4px; }
+@media (max-width: 720px) {
+  .tool-suggest { grid-template-columns: auto minmax(0, 1fr); }
+  .tool-suggest .btn { grid-column: 1 / -1; }
+}

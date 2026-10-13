@@ -70,6 +70,157 @@ function columnOptions(select, boards, current) {
   );
 }
 
+// ---------- инструменты для задачи: связь задач с медиапланами, документами и встречами ----------
+
+const cyr = (word) => new RegExp(`(^|[^а-яёa-z])${word}([^а-яёa-z]|$)`, 'i');
+// По названию и описанию задачи подсказываем, каким разделом её решать
+const TOOLS = [
+  { id: 'mediaplan', kind: 'mediaplan', name: 'Медиаплан', what: 'медиаплан', hint: 'Бюджет, клики, заявки и продажи по площадкам; Excel и слайд в КП', match: [/медиаплан/i, cyr('мп'), /прогноз/i, /бюджет на/i, /расход план/i] },
+  { id: 'kp', kind: 'document', template: 'kp', name: 'КП', what: 'коммерческое предложение', hint: 'Коммерческое предложение по шаблону агентства', match: [cyr('кп'), /коммерческ/i, /предложени/i, /смет/i] },
+  { id: 'strategy', kind: 'document', template: 'strategy', name: 'Стратегия', what: 'стратегию', hint: 'Презентация стратегии продвижения', match: [/стратеги/i, /концепци/i, /план продвижения/i] },
+  { id: 'report', kind: 'document', template: 'report', name: 'Отчёт', what: 'отчёт', hint: 'Ежемесячный отчёт клиенту', match: [/отч[её]т/i, /итоги месяца/i] },
+  { id: 'meeting', kind: 'meeting', name: 'Встреча', what: 'встречу', hint: 'Время, участники, ссылка Zoom или Телемост, напоминания', match: [/встреч/i, /созвон/i, /звонок/i, /позвонить/i, cyr('бриф'), /презентовать/i, /защит/i, /обсуд/i] },
+];
+const LINK_ICON = { mediaplan: 'plans', document: 'docs', meeting: 'calendar' };
+const LINK_HREF = { mediaplan: (id) => `#/plan?id=${id}`, document: (id) => `#/doc?id=${id}`, meeting: (id) => `#/calendar?meeting=${id}` };
+const DOC_TITLES = { kp: 'Коммерческое предложение', strategy: 'Стратегия продвижения', report: 'Отчёт' };
+
+export const suggestTools = (task) => TOOLS.filter((t) => t.match.some((re) => re.test(`${task.title ?? ''} ${task.description ?? ''}`)));
+
+/** Создать из задачи медиаплан, документ или встречу — сразу с клиентом проекта — и привязать к задаче. */
+async function createFromTask(tool, task, onLinked) {
+  const client = task.client_name ?? '';
+  const link = async (refId) => {
+    await api(`/admin/api/tasks/${task.id}/links`, { method: 'POST', body: { kind: tool.kind, refId } });
+    onLinked?.();
+  };
+  try {
+    if (tool.kind === 'mediaplan') {
+      const { emptyPlan } = await import('/admin/lib/mediaplan-calc.js');
+      const { mediaplan } = await api('/admin/api/mediaplans', { method: 'POST', body: { title: client ? `Медиаплан — ${client}` : task.title, client, spec: emptyPlan() } });
+      await link(mediaplan.id);
+      toast('Медиаплан создан и привязан к задаче');
+      navigate('plan', new URLSearchParams({ id: String(mediaplan.id) }));
+    } else if (tool.kind === 'document') {
+      let leadId;
+      if (task.client_id) leadId = (await api(`/admin/api/clients/${task.client_id}`).catch(() => null))?.client?.lead_id ?? undefined;
+      const title = client ? `${DOC_TITLES[tool.template]} — ${client}` : task.title;
+      const { document } = await api('/admin/api/documents', { method: 'POST', body: { templateId: tool.template, title, leadId, values: client ? { client } : {} } });
+      await link(document.id);
+      toast('Документ создан и привязан к задаче');
+      navigate('doc', new URLSearchParams({ id: String(document.id) }));
+    } else if (tool.kind === 'meeting') {
+      const { openMeeting } = await import('./calendar.js');
+      openMeeting(null, { defaults: { title: task.title, client_id: task.client_id }, onCreated: (m) => link(m.id).then(() => toast('Встреча привязана к задаче')) });
+    }
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Блок в карточке задачи: подходящий инструмент, остальные инструменты и всё, что уже сделано по задаче. */
+function toolsSection(task, refresh) {
+  const box = h('section', { class: 'task-tools' });
+  const suggested = suggestTools(task);
+  const others = TOOLS.filter((t) => !suggested.includes(t));
+  const forClient = task.client_name ? ` для «${task.client_name}»` : '';
+  const unlink = async (l) => {
+    try {
+      task.links = (await api(`/admin/api/tasks/${task.id}/links/${l.id}`, { method: 'DELETE' })).links;
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  function draw() {
+    fill(
+      box,
+      h('h3', {}, 'Инструменты для задачи'),
+      suggested.map((t) =>
+        h(
+          'div',
+          { class: 'tool-suggest' },
+          h('span', { class: 'tool-icon' }, icon(LINK_ICON[t.kind])),
+          h('span', { class: 'tool-text' }, h('b', {}, `Похоже, нужен ${t.name.toLowerCase() === 'кп' ? 'КП' : t.what}`), h('span', { class: 'muted small' }, t.hint)),
+          h('button', { type: 'button', class: 'btn btn-primary btn-s', onclick: () => createFromTask(t, task, refresh) }, t.kind === 'meeting' ? `Назначить встречу${forClient}` : `Создать ${t.name === 'КП' ? 'КП' : t.what}${forClient}`),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'tool-more' },
+        h('span', { class: 'muted small' }, suggested.length ? 'Ещё:' : 'Создать по задаче:'),
+        others.map((t) => h('button', { type: 'button', class: 'btn btn-s', title: t.hint, onclick: () => createFromTask(t, task, refresh) }, icon(LINK_ICON[t.kind]), t.name)),
+      ),
+      task.links?.length
+        ? h(
+            'ul',
+            { class: 'task-links' },
+            task.links.map((l) =>
+              h(
+                'li',
+                {},
+                h('span', { class: 'tool-icon' }, icon(LINK_ICON[l.kind])),
+                h('a', { href: LINK_HREF[l.kind](l.ref_id) }, l.title),
+                l.starts_at ? h('span', { class: 'muted small' }, fmtDateTime(l.starts_at)) : null,
+                h('button', { type: 'button', class: 'icon-btn', title: 'Отвязать от задачи', 'aria-label': `Отвязать «${l.title}»`, onclick: () => unlink(l) }, '×'),
+              ),
+            ),
+          )
+        : null,
+    );
+  }
+  draw();
+  return box;
+}
+
+/** Полоска на странице медиаплана, документа или встречи: по какой задаче это сделано, и отметить её выполненной. */
+export function linkedTasksBar(kind, refId) {
+  const bar = h('div', { class: 'linked-tasks', hidden: true });
+  (async () => {
+    let tasks;
+    try {
+      tasks = (await api(`/admin/api/linked-tasks?kind=${kind}&ref=${refId}`)).tasks;
+    } catch {
+      return;
+    }
+    if (!tasks.length) return;
+    const draw = () =>
+      fill(
+        bar,
+        tasks.map((t) =>
+          h(
+            'div',
+            { class: `linked-task${t.status === 'done' ? ' is-done' : ''}` },
+            icon('tasks'),
+            h('span', {}, 'Задача: ', h('button', { type: 'button', class: 'linkish', onclick: () => openTask(t.id, { onChange: reload }) }, t.title), t.client_name ? h('span', { class: 'muted' }, ` · ${t.client_name}`) : null),
+            t.status === 'done'
+              ? h('span', { class: 'saved' }, '✓ выполнена')
+              : h('button', {
+                  type: 'button', class: 'btn btn-s',
+                  onclick: async () => {
+                    try {
+                      await api(`/admin/api/tasks/${t.id}`, { method: 'PATCH', body: { done: true } });
+                      t.status = 'done';
+                      toast('Задача выполнена');
+                      draw();
+                    } catch (err) {
+                      toast(err.message);
+                    }
+                  },
+                }, 'Отметить задачу выполненной'),
+          ),
+        ),
+      );
+    const reload = async () => {
+      tasks = (await api(`/admin/api/linked-tasks?kind=${kind}&ref=${refId}`).catch(() => ({ tasks }))).tasks;
+      draw();
+    };
+    draw();
+    bar.hidden = false;
+  })();
+  return bar;
+}
+
 // ---------- панель задачи ----------
 
 let panel = null;
@@ -214,6 +365,8 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
               },
             });
             changed = true;
+            // задача из встречи («по итогам») сразу связывается с ней
+            if (defaults.link) await api(`/admin/api/tasks/${res.task.id}/links`, { method: 'POST', body: defaults.link }).catch(() => {});
             toast('Задача создана');
             openTask(res.task.id, { onChange });
           } catch (err) {
@@ -275,6 +428,11 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   fill(
     body,
     fields,
+    toolsSection(task, () => {
+      changed = true;
+      // перерисовать карточку задачи со свежими связями
+      if (panel) openTask(task.id, { onChange });
+    }),
     h('div', { class: 'work-actions' }, saved, h('span', { class: 'spacer' }), task.client_id ? h('a', { class: 'btn btn-s', href: `#/client?id=${task.client_id}` }, 'Карточка клиента') : null, remove),
     h('p', { class: 'muted small' }, `Создал ${task.created_by ?? '—'}, ${fmtDateTime(task.created_at)}`),
     h('section', {}, h('h3', {}, 'Обсуждение и история'), commentForm, feed),
@@ -414,6 +572,7 @@ function stickers(t, onChange) {
     due,
     prio,
     t.comments ? h('span', { class: 'chip', title: 'Комментарии' }, `💬 ${t.comments}`) : null,
+    t.links ? h('span', { class: 'chip chip-link', title: 'Медиапланы, документы и встречи по задаче' }, icon('docs'), t.links) : null,
     h('span', { class: 'spacer' }),
     who,
   );

@@ -264,7 +264,7 @@ function closePanel() {
 }
 window.addEventListener('hashchange', () => panel && closePanel());
 
-export async function openMeeting(id, { defaults = {}, onChange = () => {} } = {}) {
+export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCreated = null } = {}) {
   closePanel();
   await loadSettings();
   let clients = [];
@@ -400,7 +400,10 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {} } = {
           const res = await api(id ? `/admin/api/meetings/${id}` : '/admin/api/meetings', { method: id ? 'PUT' : 'POST', body: collect() });
           panel.changed = true;
           toast(id ? 'Встреча сохранена' : 'Встреча запланирована');
-          if (!id) return openMeeting(res.meeting.id, { onChange });
+          if (!id) {
+            await onCreated?.(res.meeting);
+            return openMeeting(res.meeting.id, { onChange });
+          }
           closePanel();
         } catch (err) {
           error.textContent = err.message;
@@ -445,6 +448,17 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {} } = {
             },
           }, 'Скопировать приглашение')
         : null,
+      // договорённости со встречи — сразу задачей в проекте клиента, связанной со встречей
+      id
+        ? h('button', {
+            type: 'button', class: 'btn',
+            onclick: async () => {
+              const { openTask } = await import('./tasks.js');
+              closePanel();
+              openTask(null, { defaults: { title: `По итогам встречи: ${m.title}`, client_id: m.client_id ?? null, link: { kind: 'meeting', refId: id } } });
+            },
+          }, 'Задача по итогам')
+        : null,
       h('span', { class: 'spacer' }),
       id
         ? h('button', {
@@ -479,7 +493,9 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {} } = {
     ),
   );
   fill(heading, id ? (m.cancelled ? 'Отменённая встреча' : 'Встреча') : 'Новая встреча');
-  fill(body, form, id ? h('p', { class: 'muted small' }, `Запланировал ${m.created_by ?? '—'}`) : null);
+  // по какой задаче встреча — ссылка и «выполнено» прямо отсюда
+  const linked = id ? (await import('./tasks.js')).linkedTasksBar('meeting', id) : null;
+  fill(body, linked, form, id ? h('p', { class: 'muted small' }, `Запланировал ${m.created_by ?? '—'}`) : null);
   syncFormat();
   renderProvider();
   title.focus();

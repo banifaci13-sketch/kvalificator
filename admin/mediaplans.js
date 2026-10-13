@@ -262,6 +262,7 @@ export async function renderPlan(params) {
     ),
   );
 
+  const linkedBar = (await import('./tasks.js')).linkedTasksBar('mediaplan', plan.id);
   fill(
     app,
     shell('plan', [
@@ -276,6 +277,7 @@ export async function renderPlan(params) {
         h('button', { type: 'button', class: 'btn btn-primary', onclick: toDocument }, 'В презентацию'),
         more,
       ),
+      linkedBar,
       settings,
       h('div', { class: 'mp-tabs-row' }, tabs),
       h('div', { class: `mp-layout${spec.kind === 'ecom' ? ' wide' : ''}` }, scenarioBox, results),

@@ -297,6 +297,17 @@ const MIGRATIONS = [
 
   // Личные настройки внешнего вида кабинета (JSON): тема, цвет, фон, плотность, панель, стартовый раздел
   `ALTER TABLE admin_users ADD COLUMN prefs TEXT;`,
+
+  // Связи задачи с результатом работы: медиаплан, документ, встреча (создан из задачи или привязан)
+  `CREATE TABLE task_links (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     kind       TEXT NOT NULL CHECK (kind IN ('mediaplan', 'document', 'meeting')),
+     ref_id     INTEGER NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     UNIQUE (task_id, kind, ref_id)
+   );
+   CREATE INDEX task_links_ref ON task_links (kind, ref_id);`,
 ];
 
 /** Номер текущей версии схемы базы. */

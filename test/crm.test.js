@@ -14,6 +14,10 @@ import { rules, staticSource, silentLog, typicalAnswers } from './helpers.js';
 
 const PASSWORD = 'correct-horse-battery';
 
+async function setupWithDb() {
+  return setup({ withDb: true });
+}
+
 async function setup() {
   const config = loadConfig({ DB_PATH: ':memory:' });
   const db = openDb(':memory:');
@@ -31,7 +35,7 @@ async function setup() {
     const c = res.cookies.find((x) => x.name === 'kval_admin');
     return (opts) => app.inject({ ...opts, headers: { ...opts.headers, cookie: `kval_admin=${c.value}` } });
   };
-  return { as, qualifier };
+  return { as, qualifier, db };
 }
 
 test('клиент из заявки: название и контакт из ответов, повторно — нельзя', async () => {
@@ -209,7 +213,7 @@ test('обновление базы: старые статусы задач ст
   const path = join(mkdtempSync(join(tmpdir(), 'crm-')), 'old.db');
   const fresh = openDb(path);
   // состояние до досок: колонок и досок ещё нет, у задач — статусы
-  fresh.raw.exec(`ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
+  fresh.raw.exec(`DROP TABLE task_links; ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
     CREATE TABLE tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL, title TEXT NOT NULL, description TEXT,
       status TEXT NOT NULL DEFAULT 'todo', priority INTEGER NOT NULL DEFAULT 0, assignee_id INTEGER REFERENCES admin_users(id), due TEXT,
@@ -232,4 +236,32 @@ test('обновление базы: старые статусы задач ст
     { title: 'Г', priority: 0, status: 'done', col: 'Готово', board: 'Задачи', client_id: 1 },
   ]);
   db.close();
+});
+
+test('связи задачи: медиаплан, документ и встреча; обратная ссылка; удалённое не показывается', async () => {
+  const { as, db } = await setupWithDb();
+  const anna = await as('anna');
+  const client = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Таллер' } })).json().client;
+  const task = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Создание МП', clientId: client.id } })).json().task;
+  db.raw.prepare("INSERT INTO mediaplans (title, client, spec, created_by) VALUES ('МП Таллер', 'Таллер', '{}', 'Анна')").run();
+  const mpId = db.raw.prepare('SELECT id FROM mediaplans').get().id;
+
+  const res = await anna({ method: 'POST', url: `/admin/api/tasks/${task.id}/links`, payload: { kind: 'mediaplan', refId: mpId } });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().links.map((l) => [l.kind, l.title]), [['mediaplan', 'МП Таллер']]);
+  await anna({ method: 'POST', url: `/admin/api/tasks/${task.id}/links`, payload: { kind: 'mediaplan', refId: mpId } });
+  const full = (await anna({ url: `/admin/api/tasks/${task.id}` })).json().task;
+  assert.equal(full.links.length, 1, 'повторная привязка не дублируется');
+  assert.equal(full.comments.at(-1).text, 'Медиаплан: «МП Таллер»');
+  assert.equal((await anna({ url: `/admin/api/tasks?client=${client.id}` })).json().tasks[0].links, 1, 'счётчик связей на карточке');
+  assert.equal((await anna({ method: 'POST', url: `/admin/api/tasks/${task.id}/links`, payload: { kind: 'document', refId: 999 } })).statusCode, 400);
+  assert.equal((await anna({ method: 'POST', url: `/admin/api/tasks/${task.id}/links`, payload: { kind: 'lead', refId: 1 } })).statusCode, 400);
+
+  const back = (await anna({ url: `/admin/api/linked-tasks?kind=mediaplan&ref=${mpId}` })).json().tasks;
+  assert.deepEqual(back.map((t) => [t.title, t.client_name]), [['Создание МП', 'Таллер']]);
+
+  db.raw.prepare('DELETE FROM mediaplans WHERE id = ?').run(mpId);
+  assert.deepEqual((await anna({ url: `/admin/api/tasks/${task.id}` })).json().task.links, [], 'удалённый медиаплан пропадает из связей');
+  const linkId = db.raw.prepare('SELECT id FROM task_links').get().id;
+  assert.deepEqual((await anna({ method: 'DELETE', url: `/admin/api/tasks/${task.id}/links/${linkId}` })).json().links, []);
 });

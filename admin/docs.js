@@ -530,6 +530,7 @@ export async function renderDoc(params) {
   const qaBox = h('section', { class: 'qa', 'aria-live': 'polite' });
   const exportsBox = h('section', { class: 'exports' });
 
+  const linkedBar = (await import('./tasks.js')).linkedTasksBar('document', doc.id);
   fill(app, 
     ...shell('docs', [
       h(
@@ -543,6 +544,7 @@ export async function renderDoc(params) {
         h('div', { class: 'btn-group', role: 'group', 'aria-label': 'Скачать' }, h('span', { class: 'group-label' }, 'Скачать'), exportBtns),
         more,
       ),
+      linkedBar,
       h(
         'div',
         { class: 'editor' },

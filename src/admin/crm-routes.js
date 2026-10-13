@@ -2,7 +2,7 @@
 // задачи команды и комментарии.
 // Подключается внутри авторизованной части админки (req.user уже есть).
 
-import { CrmError, PRIORITIES, COLUMN_COLORS } from '../crm/store.js';
+import { CrmError, PRIORITIES, COLUMN_COLORS, LINK_KINDS } from '../crm/store.js';
 import { leadValues } from '../docs/library.js';
 
 const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
@@ -175,6 +175,31 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
     crm.deleteTask(req.params.id, req.user);
     return { ok: true };
   });
+
+  // связи задачи с медиапланом, документом, встречей
+  api.post(
+    '/admin/api/tasks/:id/links',
+    {
+      schema: {
+        params: idParams,
+        body: { type: 'object', required: ['kind', 'refId'], additionalProperties: false, properties: { kind: { type: 'string', enum: Object.keys(LINK_KINDS) }, refId: { type: 'integer' } } },
+      },
+    },
+    async (req) => ({ links: crm.linkTask(req.params.id, req.body, req.user) }),
+  );
+
+  api.delete(
+    '/admin/api/tasks/:id/links/:linkId',
+    { schema: { params: { type: 'object', properties: { id: { type: 'integer' }, linkId: { type: 'integer' } } } } },
+    async (req) => ({ links: crm.unlinkTask(req.params.id, req.params.linkId) }),
+  );
+
+  // обратная связь: к каким задачам относится медиаплан, документ или встреча
+  api.get(
+    '/admin/api/linked-tasks',
+    { schema: { querystring: { type: 'object', required: ['kind', 'ref'], properties: { kind: { type: 'string', enum: Object.keys(LINK_KINDS) }, ref: { type: 'integer' } } } } },
+    async (req) => ({ tasks: crm.linkedTasks(req.query.kind, req.query.ref) }),
+  );
 
   api.post(
     '/admin/api/tasks/:id/comments',

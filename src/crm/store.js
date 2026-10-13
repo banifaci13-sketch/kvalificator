@@ -24,6 +24,8 @@ export const DEFAULT_COLUMNS = [
   { name: 'Готово', color: 'green', isDone: true },
 ];
 const LIMITS = { boards: 20, columns: 12 };
+// что можно привязать к задаче — результат работы по ней
+export const LINK_KINDS = { mediaplan: 'Медиаплан', document: 'Документ', meeting: 'Встреча' };
 
 // Выполненные задачи на доске — только недавние, чтобы колонки не разрастались
 const DONE_DAYS = 14;
@@ -90,6 +92,30 @@ export function createCrm({ db }) {
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
     comments: db.prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY id'),
+    // связи задачи: название берётся из самого медиаплана, документа или встречи; удалённые не показываются
+    links: db.prepare(
+      `SELECT l.id, l.kind, l.ref_id,
+              COALESCE(mp.title, d.title, m.title) AS title, m.starts_at AS starts_at
+       FROM task_links l
+       LEFT JOIN mediaplans mp ON l.kind = 'mediaplan' AND mp.id = l.ref_id
+       LEFT JOIN documents d ON l.kind = 'document' AND d.id = l.ref_id
+       LEFT JOIN meetings m ON l.kind = 'meeting' AND m.id = l.ref_id
+       WHERE l.task_id = ? AND COALESCE(mp.id, d.id, m.id) IS NOT NULL ORDER BY l.id`,
+    ),
+    addLink: db.prepare('INSERT OR IGNORE INTO task_links (task_id, kind, ref_id) VALUES (?, ?, ?)'),
+    link: db.prepare('SELECT * FROM task_links WHERE id = ? AND task_id = ?'),
+    deleteLink: db.prepare('DELETE FROM task_links WHERE id = ?'),
+    linkedTasks: db.prepare(
+      `SELECT t.id, t.title, t.status, t.due, t.due_time, t.client_id, c.name AS client_name, u.name AS assignee_name
+       FROM task_links l JOIN tasks t ON t.id = l.task_id
+       LEFT JOIN clients c ON c.id = t.client_id LEFT JOIN admin_users u ON u.id = t.assignee_id
+       WHERE l.kind = ? AND l.ref_id = ? ORDER BY t.id`,
+    ),
+    refExists: {
+      mediaplan: db.prepare('SELECT title FROM mediaplans WHERE id = ?'),
+      document: db.prepare('SELECT title FROM documents WHERE id = ?'),
+      meeting: db.prepare('SELECT title FROM meetings WHERE id = ?'),
+    },
     addComment: db.prepare('INSERT INTO task_comments (task_id, kind, text, author) VALUES (?, ?, ?, ?)'),
   };
 
@@ -386,6 +412,17 @@ export function createCrm({ db }) {
     return getTask(id);
   }
 
+  /** Привязать к задаче медиаплан, документ или встречу; событие пишется в историю задачи. */
+  function linkTask(taskId, { kind, refId }, user) {
+    const t = getTask(taskId);
+    if (!(kind in LINK_KINDS)) throw new CrmError('Неизвестный вид связи');
+    const ref = q.refExists[kind].get(Number(refId));
+    if (!ref) throw new CrmError(`${LINK_KINDS[kind]} не найден`);
+    const { changes } = q.addLink.run(t.id, kind, Number(refId));
+    if (changes) q.addComment.run(t.id, 'event', `${LINK_KINDS[kind]}: «${ref.title}»`, user.name);
+    return q.links.all(t.id);
+  }
+
   function listTasks({ boardId = null, clientId = null, assigneeId = null, mine = null, q: search = '', open = false } = {}) {
     const where = [open ? "t.status != 'done'" : `(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
     const params = [];
@@ -417,7 +454,8 @@ export function createCrm({ db }) {
         `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.created_by_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
                 c.name AS client_name, u.name AS assignee_name,
                 col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
-                (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments
+                (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments,
+                (SELECT COUNT(*) FROM task_links l WHERE l.task_id = t.id) AS links
          ${TASK_JOINS}
          WHERE ${where.join(' AND ')}
          ORDER BY t.status = 'done', t.priority DESC, t.due IS NULL, t.due, t.due_time IS NULL, t.due_time, t.id DESC LIMIT 500`,
@@ -444,7 +482,19 @@ export function createCrm({ db }) {
     },
     clientTasks: (id) => listTasks({ clientId: id }),
     listTasks,
-    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)) }),
+    getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)) }),
+    linkTask,
+    unlinkTask: (taskId, linkId) => {
+      const l = q.link.get(Number(linkId), Number(taskId));
+      if (!l) throw new CrmError('Связь не найдена');
+      q.deleteLink.run(l.id);
+      return q.links.all(Number(taskId));
+    },
+    /** Задачи, к которым привязан медиаплан, документ или встреча. */
+    linkedTasks: (kind, refId) => {
+      if (!(kind in LINK_KINDS)) throw new CrmError('Неизвестный вид связи');
+      return q.linkedTasks.all(kind, Number(refId));
+    },
     createTask,
     updateTask,
     deleteTask: (id, user) => {
