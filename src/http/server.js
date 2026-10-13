@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { resolve } from 'node:path';
 import { AnswerError, SessionError } from '../core/qualifier.js';
+import { adminRoutes } from '../admin/routes.js';
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'yclid', 'gclid'];
 
@@ -15,6 +16,8 @@ const metaSchema = {
   properties: {
     page: { type: 'string', maxLength: 500 },
     referrer: { type: 'string', maxLength: 500 },
+    // Тестовый опрос (ссылка из админки): лид помечается и не уходит менеджерам
+    test: { type: 'boolean' },
     utm: {
       type: 'object',
       additionalProperties: false,
@@ -39,7 +42,8 @@ const sessionParams = {
   properties: { id: { type: 'string', format: 'uuid' } },
 };
 
-export async function buildServer({ config, qualifier, logger }) {
+/** admin — зависимости админки ({ auth, reports, db, scenarioSource }); без них админка не подключается. */
+export async function buildServer({ config, qualifier, logger, admin }) {
   const app = Fastify({
     ...(logger ? { loggerInstance: logger } : { logger: false }),
     trustProxy: config.trustProxy,
@@ -119,6 +123,11 @@ export async function buildServer({ config, qualifier, logger }) {
       }
     },
   );
+
+  if (admin) {
+    await app.register(adminRoutes, { config, ...admin });
+    app.get('/admin', (req, reply) => reply.redirect('/admin/'));
+  }
 
   return app;
 }

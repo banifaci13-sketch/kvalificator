@@ -15,13 +15,20 @@ export function createNotifier(config) {
     });
   }
   if (config.webhook.url) targets.webhook = createWebhookNotifier(config.webhook);
-  if (!Object.keys(targets).length) return null;
+  // Тестовые лиды — только в тестовый чат (если он задан), не менеджерам и не в CRM
+  const testTargets = {};
+  if (config.telegram.token && config.telegram.testChatId) {
+    testTargets.telegramTest = createTelegramNotifier({ token: config.telegram.token, chatId: config.telegram.testChatId });
+  }
+  if (!Object.keys(targets).length && !Object.keys(testTargets).length) return null;
 
   return {
     targets: Object.keys(targets),
     /** @returns {Promise<{delivered: string[], errors: Error[]}>} */
     async notifyLead(lead, scenario, alreadyDelivered = []) {
-      const pending = Object.entries(targets).filter(([name]) => !alreadyDelivered.includes(name));
+      const pending = Object.entries(lead.is_test ? testTargets : targets).filter(
+        ([name]) => !alreadyDelivered.includes(name),
+      );
       const results = await Promise.allSettled(pending.map(([, t]) => t.notifyLead(lead, scenario)));
       const delivered = [...alreadyDelivered];
       const errors = [];

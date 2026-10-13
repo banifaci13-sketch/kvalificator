@@ -111,16 +111,38 @@ npm test
 
 Если таблица заполнена с ошибкой, сервер продолжит работать на прежней версии вопросов и запишет причину в лог.
 
+## Админка
+
+`https://ДОМЕН/admin/` — рабочее место менеджеров:
+
+- **Лиды** — список с фильтрами (период, рейтинг, статус, канал, поиск по компании и контактам), выгрузка в Excel.
+- **Воронка** — канбан по статусам: Новый → В работе → КП отправлено → Сделка / Отказ / Спам. Карточки перетаскиваются.
+- **Карточка лида** — почему такой рейтинг, все ответы, источник и UTM, статус, ответственный, комментарий, история изменений.
+- **Сводка** — лиды по дням с разбивкой по рейтингу, доля горячих, сколько дошли до конца опроса и на каком вопросе уходят.
+- **Тест** — тестовый опрос в виджете и в Telegram. Тестовые лиды помечаются, не смешиваются с рабочими и не уходят менеджерам и в CRM; их карточки можно получать в отдельный чат (`TELEGRAM_TEST_CHAT_ID`).
+
+**Вход** — через Яндекс ID или по паролю.
+
+1. Создайте приложение на [oauth.yandex.ru](https://oauth.yandex.ru/client/new): платформа «Веб-сервисы», Redirect URI `https://ДОМЕН/admin/auth/yandex/callback`, доступы «Адрес электронной почты» и «Логин, имя и фамилия». ClientID и Client secret — в `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET`.
+2. Пускаем только своих: сотрудника нужно добавить по почте (`npm run admin -- add почта "Имя"`) или разрешить весь домен компании (`ADMIN_ALLOWED_DOMAINS=soroka-marketing.ru`).
+3. Управление: `npm run admin -- list | add | passwd | disable | enable`. Отключённый сотрудник сразу теряет доступ.
+
 ## Развёртывание
 
-Для 152-ФЗ сервер должен стоять в РФ (Timeweb, Selectel, Yandex Cloud и т.п.):
+Нужен сервер в РФ (152-ФЗ) с Ubuntu 22.04/24.04, 2–4 ГБ памяти, и домен с A-записью на IP сервера.
 
 ```bash
-docker build -t soroka-kval .
-docker run -d --restart=always -p 3000:3000 --env-file .env -v kval-data:/app/data soroka-kval
+git clone https://github.com/banifaci13-sketch/kvalificator.git && cd kvalificator
+sudo bash deploy/install.sh
 ```
 
-Перед сервером поставьте nginx с HTTPS (поддомен, например `kval.soroka-marketing.ru`) и укажите `TRUST_PROXY=true`. В `ALLOWED_ORIGINS` перечислите домены сайта. База данных — файл `data/kvalificator.db`, его нужно регулярно бэкапить.
+Установщик ставит Docker, спрашивает настройки (домен, почту для админки, Telegram, Яндекс ID), запускает квалификатор за Caddy с автоматическим HTTPS, создаёт первого сотрудника и печатает его пароль, настраивает ежедневный бэкап базы (14 копий в `data/backups`) и проверяет настройки.
+
+- Обновление: `sudo bash deploy/update.sh` (сначала бэкап, потом `git pull` и перезапуск).
+- Docker Hub с российских серверов недоступен — образы берутся с зеркала `mirror.gcr.io`. Другое зеркало: `NODE_IMAGE` и `CADDY_IMAGE` в `.env`.
+- Репозиторий приватный: для `git clone` на сервере нужен токен GitHub с доступом только на чтение или deploy key.
+
+Без Docker: Node.js 22.13+, `npm ci --omit=dev`, `npm start` под systemd и любой обратный прокси с HTTPS.
 
 ## Структура
 
@@ -132,6 +154,9 @@ docker run -d --restart=always -p 3000:3000 --env-file .env -v kval-data:/app/da
 | `src/http/server.js` | API виджета |
 | `src/channels/telegram.js` | Telegram-бот: опрос клиента, «Взять в работу» для менеджеров |
 | `scripts/check.js` | Проверка настроек (`npm run check`) |
+| `src/admin/`, `admin/` | Админка: вход (Яндекс ID, пароль), API, интерфейс |
+| `scripts/admin.js`, `scripts/backup.js` | Сотрудники админки, бэкап базы |
+| `deploy/` | Установка и обновление на сервере (Docker + Caddy) |
 | `src/notify/` | Telegram-карточка, вебхук в CRM |
 | `src/storage/db.js` | SQLite: сессии и лиды |
 | `widget/widget.js` | Виджет (без зависимостей, Shadow DOM — не конфликтует со стилями сайта) |

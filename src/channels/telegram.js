@@ -14,6 +14,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
 
   dm.command('start', async (ctx) => {
     const code = ctx.match.trim();
+    // Ссылка t.me/бот?start=test из админки — тестовый опрос, лид не уходит менеджерам
+    if (code === 'test') return startNew(ctx, { test: true });
     if (code) {
       const session = qualifier.claimHandoff(code, CHANNEL, ctx.from.id, profileMeta(ctx.from));
       if (session) {
@@ -72,12 +74,13 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     return ask(ctx, qualifier.resume(session));
   });
 
-  async function startNew(ctx) {
+  async function startNew(ctx, { test = false } = {}) {
     const { reply } = qualifier.startSession({
       channel: CHANNEL,
       channelUserId: ctx.from.id,
-      meta: profileMeta(ctx.from),
+      meta: { ...profileMeta(ctx.from), ...(test ? { test: true } : {}) },
     });
+    if (test) await ctx.reply('🧪 Тестовый опрос: заявка не попадёт к менеджерам.');
     await ctx.reply(reply.intro, { reply_markup: { remove_keyboard: true } });
     return ask(ctx, reply);
   }

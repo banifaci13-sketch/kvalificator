@@ -71,6 +71,8 @@
       if (v) utm[k] = v.slice(0, 200);
     });
     if (Object.keys(utm).length) meta.utm = utm;
+    // Тестовый опрос из админки (?kval_test=1): лид помечается и не уходит менеджерам
+    if (params.get('kval_test') === '1' || ds.test === 'true') meta.test = true;
     return meta;
   }
 

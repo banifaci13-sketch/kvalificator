@@ -13,10 +13,13 @@
     "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
     "scenario:csv": "node scripts/scenario-to-csv.js > config/scenario-template.csv",
-    "check": "node --disable-warning=ExperimentalWarning scripts/check.js"
+    "check": "node --disable-warning=ExperimentalWarning scripts/check.js",
+    "admin": "node --disable-warning=ExperimentalWarning scripts/admin.js",
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js"
   },
   "license": "UNLICENSED",
   "dependencies": {
+    "@fastify/cookie": "^11.1.3",
     "@fastify/cors": "^11.3.1",
     "@fastify/rate-limit": "^11.2.1",
     "@fastify/static": "^10.1.6",
