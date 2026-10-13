@@ -1,7 +1,7 @@
 // Раздел «Документы»: список, создание из шаблона, редактор слайдов с превью, проверка и выгрузка; шаблоны.
 // Формы редактора строятся по описанию полей с сервера (/admin/api/slide-types).
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog } from './admin.js';
 
 const FORMATS = [
   ['pptx', 'PowerPoint'],
@@ -270,7 +270,7 @@ export async function renderDocs(params) {
       h(
         'table',
         { class: 'leads docs' },
-        h('thead', {}, h('tr', {}, ['Название', 'Шаблон', 'Слайдов', 'Выгрузок', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)))),
+        h('thead', {}, h('tr', {}, ['Название', 'Шаблон', 'Слайдов', 'Выгрузок', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)), h('th', { scope: 'col' }, h('span', { class: 'sr-only' }, 'Действия')))),
         h(
           'tbody',
           {},
@@ -289,6 +289,20 @@ export async function renderDocs(params) {
               h('td', { class: 'num' }, d.slides),
               h('td', { class: 'num' }, d.exports || h('span', { class: 'muted' }, '—')),
               h('td', { class: 'num nowrap' }, fmtDateTime(d.updated_at), h('span', { class: 'task' }, d.updated_by)),
+              rowActions({
+                name: d.title,
+                onCopy: async () => {
+                  const { document: copy } = await api(`/admin/api/documents/${d.id}/copy`, { method: 'POST', body: {} });
+                  toast(`Создана копия «${copy.title}»`);
+                  rerender();
+                },
+                onDelete: async () => {
+                  if (!(await confirmDialog(`Удалить документ «${d.title}» вместе с историей выгрузок?`))) return;
+                  await api(`/admin/api/documents/${d.id}`, { method: 'DELETE' });
+                  toast('Документ удалён');
+                  rerender();
+                },
+              }),
             );
           }),
         ),
@@ -384,15 +398,26 @@ function createPanel(templates, preselect, onCancel) {
     const count = h('select', { class: 'select', id: 'ai-count' }, [6, 8, 10, 12].map((n) => h('option', { value: n, selected: n === 8 }, `${n} слайдов`)));
     const lead = h('select', { class: 'select', id: 'ai-lead' }, h('option', { value: '' }, 'Без заявки'));
     const brief = h('textarea', {
-      class: 'textarea', id: 'ai-brief', rows: 6, maxlength: 6000,
-      placeholder: 'Что за клиент и задача, что предлагаем, какие цифры уже известны (бюджет, текущие заявки, цели), сроки. Названия и контакты можно не писать — подставим сами.',
+      class: 'textarea', id: 'ai-brief', rows: 7, maxlength: 6000,
+      placeholder: 'Пишите как коллеге: что за бизнес и задача, что предлагаем (каналы, услуги), что уже известно — бюджет, текущие заявки, цели, сроки. Можно и пожелания к документу: «акцент на маркетплейсы», «без SEO», «сделай слайд про риски».',
+    });
+    const clientList = h('datalist', { id: 'ai-clients' });
+    const client = h('input', { class: 'input', id: 'ai-client', maxlength: 200, list: 'ai-clients', placeholder: 'Например, Юнистрим', autocomplete: 'off' });
+    api('/admin/api/clients').then((d) => fill(clientList, (d.clients ?? []).map((c) => h('option', { value: c.name })))).catch(() => {});
+    // клиент из списка, упомянутый в брифе, — подставим сами, если поле пустое
+    brief.addEventListener('blur', () => {
+      if (client.value.trim()) return;
+      const text = brief.value.toLowerCase();
+      const hit = [...clientList.options].map((o) => o.value).find((name) => name.length > 2 && text.includes(name.toLowerCase().replace(/^(ооо|ип|ао|пао|зао)\s+/, '').replace(/[«»"]/g, '')));
+      if (hit) client.value = hit;
     });
     const title = h('input', { class: 'input', id: 'ai-title', maxlength: 200, placeholder: 'Предложит ИИ' });
     fill(
       fields,
       h('div', { class: 'field' }, h('label', { for: 'ai-kind' }, 'Что готовим'), kind),
       h('div', { class: 'field' }, h('label', { for: 'ai-lead' }, 'Заявка клиента'), lead, h('span', { class: 'hint' }, 'Ответы квалификатора уйдут в ИИ без названия компании и контактов.')),
-      h('div', { class: 'field full' }, h('label', { for: 'ai-brief' }, 'Бриф'), brief),
+      h('div', { class: 'field' }, h('label', { for: 'ai-client' }, 'Клиент'), client, clientList, h('span', { class: 'hint' }, 'Подставим в документ сами; в ИИ название не уходит.')),
+      h('div', { class: 'field full' }, h('label', { for: 'ai-brief' }, 'Задание для ИИ (бриф)'), brief, h('span', { class: 'hint' }, 'ИИ строит документ по этому тексту. Чем конкретнее задача, тем точнее черновик; цифр, которых здесь нет, он не придумает — оставит «[заполнить]».')),
       h('div', { class: 'field' }, h('label', { for: 'ai-count' }, 'Объём'), count),
       h('div', { class: 'field' }, h('label', { for: 'ai-title' }, 'Название документа'), title),
       h('p', { class: 'hint' }, `Черновик соберёт ${aiInfo.provider === 'yandexgpt' ? 'YandexGPT' : 'Claude'}. Это займёт до минуты; дальше правьте в редакторе как обычно.`),
@@ -406,6 +431,7 @@ function createPanel(templates, preselect, onCancel) {
         const body = { kind: kind.value, brief: brief.value.trim(), slides: Number(count.value) };
         if (lead.value) body.leadId = Number(lead.value);
         if (title.value.trim()) body.title = title.value.trim();
+        if (client.value.trim()) body.client = client.value.trim();
         const res = await api('/admin/api/ai/draft', { method: 'POST', body });
         navigate('doc', new URLSearchParams({ id: String(res.document.id) }));
         toast(res.replaced ? `Черновик готов. Цифр без источника: ${res.replaced} — помечены «[заполнить]»` : 'Черновик готов — проверьте и доработайте');
@@ -419,8 +445,12 @@ function createPanel(templates, preselect, onCancel) {
     leads ??= api('/admin/api/leads').then((d) => d.leads).catch(() => []);
     for (const l of await leads) {
       const company = l.answers.company?.raw ?? l.answers.company ?? 'Без названия';
-      lead.append(h('option', { value: l.id }, `#${l.id} ${company}${l.is_test ? ' (тест)' : ''}`));
+      lead.append(h('option', { value: l.id, dataset: { company } }, `#${l.id} ${company}${l.is_test ? ' (тест)' : ''}`));
     }
+    lead.addEventListener('change', () => {
+      const company = lead.selectedOptions[0]?.dataset.company;
+      if (company && company !== 'Без названия' && !client.value.trim()) client.value = company;
+    });
   }
 
   const form = h(
@@ -632,8 +662,8 @@ export async function renderDoc(params) {
     renderForm();
   }
 
-  function deleteSlide() {
-    if (!confirm(`Удалить слайд ${current + 1} «${slides[current].title || typeLabel(slides[current].type)}»?`)) return;
+  async function deleteSlide() {
+    if (!(await confirmDialog(`Удалить слайд ${current + 1} «${slides[current].title || typeLabel(slides[current].type)}»?`))) return;
     slides.splice(current, 1);
     current = Math.max(0, Math.min(current, slides.length - 1));
     changed();
@@ -1183,7 +1213,7 @@ export async function renderDoc(params) {
   }
 
   async function removeDoc() {
-    if (!confirm(`Удалить «${doc.title}» вместе с историей выгрузок? Это не отменить.`)) return;
+    if (!(await confirmDialog(`Удалить «${doc.title}» вместе с историей выгрузок? Это не отменить.`))) return;
     try {
       clearTimeout(timer);
       dirty = false;
@@ -1255,7 +1285,7 @@ export async function renderTemplates() {
             : h('button', {
                 type: 'button', class: 'btn',
                 onclick: async () => {
-                  if (!confirm(`Удалить шаблон «${t.name}»? Созданные по нему документы останутся.`)) return;
+                  if (!(await confirmDialog(`Удалить шаблон «${t.name}»? Созданные по нему документы останутся.`))) return;
                   try {
                     await api(`/admin/api/templates/${encodeURIComponent(t.id)}`, { method: 'DELETE' });
                     toast('Шаблон удалён');

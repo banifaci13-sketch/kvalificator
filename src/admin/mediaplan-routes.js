@@ -59,6 +59,11 @@ export async function mediaplanRoutes(api, { mediaplans, brand }) {
     mediaplan: mediaplans.update(req.params.id, req.body, req.user.name),
   }));
 
+  api.post('/admin/api/mediaplans/:id/copy', { schema: { params: idParams } }, async (req) => {
+    const p = mediaplans.get(req.params.id);
+    return { mediaplan: mediaplans.create({ title: `${p.title} (копия)`.slice(0, 200), client: p.client, leadId: p.lead_id ?? null, spec: p.spec }, req.user.name) };
+  });
+
   api.delete('/admin/api/mediaplans/:id', { schema: { params: idParams } }, async (req) => {
     mediaplans.remove(req.params.id);
     return { ok: true };

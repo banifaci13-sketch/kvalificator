@@ -102,10 +102,56 @@ const plural = (n, one, few, many) => {
   return many;
 };
 
-function toast(text) {
-  const el = h('div', { class: 'toast', role: 'status' }, text);
-  document.body.append(el);
-  setTimeout(() => el.remove(), 2600);
+// Уведомления внизу экрана: несколько подряд встают стопкой; ошибки — красным и держатся дольше
+const TOAST_ERROR = /^(не |нет |ошибка|слишком|недостаточно|нельзя|невозможно|укажите|нужн|файл больше|сначала)|не удалось|не получилось|не найден/i;
+function toast(text, { type = TOAST_ERROR.test(String(text)) ? 'error' : 'ok' } = {}) {
+  let stack = document.querySelector('.toasts');
+  if (!stack) {
+    stack = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' });
+    document.body.append(stack);
+  }
+  const close = () => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 200);
+  };
+  const el = h(
+    'div',
+    { class: `toast toast-${type}` },
+    h('span', { class: 'toast-mark', 'aria-hidden': 'true' }, type === 'error' ? '!' : '✓'),
+    h('span', { class: 'toast-text' }, text),
+    h('button', { type: 'button', class: 'toast-close', 'aria-label': 'Закрыть', onclick: close }, '×'),
+  );
+  stack.append(el);
+  while (stack.children.length > 3) stack.firstElementChild.remove();
+  setTimeout(close, type === 'error' ? 6000 : 3200);
+}
+
+/**
+ * Подтверждение в стиле кабинета вместо системного confirm(). Возвращает true или false.
+ * Кнопка и заголовок берутся из первого слова вопроса («Удалить …?» → «Удалить»).
+ */
+function confirmDialog(text, { title = null, ok = null, danger = null } = {}) {
+  const verb = /^([А-ЯЁ][а-яё]+)/.exec(String(text))?.[1] ?? 'Продолжить';
+  const isDanger = danger ?? /^(Удалить|Сбросить|Очистить|Отключить|Отменить)/.test(verb);
+  return new Promise((resolve) => {
+    let answer = false;
+    const yes = h('button', { type: 'button', class: `btn ${isDanger ? 'btn-danger' : 'btn-primary'}`, onclick: () => ((answer = true), dlg.close()) }, ok ?? verb);
+    const no = h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Отмена');
+    const dlg = h(
+      'dialog',
+      { class: `dialog confirm-dialog${isDanger ? ' is-danger' : ''}`, 'aria-labelledby': 'cf-title', 'aria-describedby': 'cf-text' },
+      h('div', { class: 'confirm-icon', 'aria-hidden': 'true' }, icon(isDanger ? 'trash' : 'system')),
+      h('div', { class: 'confirm-body' }, h('h2', { id: 'cf-title' }, title ?? (isDanger ? `${verb}?` : 'Подтвердите действие')), h('p', { id: 'cf-text' }, text)),
+      h('div', { class: 'confirm-actions' }, no, yes),
+    );
+    dlg.addEventListener('close', () => {
+      dlg.remove();
+      resolve(answer);
+    });
+    document.body.append(dlg);
+    dlg.showModal();
+    yes.focus();
+  });
 }
 
 function stepOf(id) {
@@ -226,6 +272,7 @@ const ICONS = {
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   up: 'M12 19V5M6 11l6-6 6 6',
+  copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
   down: 'M12 5v14M6 13l6 6 6-6',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   docs: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6',
@@ -251,6 +298,27 @@ function icon(name) {
 function initials(name = '') {
   return String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 }
+/** Кнопки в строке таблицы: скопировать и удалить. Щелчок по ним не открывает строку. */
+function rowActions({ name, onCopy, onDelete }) {
+  const btn = (title, iconName, fn, cls = '') =>
+    h('button', {
+      type: 'button', class: `icon-btn row-btn ${cls}`, title, 'aria-label': `${title}: ${name}`,
+      onclick: async (e) => {
+        e.stopPropagation();
+        const b = e.currentTarget;
+        b.disabled = true;
+        try {
+          await fn();
+        } catch (err) {
+          toast(err.message);
+        } finally {
+          b.disabled = false;
+        }
+      },
+    }, icon(iconName));
+  return h('td', { class: 'row-btns' }, h('div', {}, onCopy ? btn('Скопировать', 'copy', onCopy) : null, onDelete ? btn('Удалить', 'trash', onDelete, 'danger') : null));
+}
+
 /** Кружок сотрудника: фото профиля, если загружено, иначе инициалы. */
 function userAvatar(u, cls = '') {
   const ver = u?.id != null ? ctx.avatars?.[u.id] : null;
@@ -1217,8 +1285,8 @@ async function renderStaff() {
             h('button', { type: 'button', class: 'btn', onclick: () => editUser(u, self) }, 'Изменить'),
             h('button', {
               type: 'button', class: 'btn',
-              onclick: () => {
-                if (!confirm(`Сбросить пароль ${u.login}? Старый перестанет работать, сотрудник выйдет со всех устройств.`)) return;
+              onclick: async () => {
+                if (!(await confirmDialog(`Сбросить пароль ${u.login}? Старый перестанет работать, сотрудник выйдет со всех устройств.`))) return;
                 act(async () => {
                   const res = await api(`/admin/api/users/${u.id}/reset-password`, { method: 'POST', body: {} });
                   notice.replaceChildren(passwordNotice(u.login, res.password, `Новый пароль для «${u.name}».`));
@@ -1233,8 +1301,8 @@ async function renderStaff() {
             u.disabled && !self
               ? h('button', {
                   type: 'button', class: 'btn',
-                  onclick: () => {
-                    if (!confirm(`Удалить ${u.login} насовсем? Если за сотрудником есть задачи или встречи, удалить не получится — тогда оставьте его отключённым.`)) return;
+                  onclick: async () => {
+                    if (!(await confirmDialog(`Удалить ${u.login} насовсем? Если за сотрудником есть задачи или встречи, удалить не получится — тогда оставьте его отключённым.`))) return;
                     act(async () => {
                       await api(`/admin/api/users/${u.id}`, { method: 'DELETE' });
                       toast('Сотрудник удалён');
@@ -1594,6 +1662,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, renderRoute as rerender };
+export { h, api, app, shell, toast, confirmDialog, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
 
 boot();

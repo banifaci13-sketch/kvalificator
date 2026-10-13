@@ -977,7 +977,37 @@ details.menu summary::-webkit-details-marker { display: none; }
 .ai-notice p { margin: 0; }
 .ai-off { min-width: 300px; padding: 0; }
 .ai-off .ai-notice { border-radius: var(--radius-s); }
-.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
+/* уведомления внизу экрана — в стиле кабинета, стопкой */
+.toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 90; display: grid; gap: 8px; width: min(440px, calc(100% - 32px)); pointer-events: none; }
+.toast {
+  pointer-events: auto; display: grid; grid-template-columns: 24px minmax(0, 1fr) 24px; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 12px; border-radius: var(--radius-m); background: var(--brand); color: var(--on-brand);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); box-shadow: var(--shadow); font-size: 14px; line-height: 1.4;
+  animation: toast-in .2s ease-out;
+}
+.toast-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 800; }
+.toast-error { border-color: color-mix(in srgb, #E5484D 55%, transparent); }
+.toast-error .toast-mark { background: #E5484D; color: #fff; }
+.toast-close { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--on-brand-muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.toast-close:hover { color: var(--on-brand); background: rgba(243, 246, 247, .1); }
+.toast.out { opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.out { transition: none; } }
+
+/* подтверждение действия вместо системного окна браузера */
+.confirm-dialog { width: min(440px, calc(100% - 32px)); display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 14px; padding: 22px 22px 18px; }
+.confirm-dialog[open] { animation: confirm-in .16s ease-out; }
+.confirm-icon { grid-row: span 2; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); }
+.confirm-icon .icon { width: 22px; height: 22px; }
+.confirm-dialog.is-danger .confirm-icon { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
+.confirm-body h2 { margin: 2px 0 6px; font-size: 18px; }
+.confirm-body p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.confirm-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover:not([disabled]) { background: color-mix(in srgb, var(--danger) 86%, #000); border-color: color-mix(in srgb, var(--danger) 86%, #000); color: #fff; }
+:root[data-theme="dark"] .btn-danger { color: #1B0B0A; }
+@keyframes confirm-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .confirm-dialog[open] { animation: none; } }
 
 /* ---------- мобильные ---------- */
 /* Планшет и телефон: боковая панель становится шапкой, разделы листаются */
@@ -1371,3 +1401,10 @@ img.avatar { object-fit: cover; padding: 0; background: var(--surface-3); }
 .notif.unread .notif-text .muted { font-weight: 400; }
 @media (max-width: 1100px) { .home-grid { grid-template-columns: minmax(0, 1fr); } .home-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home-hero { padding: 18px; } .home-hello h1 { font-size: 23px; } .home-task { grid-template-columns: auto minmax(0, 1fr) auto !important; } .home-task > :nth-child(3) { display: none; } .home-load { grid-template-columns: 26px minmax(0, 1fr) 24px 24px 24px !important; } .home-load .home-bar { display: none; } }
+
+/* кнопки «скопировать» и «удалить» в строках таблиц */
+td.row-btns { width: 1%; padding-left: 4px; padding-right: 8px; }
+td.row-btns > div { display: flex; gap: 2px; justify-content: flex-end; }
+.row-btn .icon { width: 17px; height: 17px; }
+.row-btn.danger:hover:not([disabled]) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+tr:not(:hover) .row-btn:not(:focus-visible) { opacity: .55; }

@@ -76,9 +76,15 @@ export function extractJson(text) {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) throw new AiError('ИИ ответил не в том формате — попробуйте ещё раз');
+  const body = text.slice(start, end + 1);
   try {
-    return JSON.parse(text.slice(start, end + 1));
+    return JSON.parse(body);
   } catch {
-    throw new AiError('ИИ ответил не в том формате — попробуйте ещё раз');
+    // частые огрехи моделей: запятая перед скобкой, «умные» кавычки вокруг ключей
+    try {
+      return JSON.parse(body.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"'));
+    } catch {
+      throw new AiError('ИИ ответил не в том формате — попробуйте ещё раз');
+    }
   }
 }

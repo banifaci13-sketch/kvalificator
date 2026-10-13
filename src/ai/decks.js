@@ -254,11 +254,23 @@ ${RULES}
 Формат ответа: {"title": "название документа", "slides": [{"type": "...", ...поля}, ...]}. Первый слайд — cover, последний — closing.`;
   const user = `Документ: ${KINDS[kind] ?? KINDS.other}. Слайдов: около ${count}.
 ${factsText ? `\nДанные из заявки клиента:\n${factsText}\n` : ''}
-Бриф менеджера:
-${briefText || '(пусто — опирайся на данные заявки)'}`;
+Бриф менеджера — главный источник:
+${briefText || '(пусто — опирайся на данные заявки)'}
 
-  const { text } = await ai.complete({ system, user, maxTokens: 6000 });
-  const raw = extractJson(text);
+Каждый слайд должен отвечать именно на этот бриф: продукт и задача клиента, аудитория, каналы, цели, ограничения и пожелания менеджера — его словами и терминами. Не подменяй бриф общими словами об агентстве. Если менеджер просит определённую структуру, тон или акценты — выполни это.`;
+
+  // модель иногда обрывает или портит JSON — одна повторная попытка с напоминанием о формате
+  let raw;
+  for (let attempt = 0; ; attempt++) {
+    const { text } = await ai.complete({ system, user: attempt ? `${user}\n\nВажно: ответ — строго валидный JSON, без пояснений и комментариев.` : user, maxTokens: 6000 });
+    try {
+      raw = extractJson(text);
+      if (!Array.isArray(raw.slides) || raw.slides.length < 2) throw new AiError('ИИ не смог собрать слайды — уточните бриф и попробуйте ещё раз');
+      break;
+    } catch (err) {
+      if (attempt >= 1) throw err;
+    }
+  }
   const list = (Array.isArray(raw.slides) ? raw.slides : []).map(cleanSlide).filter(Boolean).slice(0, MAX_SLIDES);
   if (list.length < 2) throw new AiError('ИИ не смог собрать слайды — уточните бриф и попробуйте ещё раз');
   const allowed = allowedNumbers(briefText, factsText);

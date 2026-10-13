@@ -180,6 +180,8 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource, medi
     async (req) => ({ document: library.updateDocument(req.params.id, req.body, req.user.name) }),
   );
 
+  api.post('/admin/api/documents/:id/copy', { schema: { params: idParams } }, async (req) => ({ document: library.copyDocument(req.params.id, req.user.name) }));
+
   api.delete('/admin/api/documents/:id', { schema: { params: idParams } }, async (req) => {
     library.deleteDocument(req.params.id);
     return { ok: true };

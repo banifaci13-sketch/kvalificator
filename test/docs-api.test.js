@@ -120,3 +120,13 @@ test('свой шаблон из документа сохраняет подп�
   assert.equal(replaced.json().template.variables.find((v) => v.key === 'client').label, 'Клиент');
   assert.equal((await req({ method: 'DELETE', url: '/admin/api/templates/builtin:kp' })).statusCode, 400);
 });
+
+test('копия документа: те же слайды и шаблон', async () => {
+  const { as } = await setup();
+  const req = await as('anna');
+  const doc = (await req({ method: 'POST', url: '/admin/api/documents', payload: { templateId: 'builtin:kp', values: { client: 'Таллер' } } })).json().document;
+  const copy = (await req({ method: 'POST', url: `/admin/api/documents/${doc.id}/copy`, payload: {} })).json().document;
+  assert.equal(copy.title, `${doc.title} (копия)`);
+  assert.equal(copy.template, 'builtin:kp');
+  assert.deepEqual(copy.spec, doc.spec);
+});

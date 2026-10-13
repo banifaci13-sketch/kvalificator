@@ -2,7 +2,7 @@
 // ссылки Zoom / Телемост, напоминания в Telegram, подписка на календарь.
 // Время везде московское (UTC+3, без перехода на летнее время).
 
-import { h, api, app, shell, toast, navigate, ctx } from './admin.js';
+import { h, api, app, shell, toast, navigate, ctx, confirmDialog } from './admin.js';
 import { fill } from './docs.js';
 
 const TZ = 'Europe/Moscow';
@@ -479,7 +479,7 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
         ? h('button', {
             type: 'button', class: 'btn btn-s',
             onclick: async () => {
-              if (!confirm('Удалить встречу из календаря? Лучше отменить — тогда она останется в истории.')) return;
+              if (!(await confirmDialog('Удалить встречу из календаря? Лучше отменить — тогда она останется в истории.'))) return;
               try {
                 await api(`/admin/api/meetings/${id}`, { method: 'DELETE' });
                 panel.changed = true;
@@ -526,7 +526,7 @@ export function notificationsPanel() {
           h('button', {
             type: 'button', class: 'btn btn-s',
             onclick: async () => {
-              if (!confirm('Создать новую ссылку? Старая перестанет работать во всех календарях, где вы подписались.')) return;
+              if (!(await confirmDialog('Создать новую ссылку? Старая перестанет работать во всех календарях, где вы подписались.'))) return;
               showIcs((await api('/admin/api/me/calendar-token', { method: 'POST', body: { regenerate: true } })).url);
             },
           }, 'Новая ссылка'),

@@ -1,7 +1,7 @@
 // «Регламенты» — описания процессов агентства. Их читают сотрудники, а ассистент опирается на них,
 // когда помогает с задачами. Добавляет и правит администратор: текстом или файлом .md / .txt.
 
-import { h, api, app, shell, toast, navigate, ctx, fmtDateTime } from './admin.js';
+import { h, api, app, shell, toast, navigate, ctx, fmtDateTime, confirmDialog } from './admin.js';
 import { fill } from './docs.js';
 
 /** Простая разметка: «# заголовок», списки «- » и «1.», **жирный**, абзацы. */
@@ -144,7 +144,7 @@ export async function renderKb(params) {
             ? h('button', {
                 type: 'button', class: 'btn btn-s',
                 onclick: async () => {
-                  if (!confirm(`Удалить регламент «${cur.title}»?`)) return;
+                  if (!(await confirmDialog(`Удалить регламент «${cur.title}»?`))) return;
                   await api(`/admin/api/kb/${cur.id}`, { method: 'DELETE' }).catch((err) => toast(err.message));
                   navigate('kb');
                 },

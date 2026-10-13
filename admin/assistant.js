@@ -2,7 +2,7 @@
 // закрывается при переходах между разделами. Поручения («поставь задачу…», «что у меня завтра»)
 // выполняются сразу; вопросы — с опорой на регламенты агентства и, при необходимости, поиск в интернете.
 
-import { h, api, toast, navigate, ctx, icon, rerender } from './admin.js';
+import { h, api, toast, navigate, ctx, icon, rerender, confirmDialog } from './admin.js';
 import { refreshBell } from './home.js';
 import { fill } from './docs.js';
 
@@ -68,7 +68,7 @@ async function openAssistant(prefill = '') {
       h('button', {
         type: 'button', class: 'icon-btn', title: 'Очистить диалог', 'aria-label': 'Очистить диалог',
         onclick: async () => {
-          if (!confirm('Очистить историю диалога?')) return;
+          if (!(await confirmDialog('Очистить историю диалога?'))) return;
           await api('/admin/api/assistant/history', { method: 'DELETE' }).catch(() => {});
           fill(list, greeting());
         },

@@ -1,7 +1,7 @@
 // Раздел «Медиапланы»: список, редактор с живым пересчётом, сценарии, нормативы агентства.
 // Расчёт — тот же модуль, что на сервере (Excel и слайды считаются по тем же правилам).
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog } from './admin.js';
 import { fill, parseNum, formDialog } from './docs.js';
 import { calcScenario, calcRow, emptyPlan, emptyRow, MODELS, KINDS } from '/admin/lib/mediaplan-calc.js';
 
@@ -103,7 +103,7 @@ export async function renderPlans(params) {
       h(
         'table',
         { class: 'leads docs' },
-        h('thead', {}, h('tr', {}, ['Медиаплан', 'Период', 'Сценариев', 'К оплате за период', 'Результат', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)))),
+        h('thead', {}, h('tr', {}, ['Медиаплан', 'Период', 'Сценариев', 'К оплате за период', 'Результат', 'Изменён'].map((t) => h('th', { scope: 'col' }, t)), h('th', { scope: 'col' }, h('span', { class: 'sr-only' }, 'Действия')))),
         h(
           'tbody',
           {},
@@ -118,6 +118,20 @@ export async function renderPlans(params) {
               h('td', { class: 'num nowrap' }, rub(p.total)),
               h('td', { class: 'num nowrap' }, p.kind === 'ecom' ? `${n0(p.sales)} продаж` : `${n0(p.leads)} лидов`),
               h('td', { class: 'num nowrap' }, fmtDateTime(p.updated_at), h('span', { class: 'task' }, p.updated_by)),
+              rowActions({
+                name: p.title,
+                onCopy: async () => {
+                  const { mediaplan } = await api(`/admin/api/mediaplans/${p.id}/copy`, { method: 'POST', body: {} });
+                  toast(`Создана копия «${mediaplan.title}»`);
+                  rerender();
+                },
+                onDelete: async () => {
+                  if (!(await confirmDialog(`Удалить медиаплан «${p.title}»?`))) return;
+                  await api(`/admin/api/mediaplans/${p.id}`, { method: 'DELETE' });
+                  toast('Медиаплан удалён');
+                  rerender();
+                },
+              }),
             );
           }),
         ),
@@ -464,8 +478,8 @@ export async function renderPlan(params) {
         spec.scenarios.length > 1
           ? h('button', {
               type: 'button', class: 'btn btn-s',
-              onclick: () => {
-                if (!confirm(`Удалить сценарий «${sc.name}»?`)) return;
+              onclick: async () => {
+                if (!(await confirmDialog(`Удалить сценарий «${sc.name}»?`))) return;
                 spec.scenarios.splice(current, 1);
                 current = Math.max(0, current - 1);
                 changed();
@@ -653,7 +667,7 @@ export async function renderPlan(params) {
   }
 
   async function removePlan() {
-    if (!confirm(`Удалить «${plan.title}»? Это не отменить.`)) return;
+    if (!(await confirmDialog(`Удалить «${plan.title}»? Это не отменить.`))) return;
     try {
       clearTimeout(timer);
       dirty = false;
@@ -728,7 +742,7 @@ export async function renderBenchmarks() {
                     ? h('button', {
                         type: 'button', class: 'btn btn-s',
                         onclick: async () => {
-                          if (!confirm(`Удалить норматив «${b.channel}»? В сохранённых медиапланах цифры останутся.`)) return;
+                          if (!(await confirmDialog(`Удалить норматив «${b.channel}»? В сохранённых медиапланах цифры останутся.`))) return;
                           try {
                             await api(`/admin/api/benchmarks/${b.id}`, { method: 'DELETE' });
                             load();

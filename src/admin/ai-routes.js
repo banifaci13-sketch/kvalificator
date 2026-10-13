@@ -54,17 +54,20 @@ export async function aiRoutes(api, { ai, library, db, scenarioSource }) {
             slides: { type: 'integer', minimum: 4, maximum: 14 },
             leadId: { type: 'integer' },
             title: { type: 'string', maxLength: 200 },
+            client: { type: 'string', maxLength: 200 },
           },
         },
       },
     },
     async (req) => {
-      const { kind = 'kp', brief = '', slides = 8, leadId, title } = req.body;
+      const { kind = 'kp', brief = '', slides = 8, leadId, title, client = '' } = req.body;
       const scenario = scenarioSource.get();
       const lead = leadId ? db.getLead(leadId) : null;
       if (leadId && !lead) throw new DocError('Заявка не найдена');
-      if (!lead && brief.trim().length < 20) throw new DocError('Опишите задачу хотя бы парой предложений или выберите заявку');
+      if (!lead && brief.trim().length < 15) throw new DocError('Опишите задачу хотя бы парой предложений или выберите заявку');
       const values = leadValues(lead, scenario, req.user);
+      // клиент из поля формы важнее названия из заявки: его подставим в {{client}}, а в модель он не уйдёт
+      if (client.trim()) values.client = client.trim();
       const mask = createMask({ client: values.client, contact: values.contact_name });
       const facts = lead ? leadFacts(lead, scenario) : [];
       let res;

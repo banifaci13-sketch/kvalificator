@@ -123,6 +123,14 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir, media = nul
     return getDocument(id);
   }
 
+  /** Копия документа: те же слайды и шаблон, без истории выгрузок. */
+  function copyDocument(id, user) {
+    const doc = getDocument(id);
+    const title = `${doc.title} (копия)`.slice(0, 200);
+    const { lastInsertRowid } = q.insertDoc.run(title, JSON.stringify(doc.spec), doc.template ?? null, doc.lead_id ?? null, user, user);
+    return getDocument(lastInsertRowid);
+  }
+
   function deleteDocument(id) {
     getDocument(id);
     q.deleteDocExports.run(Number(id));
@@ -161,6 +169,7 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir, media = nul
     documentsForLead: (leadId) => q.docsByLead.all(leadId),
     getDocument,
     createDocument,
+    copyDocument,
     updateDocument,
     deleteDocument,
     exportDocument,

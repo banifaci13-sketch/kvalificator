@@ -182,3 +182,26 @@ test('защита цифр и обезличивание по отдельно�
   assert.equal(masked.t, '{{client}}, {{contact_name}}, {{email_1}}, {{phone_2}}');
   assert.deepEqual(m.restore(masked), { t: 'ООО Ромашка, Иван, ivan@romashka.ru, 8 (900) 123-45-67' });
 });
+
+test('черновик без заявки: клиент из поля формы подставлен, в модель не ушёл; бриф — главный источник; битый JSON — повтор', async () => {
+  const good = {
+    title: 'КП для {{client}}',
+    slides: [
+      { type: 'cover', title: 'Переводы за рубеж для {{client}}', subtitle: 'Коммерческое предложение', date: '{{date}}' },
+      { type: 'closing', title: 'Следующий шаг', steps: ['Созвон'], contacts: { name: '{{manager}}' } },
+    ],
+  };
+  let n = 0;
+  // первый ответ оборван на середине — модель так иногда делает на длинных черновиках
+  const ai = fakeAi(() => (n++ === 0 ? '{"title": "КП", "slides": [{"type": "cover", "title": "Пере' : JSON.stringify(good)));
+  const { req } = await setup(ai);
+  const res = await req({ method: 'POST', url: '/admin/api/ai/draft', payload: { kind: 'kp', client: 'Юнистрим', brief: 'Юнистрим — денежные переводы. Нужен поток установок приложения, акцент на РСЯ и Telegram Ads', slides: 6 } });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(ai.calls.length, 2, 'одна повторная попытка');
+  assert.match(ai.calls[1].user, /строго валидный JSON/);
+  const sent = ai.calls[0].user + ai.calls[0].system;
+  assert.doesNotMatch(sent, /Юнистрим/, 'название клиента заменено меткой');
+  assert.match(sent, /\{\{client\}\} — денежные переводы/);
+  assert.match(sent, /главный источник/);
+  assert.equal(res.json().document.spec.slides[0].title, 'Переводы за рубеж для Юнистрим');
+});

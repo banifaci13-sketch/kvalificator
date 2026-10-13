@@ -2,7 +2,7 @@
 // Ещё «Мои задачи» со всех проектов, клиенты агентства и карточка клиента.
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, confirmDialog } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 import { setAssistantTask } from './assistant.js';
@@ -413,7 +413,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
   const remove = h('button', {
     type: 'button', class: 'btn btn-s',
     onclick: async () => {
-      if (!confirm('Удалить задачу вместе с комментариями?')) return;
+      if (!(await confirmDialog('Удалить задачу вместе с комментариями?'))) return;
       try {
         await api(`/admin/api/tasks/${task.id}`, { method: 'DELETE' });
         changed = true;
@@ -604,7 +604,7 @@ function card(t, { onOpen, onChange, showProject = false }) {
             type: 'button', class: 'task-delete', title: 'Удалить задачу', 'aria-label': `Удалить задачу «${t.title}»`,
             onclick: async (e) => {
               e.stopPropagation();
-              if (!confirm(`Удалить задачу «${t.title}» вместе с комментариями?`)) return;
+              if (!(await confirmDialog(`Удалить задачу «${t.title}» вместе с комментариями?`))) return;
               try {
                 await api(`/admin/api/tasks/${t.id}`, { method: 'DELETE' });
                 toast('Задача удалена');
@@ -767,7 +767,7 @@ export async function renderProjects(params) {
     }
   }
   async function removeBoard(b) {
-    if (!confirm(`Удалить доску «${b.name}»?`)) return;
+    if (!(await confirmDialog(`Удалить доску «${b.name}»?`))) return;
     try {
       await api(`/admin/api/boards/${b.id}`, { method: 'DELETE' });
       navigate('tasks', new URLSearchParams({ project: key }));
@@ -891,7 +891,7 @@ export async function renderProjects(params) {
           active.columns.length > 1 ? {
             label: 'Удалить колонку', danger: true,
             onclick: async () => {
-              if (!confirm(`Удалить колонку «${c.name}»?`)) return;
+              if (!(await confirmDialog(`Удалить колонку «${c.name}»?`))) return;
               try {
                 await api(`/admin/api/columns/${c.id}`, { method: 'DELETE' });
                 load();

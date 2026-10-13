@@ -281,3 +281,16 @@ test('медиаплан в PDF и картинках: тот же вид, чт�
   assert.equal((await req({ url: `/admin/api/mediaplans/${id}/export?format=gif` })).statusCode, 400);
   await closeBrowser();
 });
+
+test('копия медиаплана: те же расчёты, своё название; удаление', async () => {
+  const { as } = await setup();
+  const req = await as('oleg');
+  const id = (await req({ method: 'POST', url: '/admin/api/mediaplans', payload: { title: 'Таллер МП', client: 'Таллер', spec: plan() } })).json().mediaplan.id;
+  const copy = (await req({ method: 'POST', url: `/admin/api/mediaplans/${id}/copy`, payload: {} })).json().mediaplan;
+  assert.equal(copy.title, 'Таллер МП (копия)');
+  assert.equal(copy.client, 'Таллер');
+  assert.notEqual(copy.id, id);
+  assert.deepEqual(copy.spec, (await req({ url: `/admin/api/mediaplans/${id}` })).json().mediaplan.spec);
+  assert.equal((await req({ method: 'DELETE', url: `/admin/api/mediaplans/${copy.id}` })).statusCode, 200);
+  assert.equal((await req({ url: '/admin/api/mediaplans' })).json().mediaplans.length, 1);
+});
