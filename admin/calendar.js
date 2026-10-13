@@ -3,7 +3,7 @@
 // Время везде московское (UTC+3, без перехода на летнее время).
 
 import { h, api, app, shell, toast, navigate, ctx, confirmDialog } from './admin.js';
-import { fill } from './docs.js';
+import { fill, formDialog } from './docs.js';
 
 const TZ = 'Europe/Moscow';
 const MSK = 3 * 3600_000;
@@ -448,17 +448,8 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
             },
           }, 'Скопировать приглашение')
         : null,
-      // договорённости со встречи — сразу задачей в проекте клиента, связанной со встречей
-      id
-        ? h('button', {
-            type: 'button', class: 'btn',
-            onclick: async () => {
-              const { openTask } = await import('./tasks.js');
-              closePanel();
-              openTask(null, { defaults: { title: `По итогам встречи: ${m.title}`, client_id: m.client_id ?? null, link: { kind: 'meeting', refId: id } } });
-            },
-          }, 'Задача по итогам')
-        : null,
+      // итоги встречи (постмит) — блок ниже: резюме и задачи исполнителям
+      id ? h('button', { type: 'button', class: 'btn', onclick: () => drawer.querySelector('.followup')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, 'Итоги встречи') : null,
       h('span', { class: 'spacer' }),
       id
         ? h('button', {
@@ -495,10 +486,100 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
   fill(heading, id ? (m.cancelled ? 'Отменённая встреча' : 'Встреча') : 'Новая встреча');
   // по какой задаче встреча — ссылка и «выполнено» прямо отсюда
   const linked = id ? (await import('./tasks.js')).linkedTasksBar('meeting', id) : null;
-  fill(body, linked, form, id ? h('p', { class: 'muted small' }, `Запланировал ${m.created_by ?? '—'}`) : null);
+  fill(body, linked, form, id ? h('p', { class: 'muted small' }, `Запланировал ${m.created_by ?? '—'}`) : null, id ? followupSection(m, () => (panel.changed = true)) : null);
   syncFormat();
   renderProvider();
   title.focus();
+}
+
+// ---------- итоги встречи (постмит) ----------
+
+/**
+ * Резюме встречи и задачи по итогам: каждая — своему исполнителю, в проект клиента встречи,
+ * со связью на встречу. Список можно вставить текстом — «Олег — креативы до пятницы».
+ */
+function followupSection(m, onChanged) {
+  const box = h('section', { class: 'followup' });
+  const rows = [];
+  let team = [];
+  const list = h('div', { class: 'followup-items' });
+  const summary = h('textarea', { class: 'textarea', id: 'fu-summary', rows: 4, maxlength: 10000, placeholder: 'О чём договорились, решения, что ждём от клиента' }, m.summary ?? '');
+  const send = h('input', { type: 'checkbox', checked: true });
+  const submit = h('button', { type: 'button', class: 'btn btn-primary', onclick: save }, 'Сохранить и разослать');
+
+  function addRow(it = {}) {
+    const title = h('input', { class: 'input', maxlength: 300, value: it.title ?? '', placeholder: 'Что сделать', 'aria-label': 'Задача' });
+    const who = h('select', { class: 'select', 'aria-label': 'Исполнитель' }, h('option', { value: '' }, 'Исполнитель'), team.map((u) => h('option', { value: u.id, selected: u.id === it.assigneeId }, u.id === ctx.me.id ? `${u.name} (я)` : u.name)));
+    const due = h('input', { class: 'input', type: 'date', value: it.due ?? '', 'aria-label': 'Срок' });
+    const prio = h('select', { class: 'select', 'aria-label': 'Важность' }, [[0, 'Важность'], [1, 'Низкая'], [2, 'Средняя'], [3, 'Высокая'], [4, 'Критичная']].map(([v, l]) => h('option', { value: v, selected: v === (it.priority ?? 0) }, l)));
+    const row = { title, who, due, prio, dueTime: it.dueTime ?? null };
+    const el = h('div', { class: 'followup-row' }, title, who, due, prio, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Убрать строку', title: 'Убрать', onclick: () => (rows.splice(rows.indexOf(row), 1), el.remove()) }, '×'));
+    row.el = el;
+    rows.push(row);
+    list.append(el);
+    if (!it.title) title.focus();
+  }
+
+  function pasteList() {
+    const text = h('textarea', { class: 'textarea', id: 'fu-paste', rows: 8, placeholder: '- Олег — креативы для РСЯ до пятницы\n- Ира: медиаплан на ноябрь к 20.10 срочно\n- отправить клиенту отчёт' });
+    formDialog({
+      title: 'Задачи списком',
+      submitLabel: 'Разобрать',
+      body: [h('p', { class: 'muted' }, 'Каждая строка — задача. Имя сотрудника и срок ассистент найдёт в тексте сам.'), h('div', { class: 'field' }, h('label', { for: 'fu-paste' }, 'Договорённости'), text)],
+      onSubmit: async () => {
+        const { items } = await api(`/admin/api/meetings/${m.id}/followup/parse`, { method: 'POST', body: { text: text.value } });
+        // пустые строки в начале не нужны
+        for (const r of [...rows]) if (!r.title.value.trim()) (rows.splice(rows.indexOf(r), 1), r.el.remove());
+        for (const it of items) addRow(it);
+      },
+    });
+  }
+
+  async function save() {
+    const items = rows
+      .filter((r) => r.title.value.trim())
+      .map((r) => ({ title: r.title.value.trim(), assigneeId: r.who.value ? Number(r.who.value) : null, due: r.due.value || null, dueTime: r.due.value ? r.dueTime : null, priority: Number(r.prio.value) }));
+    if (!items.length && summary.value.trim() === (m.summary ?? '')) return toast('Добавьте резюме или задачи по итогам');
+    submit.disabled = true;
+    try {
+      const res = await api(`/admin/api/meetings/${m.id}/followup`, { method: 'POST', body: { summary: summary.value, items, send: send.checked } });
+      Object.assign(m, res.meeting);
+      onChanged();
+      for (const r of [...rows]) r.el.remove();
+      rows.length = 0;
+      addRow();
+      toast(items.length ? `Итоги сохранены, задач поставлено: ${items.length}${send.checked ? ' — участникам ушло уведомление' : ''}` : 'Итоги сохранены');
+      // свежие задачи — в блоке связанных задач над формой
+      const bar = document.querySelector('.drawer .linked-tasks');
+      if (bar) bar.replaceWith((await import('./tasks.js')).linkedTasksBar('meeting', m.id));
+      else box.closest('.drawer-body')?.prepend((await import('./tasks.js')).linkedTasksBar('meeting', m.id));
+      meta.textContent = `Записал ${m.summary_by ?? ctx.me.name}`;
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  const meta = h('span', { class: 'muted small' }, m.summary_by ? `Записал ${m.summary_by}` : '');
+  const future = Date.parse(m.starts_at_iso) > Date.now();
+  box.append(
+    h('div', { class: 'checklist-head' }, h('h3', {}, 'Итоги встречи'), meta),
+    future ? h('p', { class: 'hint' }, 'Встреча ещё впереди — заполните после неё: резюме и задачи уйдут исполнителям на их доски.') : null,
+    h('div', { class: 'field' }, h('label', { for: 'fu-summary' }, 'Резюме'), summary),
+    h('div', { class: 'followup-head' }, h('span', { class: 'label' }, 'Задачи по итогам'), h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'linkish small', onclick: pasteList }, 'Вставить списком')),
+    list,
+    h('button', { type: 'button', class: 'btn btn-s followup-add', onclick: () => addRow() }, '+ Задача'),
+    h('p', { class: 'hint' }, m.client_name ? `Задачи встанут в проект «${m.client_name}» и привяжутся к встрече.` : 'У встречи нет клиента — задачи встанут в «Общие задачи». Выберите клиента выше, чтобы они попали в его проект.'),
+    h('div', { class: 'work-actions' }, submit, h('label', { class: 'check small' }, send, 'Уведомить участников и исполнителей')),
+  );
+  api('/admin/api/team')
+    .then((d) => {
+      team = d.team ?? [];
+      addRow();
+    })
+    .catch(() => addRow());
+  return box;
 }
 
 // ---------- учётная запись: Telegram и подписка ----------

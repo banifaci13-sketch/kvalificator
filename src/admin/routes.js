@@ -525,7 +525,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         money: money ? (({ overdue, expected, received, debtors, soon }) => ({ overdue, expected, received, debtors: debtors.slice(0, 5), soon: soon.slice(0, 5) }))(money.summary(req.user)) : null,
       };
     });
-    if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify });
+    if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify, crm, auth });
     await api.register(newsRoutes, { news, files });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
 

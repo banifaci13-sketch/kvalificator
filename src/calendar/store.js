@@ -217,8 +217,17 @@ export function createCalendar({ db }) {
     for (const o of [offset, ...all]) if (o >= offset) q.markSent.run(meeting.id, user.id, o);
   }
 
+  const setSummaryQ = db.prepare("UPDATE meetings SET summary = ?, summary_by = ?, summary_at = datetime('now') WHERE id = ?");
+  /** Итоги встречи: резюме (кто и когда записал). */
+  function setSummary(id, summary, user) {
+    const m = get(id);
+    setSummaryQ.run(String(summary ?? '').trim().slice(0, 10000) || null, user.name, m.id);
+    return get(id);
+  }
+
   return {
     get,
+    setSummary,
     create,
     update,
     remove: (id) => {

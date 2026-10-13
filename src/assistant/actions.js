@@ -6,6 +6,7 @@ import { bestMatch } from './commands.js';
 import { SECTIONS } from './phrases.js';
 import { emptyPlan, emptyRow } from '../mediaplan/calc.js';
 import { outline } from './kb.js';
+import { parseFollowup } from './followup.js';
 import { LEAD_STATUSES } from '../admin/reports.js';
 
 const MSK = 3 * 3600e3;
@@ -262,6 +263,34 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       return { reply: `Отменил встречу «${m.title}». Напоминаний по ней больше не будет.`, actions: [{ type: 'meeting', id: m.id, title: m.title, href: `#/calendar?meeting=${m.id}` }] };
     },
 
+    meeting_followup(user, cmd, { now }) {
+      need(calendar, 'Встречи');
+      need(crm, 'Задачи');
+      const today = todayMsk(now);
+      // недавние встречи сотрудника: неделя назад и сегодня
+      const recent = calendar.list({ from: `${addDays(today, -7)}T00:00:00+03:00`, to: `${addDays(today, 1)}T00:00:00+03:00`, userId: user.id }).filter((x) => !x.cancelled);
+      let mt = null;
+      if (cmd.query) {
+        const r = bestMatch(cmd.query, recent, (x) => `${x.title} ${x.client_name ?? ''}`);
+        if (!r.item && r.candidates.length) return { reply: 'К какой встрече итоги?', options: r.candidates.map((x) => ({ label: x.title, command: `итоги встречи ${x.title}: ${cmd.text}` })) };
+        mt = r.item;
+      } else mt = recent.filter((x) => Date.parse(x.starts_at.replace(' ', 'T') + 'Z') <= now.getTime()).at(-1) ?? null;
+      if (!mt) return { reply: 'Не нашёл недавнюю встречу. Откройте её в календаре и заполните «Итоги встречи».', navigate: '#/calendar' };
+      const team = auth.listUsers().filter((u) => !u.disabled);
+      const items = parseFollowup(cmd.text, { team, now });
+      if (!items.length) return { reply: 'Перечислите договорённости: «Олег — креативы до пятницы; Ира — медиаплан к 20.10».' };
+      const when = new Date(`${mt.starts_at.replace(' ', 'T')}Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
+      const tasks = items.map((it) => {
+        const t = crm.createTask({ title: it.title, description: `По итогам встречи «${mt.title}», ${when}.`, clientId: mt.client_id ?? null, assigneeId: it.assigneeId, due: it.due, dueTime: it.dueTime, priority: it.priority }, user);
+        crm.linkTask(t.id, { kind: 'meeting', refId: mt.id }, user);
+        return t;
+      });
+      return {
+        reply: [`Итоги встречи «${mt.title}» — поставил задач: ${tasks.length}${mt.client_name ? ` в проекте «${mt.client_name}»` : ''}.`, ...tasks.map((t) => `• ${t.title} — ${t.assignee_name ?? 'без исполнителя'}${t.due ? `, ${fmtDue(t)}` : ''}`)].join('\n'),
+        actions: [{ type: 'meeting', id: mt.id, title: mt.title, href: `#/calendar?meeting=${mt.id}` }, ...tasks.slice(0, 5).map((t) => taskAction(t))],
+      };
+    },
+
     // ---------- медиапланы ----------
     mediaplan_create(user, cmd) {
       need(mediaplans, 'Медиапланы');
@@ -480,7 +509,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       g.push('', 'Задачи', '• «поставь задачу КП для Таллера на пятницу», «поручи Олегу медиаплан до 20.10 срочно»', '• «закрой задачу по лендингу», «я сделал отчёт», «верни в работу отчёт»', '• «перенеси отчёт на понедельник в 12», «срок по баннерам — завтра»', '• «передай задачу баннеры Олегу», «сделай задачу отчёт критичной»', '• «комментарий к задаче баннеры: макеты в папке»', '• «что у меня сегодня», «что горит», «что у Олега», «загрузка команды»');
       g.push('', 'Клиенты и проекты', '• «добавь клиента Юнистрим, сайт unistream.ru»', '• «что по Таллеру», «список клиентов», «в архив клиента Ромашка»', '• «создай доску Трафик в проекте Таллер»');
     }
-    if (calendar) g.push('', 'Встречи', '• «встреча с Ромашкой завтра в 15 в Телемосте»', '• «перенеси встречу с Таллером на четверг», «отмени планёрку», «встречи на неделе»');
+    if (calendar) g.push('', 'Встречи', '• «встреча с Ромашкой завтра в 15 в Телемосте»', '• «перенеси встречу с Таллером на четверг», «отмени планёрку», «встречи на неделе»', '• «итоги встречи с Таллером: Олег — креативы до пятницы; Ира — медиаплан к 20.10»');
     if (mediaplans || library) g.push('', 'Медиапланы и документы', '• «создай медиаплан для Таллера на квартал», «медиаплан для интернет-магазина»', '• «создай КП для Юнистрима», «сделай отчёт для Таллера за сентябрь», «открой медиаплан Таллер»');
     if (reports) g.push('', 'Заявки', '• «новые заявки», «горячие заявки за неделю», «сколько заявок за месяц»', '• «возьми заявку 123», «заявка 123 — спам», «заведи клиента по заявке 123»');
     if (money) g.push('', 'Деньги', '• «Таллер оплатил 80 000», «выставь счёт Ромашке 50 000 до 20.10 за аудит»', '• «ведение Таллер 80 000 в месяц до 10 числа», «кто должен»');

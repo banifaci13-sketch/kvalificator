@@ -3,6 +3,7 @@
 
 import { CalendarError, FORMATS, PROVIDERS, REMIND_OPTIONS, fromDbTime } from '../calendar/store.js';
 import { VideoError } from '../calendar/video.js';
+import { parseFollowup } from '../assistant/followup.js';
 
 const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
 const nullableId = { type: ['integer', 'null'] };
@@ -30,7 +31,7 @@ const meetingBody = {
   },
 };
 
-export async function calendarRoutes(api, { calendar, video, config, notify = null }) {
+export async function calendarRoutes(api, { calendar, video, config, notify = null, crm = null, auth = null }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof CalendarError) return reply.code(400).send({ error: err.message });
     if (err instanceof VideoError) {
@@ -85,6 +86,72 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
   });
 
   api.get('/admin/api/meetings/:id', { schema: { params: idParams } }, async (req) => ({ meeting: publicMeeting(calendar.get(req.params.id)) }));
+
+  // ---------- итоги встречи (постмит) ----------
+  // список договорённостей текстом → строки задач с исполнителями и сроками
+  api.post('/admin/api/meetings/:id/followup/parse', {
+    schema: { params: idParams, body: { type: 'object', required: ['text'], additionalProperties: false, properties: { text: { type: 'string', maxLength: 10000 } } } },
+  }, async (req) => {
+    calendar.get(req.params.id);
+    const team = auth ? auth.listUsers().filter((u) => !u.disabled) : [];
+    return { items: parseFollowup(req.body.text, { team }) };
+  });
+
+  // резюме встречи и задачи по итогам: в проект клиента встречи, каждая — своему исполнителю
+  api.post('/admin/api/meetings/:id/followup', {
+    schema: {
+      params: idParams,
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          summary: { type: ['string', 'null'], maxLength: 10000 },
+          send: { type: 'boolean' },
+          items: {
+            type: 'array',
+            maxItems: 50,
+            items: {
+              type: 'object',
+              required: ['title'],
+              additionalProperties: false,
+              properties: {
+                title: { type: 'string', minLength: 1, maxLength: 300 },
+                assigneeId: nullableId,
+                due: { type: ['string', 'null'], format: 'date' },
+                dueTime: { type: ['string', 'null'], pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' },
+                priority: { type: 'integer', minimum: 0, maximum: 4 },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (req) => {
+    const m = calendar.get(req.params.id);
+    const items = req.body.items ?? [];
+    if (items.length && !crm) throw new CalendarError('Задачи недоступны');
+    const when = new Date(`${m.starts_at.replace(' ', 'T')}Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
+    const tasks = [];
+    for (const it of items) {
+      const t = crm.createTask(
+        { title: it.title, description: `По итогам встречи «${m.title}», ${when}.`, clientId: m.client_id ?? null, assigneeId: it.assigneeId ?? null, due: it.due ?? null, dueTime: it.due ? it.dueTime ?? null : null, priority: it.priority ?? 0 },
+        req.user,
+      );
+      crm.linkTask(t.id, { kind: 'meeting', refId: m.id }, req.user);
+      tasks.push(t);
+    }
+    const updated = req.body.summary !== undefined ? calendar.setSummary(m.id, req.body.summary, req.user) : calendar.get(m.id);
+    // итоги — участникам встречи и исполнителям (каждому свои задачи уже пришли уведомлением о поручении)
+    if (req.body.send && notify) {
+      const mine = (uid) => tasks.filter((t) => t.assignee_id === uid).length;
+      const to = new Set([...(updated.participants ?? []).map((p) => p.id), ...tasks.map((t) => t.assignee_id).filter(Boolean)]);
+      for (const uid of to) {
+        const n = mine(uid);
+        notify.add(uid, { kind: 'meeting', text: `Итоги встречи «${m.title}»${tasks.length ? `: задач — ${tasks.length}${n ? `, ваших — ${n}` : ''}` : ''}`, href: `#/calendar?meeting=${m.id}`, actor: req.user.name, actorId: req.user.id });
+      }
+    }
+    return { meeting: publicMeeting(updated), tasks };
+  });
 
   api.put('/admin/api/meetings/:id', { schema: { params: idParams, body: meetingBody } }, async (req) => ({
     meeting: publicMeeting(calendar.update(req.params.id, req.body)),

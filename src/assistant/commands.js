@@ -66,14 +66,17 @@ export function findClient(text, clients) {
 // слова, которые встречаются в названиях многих компаний и сами по себе клиента не определяют
 const GENERIC = new Set(['клиника', 'компания', 'группа', 'студия', 'агентство', 'магазин', 'центр', 'завод', 'холдинг', 'сервис', 'маркет', 'торговый', 'дом']);
 
-/** Сотрудник по имени в любом падеже: «Даниилу», «на Олега». */
+/** Сотрудник по имени в любом падеже: «Даниилу», «на Олега», «Анне», «Иру». */
 export function findPerson(text, team) {
   const words = String(text).toLowerCase().replace(/ё/g, 'е').split(/[^a-zа-я]+/i).filter(Boolean);
   for (const u of team) {
     const first = String(u.name).split(/\s+/)[0].toLowerCase().replace(/ё/g, 'е');
     if (first.length < 3) continue;
-    const base = first.length > 4 ? first.slice(0, -1) : first;
-    const hit = words.find((w) => w.startsWith(base) && w.length - first.length <= 2);
+    // имя на гласную (Анна, Ира, Илья) склоняется с заменой последней буквы, на согласную — с добавлением
+    const vowel = /[аяеиоуыйь]$/.test(first);
+    const base = vowel ? first.slice(0, -1) : first;
+    const endings = vowel ? /^(?:а|я|е|и|у|ю|ой|ей|ою|ею|ы|й|ь|ем)?$/ : /^(?:а|у|ом|ем|е|ы|и|ой)?$/;
+    const hit = words.find((w) => w.startsWith(base) && endings.test(w.slice(base.length)));
     if (hit) return { user: u, word: hit };
   }
   return null;

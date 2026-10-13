@@ -314,3 +314,14 @@ test('ассистент: деньги — ведение, счёт, оплат�
   assert.match((await say('Таллер оплатил 80 000')).reply, /Отметил оплату: Таллер — 80\s000 ₽, ведение за октябрь 2026/);
   assert.match((await say('кто должен')).reply, /Просроченных оплат нет/);
 });
+
+test('ассистент: итоги встречи — задачи исполнителям в проекте клиента', async () => {
+  const s = setup({ full: true });
+  const say = (t) => s.assistant.handle(s.anna, t, { now: NOW });
+  s.calendar.create({ title: 'Стратсессия Таллер', startsAt: '2026-10-13T10:00:00+03:00', clientId: s.talle.id, participants: [s.anna.id, s.dan.id] }, s.anna);
+  const r = await say('итоги встречи с Таллером: Даниил — креативы для РСЯ до пятницы срочно; мне — согласовать бюджет завтра в 12');
+  assert.match(r.reply, /Итоги встречи «Стратсессия Таллер» — поставил задач: 2 в проекте «Таллер»/);
+  assert.match(r.reply, /Креативы для РСЯ — Даниил Карацапов, 16 октября/);
+  const tasks = s.crm.listTasks({ clientId: s.talle.id });
+  assert.ok(tasks.some((t) => t.title === 'Креативы для РСЯ' && t.assignee_id === s.dan.id && t.priority === 3));
+});

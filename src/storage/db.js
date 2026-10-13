@@ -452,6 +452,11 @@ const MIGRATIONS = [
    );
    CREATE INDEX client_payments_client ON client_payments (client_id, due);
    CREATE UNIQUE INDEX client_payments_auto ON client_payments (client_id, period) WHERE auto = 1;`,
+
+  // Итоги встречи (постмит): резюме; задачи по итогам — обычные задачи, связанные со встречей
+  `ALTER TABLE meetings ADD COLUMN summary TEXT;
+   ALTER TABLE meetings ADD COLUMN summary_by TEXT;
+   ALTER TABLE meetings ADD COLUMN summary_at TEXT;`,
 ];
 
 /** Номер текущей версии схемы базы. */

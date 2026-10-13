@@ -189,3 +189,33 @@ test('Zoom и Телемост: запросы к API и понятные оши
   assert.equal(res.statusCode, 502);
   assert.match(res.json().error, /ZOOM_ACCOUNT_ID/);
 });
+
+test('итоги встречи: резюме, список договорённостей → задачи исполнителям в проекте клиента', async () => {
+  const { as, crm, users } = await setup();
+  const anna = await as('anna');
+  const oleg = await as('oleg');
+  const client = crm.createClient({ name: 'Таллер' }, { name: 'Анна' });
+  const m = (await anna({ method: 'POST', url: '/admin/api/meetings', payload: { title: 'Стратсессия Таллер', startsAt: '2026-10-20T14:00:00+03:00', clientId: client.id, participants: [users.anna.id, users.oleg.id] } })).json().meeting;
+
+  const parsed = (await anna({ method: 'POST', url: `/admin/api/meetings/${m.id}/followup/parse`, payload: { text: '- Олег — креативы для РСЯ до 24.10 срочно\n- Анне: согласовать бюджет с клиентом 22.10 в 12\n- отправить клиенту отчёт' } })).json().items;
+  assert.deepEqual(parsed.map((i) => [i.title, i.assigneeName, i.due, i.dueTime, i.priority]), [
+    ['Креативы для РСЯ', 'Олег', '2026-10-24', null, 3],
+    ['Согласовать бюджет с клиентом', 'Анна', '2026-10-22', '12:00', 0],
+    ['Отправить клиенту отчёт', null, null, null, 0],
+  ]);
+
+  const res = await anna({ method: 'POST', url: `/admin/api/meetings/${m.id}/followup`, payload: { summary: 'Договорились запустить РСЯ до конца месяца.', send: true, items: parsed.map(({ title, assigneeId, due, dueTime, priority }) => ({ title, assigneeId, due, dueTime, priority })) } });
+  assert.equal(res.statusCode, 200, res.body);
+  const { meeting, tasks } = res.json();
+  assert.equal(meeting.summary, 'Договорились запустить РСЯ до конца месяца.');
+  assert.equal(meeting.summary_by, 'Анна');
+  assert.equal(tasks.length, 3);
+  assert.ok(tasks.every((t) => t.client_id === client.id), 'в проекте клиента встречи');
+  assert.equal(tasks[0].assignee_id, users.oleg.id);
+  assert.deepEqual(crm.linkedTasks('meeting', m.id).length, 3, 'задачи связаны со встречей');
+  const olegNotes = (await oleg({ url: '/admin/api/notifications' })).json().items.map((n) => n.text);
+  assert.ok(olegNotes.some((t) => /^Итоги встречи «Стратсессия Таллер»: задач — 3, ваших — 1/.test(t)));
+  assert.ok(olegNotes.some((t) => /^Вам поручена задача «Креативы для РСЯ»/.test(t)));
+  // на доске Олега — в «Моих задачах»
+  assert.ok((await oleg({ url: '/admin/api/tasks?mine=true' })).json().tasks.some((t) => t.title === 'Креативы для РСЯ'));
+});

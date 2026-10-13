@@ -1628,3 +1628,15 @@ select.select[data-open] { background-image: url("data:image/svg+xml,%3Csvg xmln
   .pay-status { grid-column: 1 / -1; }
   .money-stats { grid-template-columns: 1fr; }
 }
+
+/* итоги встречи (постмит) */
+.followup { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 12px; }
+.followup-head { display: flex; align-items: center; gap: 8px; }
+.followup-head .spacer { flex: 1; }
+.followup-items { display: grid; gap: 6px; }
+.followup-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 140px 120px 32px; gap: 6px; align-items: center; }
+.followup-row .input, .followup-row .select { min-height: 36px; padding-top: 5px; padding-bottom: 5px; font-size: 14px; }
+.followup-add { justify-self: start; }
+.drawer .work-actions { flex-wrap: wrap; }
+.drawer-body { overflow-x: hidden; }
+@media (max-width: 720px) { .followup-row { grid-template-columns: 1fr 1fr; } .followup-row .input:first-child { grid-column: 1 / -1; } }
