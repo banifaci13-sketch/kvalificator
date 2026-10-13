@@ -495,7 +495,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         ? calendar
             .list({ from: `${today}T00:00:00+03:00`, to: `${plus(2)}T00:00:00+03:00`, userId: req.user.id })
             .filter((m) => !m.cancelled)
-            .map((m) => ({ id: m.id, title: m.title, starts_at: m.starts_at, duration: m.duration, client_name: m.client_name, link: m.link, format: m.format }))
+            .map((m) => ({ id: m.id, title: m.title, starts_at: `${m.starts_at.replace(' ', 'T')}Z`, duration: m.duration, client_name: m.client_name, link: m.link, format: m.format }))
         : [];
       // свежие заявки за 3 дня, ещё никем не взятые
       const leads = reports

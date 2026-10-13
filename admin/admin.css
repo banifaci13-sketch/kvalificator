@@ -1634,9 +1634,26 @@ select.select[data-open] { background-image: url("data:image/svg+xml,%3Csvg xmln
 .followup-head { display: flex; align-items: center; gap: 8px; }
 .followup-head .spacer { flex: 1; }
 .followup-items { display: grid; gap: 6px; }
-.followup-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 140px 120px 32px; gap: 6px; align-items: center; }
+.followup-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 6px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface-2); }
+.followup-row > .input:first-child { grid-column: 1 / -1; font-weight: 600; }
 .followup-row .input, .followup-row .select { min-height: 36px; padding-top: 5px; padding-bottom: 5px; font-size: 14px; }
 .followup-add { justify-self: start; }
 .drawer .work-actions { flex-wrap: wrap; }
 .drawer-body { overflow-x: hidden; }
-@media (max-width: 720px) { .followup-row { grid-template-columns: 1fr 1fr; } .followup-row .input:first-child { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .followup-row { grid-template-columns: 1fr 1fr; } }
+
+/* таймер обратного отсчёта */
+.countdown { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.countdown::before { content: '⏱'; font-size: .9em; opacity: .8; }
+.countdown[data-state="soon"] { color: var(--due-today); }
+.countdown[data-state="urgent"], .countdown[data-state="late"] { color: var(--danger); }
+.countdown[data-state="live"] { color: var(--good); }
+.countdown[data-state="live"]::before { content: '●'; animation: live-blink 1.2s ease-in-out infinite; }
+.countdown[data-state="past"] { font-weight: 500; }
+.countdown[data-state="past"]::before { content: none; }
+.stickers > .countdown { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--surface-2); }
+.chip .countdown { font-size: inherit; color: inherit; }
+.chip .countdown::before { content: none; }
+.meeting-countdown { margin: -4px 0 0; }
+@keyframes live-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .countdown[data-state="live"]::before { animation: none; } }

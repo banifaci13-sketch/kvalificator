@@ -489,6 +489,62 @@ function suggestInput(input, getOptions) {
   return input;
 }
 
+// ---------- таймер обратного отсчёта (встречи и задачи) ----------
+
+const timers = new Set();
+let timerLoop = null;
+function spell(ms) {
+  const min = Math.floor(ms / 60e3);
+  const d = Math.floor(min / 1440);
+  const hh = Math.floor((min % 1440) / 60);
+  const mm = min % 60;
+  if (d >= 2) return `${d} ${plural(d, 'день', 'дня', 'дней')}`;
+  if (d >= 1) return `${d} дн ${hh} ч`;
+  if (hh >= 1) return `${hh} ч ${mm} мин`;
+  const ss = Math.floor((ms % 60e3) / 1000);
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+function tickTimer(el) {
+  const now = Date.now();
+  const left = el._until - now;
+  let text;
+  let state;
+  if (el._kind === 'meeting' && left <= 0 && el._end && now < el._end) {
+    text = `идёт · ещё ${spell(el._end - now)}`;
+    state = 'live';
+  } else if (left > 0) {
+    text = `${el._kind === 'meeting' ? 'через' : 'осталось'} ${spell(left)}`;
+    state = left < 15 * 60e3 ? 'urgent' : left < 3 * 3600e3 ? 'soon' : '';
+  } else {
+    text = el._kind === 'meeting' ? 'прошла' : `просрочено на ${spell(-left)}`;
+    state = el._kind === 'meeting' ? 'past' : 'late';
+  }
+  if (el.textContent !== text) el.textContent = text;
+  el.dataset.state = state;
+}
+/**
+ * Таймер: «через 2 ч 15 мин», в последний час — посекундно; встреча — «идёт», задача — «просрочено на …».
+ * kind: 'task' | 'meeting'; until — ISO-время; end — конец встречи.
+ */
+function countdown(until, { kind = 'task', end = null } = {}) {
+  const el = h('span', { class: 'countdown', role: 'timer' });
+  el._until = Date.parse(until);
+  el._end = end ? Date.parse(end) : null;
+  el._kind = kind;
+  tickTimer(el);
+  timers.add(el);
+  timerLoop ??= setInterval(() => {
+    for (const t of timers) (t.isConnected ? tickTimer(t) : timers.delete(t));
+    if (!timers.size) {
+      clearInterval(timerLoop);
+      timerLoop = null;
+    }
+  }, 1000);
+  return el;
+}
+/** Срок задачи по Москве в ISO: без времени — до конца дня. */
+const taskDeadline = (t) => (t.due ? `${t.due}T${t.due_time ?? '23:59'}:00+03:00` : null);
+
 /** Кнопки в строке таблицы: скопировать и удалить. Щелчок по ним не открывает строку. */
 function rowActions({ name, onCopy, onDelete, deleteTitle = 'Удалить', deleteIcon = 'trash' }) {
   const btn = (title, iconName, fn, cls = '') =>
@@ -1857,6 +1913,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, confirmDialog, suggestInput, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
+export { h, api, app, shell, toast, confirmDialog, suggestInput, countdown, taskDeadline, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
 
 boot();

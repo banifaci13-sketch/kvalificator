@@ -50,7 +50,7 @@ export function createFiles({ db, dir }) {
     get: db.prepare('SELECT * FROM files WHERE id = ?'),
     remove: db.prepare('DELETE FROM files WHERE id = ?'),
     sameFile: db.prepare('SELECT COUNT(*) AS n FROM files WHERE sha256 = ?'),
-    used: db.prepare('SELECT (SELECT COUNT(*) FROM news_files WHERE file_id = ?) + (SELECT COUNT(*) FROM task_files WHERE file_id = ?) AS n'),
+    used: db.prepare('SELECT (SELECT COUNT(*) FROM news_files WHERE file_id = ?) + (SELECT COUNT(*) FROM task_files WHERE file_id = ?) + (SELECT COUNT(*) FROM client_files WHERE file_id = ?) AS n'),
   };
   const pathOf = (f) => join(root, `${f.sha256}.${FILE_TYPES[f.mime]?.[1] ?? 'bin'}`);
 
@@ -124,9 +124,9 @@ export function createFiles({ db, dir }) {
     if (!q.sameFile.get(f.sha256).n && existsSync(pathOf(f))) unlinkSync(pathOf(f));
   }
 
-  /** Удалить файл, если он больше нигде не прикреплён (ни к записи в новостях, ни к задаче). */
+  /** Удалить файл, если он больше нигде не прикреплён (ни к новостям, ни к задаче, ни к клиенту). */
   function removeIfUnused(id) {
-    if (!q.used.get(Number(id), Number(id)).n) remove(id);
+    if (!q.used.get(Number(id), Number(id), Number(id)).n) remove(id);
   }
 
   return { save, get, size, open, remove, removeIfUnused };

@@ -1,7 +1,7 @@
 // «Главная»: сводка дня одним экраном — что горит, какие встречи, новые заявки, уведомления,
 // с чем работали недавно и что поручили коллегам. Администратор видит ещё нагрузку команды.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, countdown, taskDeadline } from './admin.js';
 import { fill } from './docs.js';
 import { openTask, doneToggle, dueText, dueState, PRIORITY } from './tasks.js';
 import { openMeeting } from './calendar.js';
@@ -93,7 +93,7 @@ function taskRow(t, reload) {
       'div',
       { class: 'home-task-main' },
       h('button', { type: 'button', class: 'linkish task-link', onclick: () => openTask(t.id, { onChange: reload }) }, t.title),
-      h('span', { class: 'muted small' }, t.client_name ?? 'Общие задачи'),
+      h('span', { class: 'muted small' }, t.client_name ?? 'Общие задачи', t.due ? [' · ', countdown(taskDeadline(t))] : null),
     ),
     t.priority >= 3 ? h('span', { class: `chip prio p${t.priority}` }, PRIORITY[t.priority]) : h('span'),
     t.due ? h('span', { class: `chip due ${state}` }, dueText(t)) : h('span', { class: 'chip' }, 'без срока'),
@@ -151,7 +151,7 @@ function meetings(d, reload) {
                     'div',
                     { class: 'home-task-main' },
                     h('button', { type: 'button', class: 'linkish task-link', onclick: () => openMeeting(m.id, { onChange: reload }) }, m.title),
-                    m.client_name ? h('span', { class: 'muted small' }, m.client_name) : null,
+                    h('span', { class: 'muted small' }, m.client_name ? `${m.client_name} · ` : '', countdown(m.starts_at, { kind: 'meeting', end: new Date(start + (m.duration ?? 60) * 60e3).toISOString() })),
                   ),
                   m.link ? h('a', { class: `btn btn-s${live ? ' btn-primary' : ''}`, href: m.link, target: '_blank', rel: 'noopener' }, live ? 'Подключиться' : 'Ссылка') : h('span'),
                 );

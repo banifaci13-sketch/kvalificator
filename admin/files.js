@@ -2,7 +2,8 @@
 // Фото браузер заранее разворачивает по EXIF и уменьшает; видео и документы уходят как есть,
 // с полосой прогресса. Сервер сам проверяет формат и размер.
 
-import { h, icon } from './admin.js';
+import { h, icon, api, toast, confirmDialog } from './admin.js';
+import { fill } from './docs.js';
 import { prepareImage } from './docs.js';
 
 export const ACCEPT_MEDIA = 'image/jpeg,image/png,image/webp,image/gif,image/heic,video/mp4,video/quicktime,video/webm';
@@ -109,4 +110,94 @@ export function lightbox(images, start) {
   document.body.append(dlg);
   show();
   dlg.showModal();
+}
+
+/**
+ * Блок «Файлы» (задача, клиент): список с превью, прикрепить кнопкой, перетаскиванием или Ctrl+V.
+ * attach(ids) и detach(file) возвращают свежий список файлов.
+ */
+export function filesBox({ files: initial = [], attach, detach, onChanged = () => {}, title = 'Файлы', hint = '' }) {
+  let files = initial;
+  const box = h('section', { class: 'task-files' });
+  const picker = h('input', { type: 'file', multiple: true, hidden: true, accept: ACCEPT_ANY, onchange: (e) => add(e.target.files) });
+  const progress = h('div', { class: 'news-attach' });
+  async function add(list) {
+    const ids = [];
+    for (const file of [...(list ?? [])]) {
+      const bar = h('i');
+      const chip = h('div', { class: 'attach-chip uploading' }, h('span', { class: 'attach-name' }, file.name), h('span', { class: 'attach-bar' }, bar));
+      progress.append(chip);
+      try {
+        ids.push((await uploadFile(file, { onProgress: (x) => (bar.style.width = `${Math.round(x * 100)}%`) })).id);
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        chip.remove();
+      }
+    }
+    picker.value = '';
+    if (!ids.length) return;
+    try {
+      files = await attach(ids);
+      onChanged();
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  async function remove(f) {
+    if (!(await confirmDialog(`Удалить файл «${f.name}»?`))) return;
+    try {
+      files = await detach(f);
+      onChanged();
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  function draw() {
+    const images = files.filter((f) => f.kind === 'image');
+    fill(
+      box,
+      h('div', { class: 'checklist-head' }, h('h3', {}, title), files.length ? h('span', { class: 'muted small num' }, files.length) : null, h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'btn btn-s', onclick: () => picker.click() }, icon('clip'), 'Прикрепить')),
+      files.length
+        ? h(
+            'ul',
+            { class: 'task-file-list' },
+            files.map((f) =>
+              h(
+                'li',
+                {},
+                f.kind === 'image'
+                  ? h('button', { type: 'button', class: 'task-file-thumb', 'aria-label': `Открыть ${f.name}`, onclick: () => lightbox(images, f) }, h('img', { src: fileUrl(f), alt: '', loading: 'lazy' }))
+                  : h('span', { class: 'task-file-thumb' }, f.kind === 'video' ? '▶' : icon('docs')),
+                h('div', { class: 'task-file-main' }, h('a', { href: fileUrl(f), target: '_blank', rel: 'noopener' }, f.name), h('span', { class: 'muted small' }, `${fileSize(f.bytes)}${f.added_by ? ` · ${f.added_by}` : ''}`)),
+                h('button', { type: 'button', class: 'icon-btn checklist-del', title: 'Удалить файл', 'aria-label': `Удалить файл ${f.name}`, onclick: () => remove(f) }, icon('trash')),
+              ),
+            ),
+          )
+        : hint ? h('p', { class: 'muted small task-files-empty' }, hint) : null,
+      progress,
+      picker,
+    );
+  }
+  box.addEventListener('dragover', (e) => (e.preventDefault(), box.classList.add('drag')));
+  box.addEventListener('dragleave', () => box.classList.remove('drag'));
+  box.addEventListener('drop', (e) => {
+    e.preventDefault();
+    box.classList.remove('drag');
+    add(e.dataTransfer.files);
+  });
+  // скриншот из буфера, пока блок на экране (и курсор не в поле ввода)
+  const paste = (e) => {
+    if (!box.isConnected) return document.removeEventListener('paste', paste);
+    const list = [...(e.clipboardData?.files ?? [])];
+    if (list.length && !e.target.closest?.('textarea, input')) {
+      e.preventDefault();
+      add(list);
+    }
+  };
+  document.addEventListener('paste', paste);
+  draw();
+  return box;
 }

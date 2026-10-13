@@ -2,7 +2,7 @@
 // ссылки Zoom / Телемост, напоминания в Telegram, подписка на календарь.
 // Время везде московское (UTC+3, без перехода на летнее время).
 
-import { h, api, app, shell, toast, navigate, ctx, confirmDialog } from './admin.js';
+import { h, api, app, shell, toast, navigate, ctx, confirmDialog, countdown } from './admin.js';
 import { fill, formDialog } from './docs.js';
 
 const TZ = 'Europe/Moscow';
@@ -418,6 +418,7 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
     h('div', { class: 'field' }, h('label', { for: 'm-guests' }, 'Гости со стороны клиента'), guests),
     h('div', { class: 'field' }, h('label', { for: 'm-date' }, 'Дата'), date),
     h('div', { class: 'field meeting-time' }, h('div', {}, h('label', { for: 'm-time' }, 'Начало, МСК'), time), h('div', {}, h('label', { for: 'm-duration' }, 'Длится'), duration)),
+    id && !m.cancelled ? h('p', { class: 'hint full meeting-countdown' }, 'До начала: ', countdown(m.starts_at_iso, { kind: 'meeting', end: new Date(Date.parse(m.starts_at_iso) + (m.duration ?? 60) * 60e3).toISOString() })) : null,
     h('div', { class: 'field full' }, h('span', { class: 'label' }, 'Формат'), h('div', { class: 'rating-filter', role: 'group', 'aria-label': 'Формат' }, formatBtns)),
     onlineBox,
     officeBox,

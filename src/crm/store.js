@@ -129,6 +129,9 @@ export function createCrm({ db }) {
     attachFile: db.prepare('INSERT OR IGNORE INTO task_files (task_id, file_id, added_by) VALUES (?, ?, ?)'),
     detachFile: db.prepare('DELETE FROM task_files WHERE task_id = ? AND file_id = ?'),
     fileRow: db.prepare('SELECT id, name, uploaded_by_id FROM files WHERE id = ?'),
+    clientFiles: db.prepare('SELECT f.id, f.mime, f.kind, f.name, f.bytes, cf.added_by, cf.created_at FROM client_files cf JOIN files f ON f.id = cf.file_id WHERE cf.client_id = ? ORDER BY cf.created_at DESC, f.id DESC'),
+    attachClientFile: db.prepare('INSERT OR IGNORE INTO client_files (client_id, file_id, added_by) VALUES (?, ?, ?)'),
+    detachClientFile: db.prepare('DELETE FROM client_files WHERE client_id = ? AND file_id = ?'),
     checkItem: db.prepare('SELECT * FROM task_checklist WHERE id = ?'),
     addCheck: db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM task_checklist WHERE task_id = ?))'),
     setCheck: db.prepare('UPDATE task_checklist SET text = ?, done = ?, done_by = ? WHERE id = ?'),
@@ -635,6 +638,24 @@ export function createCrm({ db }) {
     getTask: (id) => ({ ...getTask(id), comments: q.comments.all(Number(id)), links: q.links.all(Number(id)), checklist: checklist(id), files: q.taskFiles.all(Number(id)) }),
     attachFiles,
     detachFile,
+    clientFiles: (id) => q.clientFiles.all(getClient(id).id),
+    attachClientFiles(clientId, fileIds, user) {
+      const c = getClient(clientId);
+      tx(() => {
+        for (const fid of [...new Set(fileIds.map(Number))]) {
+          const f = q.fileRow.get(fid);
+          if (!f) throw new CrmError('Файл не найден — загрузите его ещё раз');
+          if (f.uploaded_by_id !== user.id && user.role !== 'admin') throw new CrmError('Можно прикрепить только свои файлы');
+          q.attachClientFile.run(c.id, fid, user.name);
+        }
+      });
+      return q.clientFiles.all(c.id);
+    },
+    detachClientFile(clientId, fileId) {
+      const c = getClient(clientId);
+      q.detachClientFile.run(c.id, Number(fileId));
+      return q.clientFiles.all(c.id);
+    },
     checklist,
     addChecklist,
     updateCheck,

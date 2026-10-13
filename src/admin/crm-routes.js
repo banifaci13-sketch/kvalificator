@@ -136,7 +136,19 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource, kb = null,
   api.get('/admin/api/clients/:id', { schema: { params: idParams } }, async (req) => ({
     client: crm.getClient(req.params.id),
     tasks: crm.clientTasks(req.params.id),
+    files: crm.clientFiles(req.params.id),
   }));
+  // файлы клиента: договор, брифы, доступы, макеты
+  api.post('/admin/api/clients/:id/files', {
+    schema: { params: idParams, body: { type: 'object', required: ['fileIds'], additionalProperties: false, properties: { fileIds: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'integer' } } } } },
+  }, async (req) => ({ files: crm.attachClientFiles(req.params.id, req.body.fileIds, req.user) }));
+  api.delete('/admin/api/clients/:id/files/:fileId', {
+    schema: { params: { type: 'object', properties: { id: { type: 'integer' }, fileId: { type: 'integer' } } } },
+  }, async (req) => {
+    const list = crm.detachClientFile(req.params.id, req.params.fileId);
+    files?.removeIfUnused(req.params.fileId);
+    return { files: list };
+  });
 
   api.put('/admin/api/clients/:id', { schema: { params: idParams, body: clientBody } }, async (req) => {
     const { fromLead: _, ...patch } = req.body;

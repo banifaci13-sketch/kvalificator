@@ -457,6 +457,16 @@ const MIGRATIONS = [
   `ALTER TABLE meetings ADD COLUMN summary TEXT;
    ALTER TABLE meetings ADD COLUMN summary_by TEXT;
    ALTER TABLE meetings ADD COLUMN summary_at TEXT;`,
+
+  // Файлы клиента: договор, брифы, доступы, макеты — из общего хранилища (data/files)
+  `CREATE TABLE client_files (
+     client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+     file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+     added_by   TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     PRIMARY KEY (client_id, file_id)
+   );
+   CREATE INDEX client_files_file ON client_files (file_id);`,
 ];
 
 /** Номер текущей версии схемы базы. */
