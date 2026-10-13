@@ -362,7 +362,7 @@ test('внешний вид кабинета: у каждого свои нас�
   const oleg = { cookie: `kval_admin=${(await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'oleg', password: PASSWORD } })).cookies.find((c) => c.name === 'kval_admin').value}` };
 
   const me = (await app.inject({ url: '/admin/api/me', headers: anna })).json().user;
-  assert.deepEqual(me.prefs, { theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'home', assistantName: '', nav: '', address: 'vy', webSearch: 'on' });
+  assert.deepEqual(me.prefs, { theme: 'system', accent: 'soroka', background: 'none', density: 'comfortable', sidebar: 'full', start: 'home', assistantName: '', nav: '', address: 'vy', webSearch: 'on', notifyPopup: 'on', notifyBrowser: 'off', notifySound: 'on', notifyQuiet: 'off', notifyMute: '' });
 
   const res = await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { theme: 'dark', accent: 'violet', background: 'aurora', start: 'tasks' } });
   assert.equal(res.statusCode, 200, res.body);
@@ -374,7 +374,7 @@ test('внешний вид кабинета: у каждого свои нас�
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { color: 'red' } })).json().prefs.accent, 'violet');
 
   const after = (await app.inject({ url: '/admin/api/me', headers: anna })).json().user.prefs;
-  assert.deepEqual(after, { theme: 'dark', accent: 'violet', background: 'aurora', density: 'compact', sidebar: 'full', start: 'tasks', assistantName: '', nav: '', address: 'vy', webSearch: 'on' });
+  assert.deepEqual(after, { theme: 'dark', accent: 'violet', background: 'aurora', density: 'compact', sidebar: 'full', start: 'tasks', assistantName: '', nav: '', address: 'vy', webSearch: 'on', notifyPopup: 'on', notifyBrowser: 'off', notifySound: 'on', notifyQuiet: 'off', notifyMute: '' });
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { assistantName: 'Сара' } })).json().prefs.assistantName, 'Сара');
   assert.equal((await app.inject({ method: 'PATCH', url: '/admin/api/me/prefs', headers: anna, payload: { assistantName: '<script>' } })).statusCode, 400);
   // порядок меню: свои разделы и спрятанные

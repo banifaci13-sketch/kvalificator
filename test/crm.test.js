@@ -381,3 +381,24 @@ test('регламент → задачи проекта с чек-листам�
   assert.deepEqual(list.map((c) => c.text), ['Цели и KPI', 'Доступы к Метрике', 'Счётчик и цели', 'Кампании в Директе', 'Креативы на согласование', 'Шаг 3. Запуск']);
   assert.equal((await oleg({ method: 'POST', url: `/admin/api/tasks/${own.id}/checklist`, payload: { docId: 9999 } })).statusCode, 404);
 });
+
+test('уведомления: отключённые категории не приходят, новые — по after, проверка себе', async () => {
+  const { as } = await setup();
+  const anna = await as('anna');
+  const oleg = await as('oleg');
+  const team = (await anna({ url: '/admin/api/team' })).json().team;
+  const olegId = team.find((u) => u.name === 'Олег').id;
+  assert.equal((await oleg({ method: 'PATCH', url: '/admin/api/me/prefs', payload: { notifyMute: 'comments,news', notifyQuiet: '22-9' } })).statusCode, 200);
+  assert.equal((await oleg({ method: 'PATCH', url: '/admin/api/me/prefs', payload: { notifyMute: 'spam' } })).statusCode, 400);
+  const start = (await oleg({ url: '/admin/api/notifications' })).json().last;
+
+  const t = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Баннеры', assigneeId: olegId } })).json().task;
+  await anna({ method: 'POST', url: `/admin/api/tasks/${t.id}/comments`, payload: { text: 'Посмотри макеты' } });
+  await anna({ method: 'POST', url: `/admin/api/tasks/${t.id}/comments`, payload: { text: '@Олег срочно' } });
+  const fresh = (await oleg({ url: `/admin/api/notifications?after=${start}` })).json().items.map((n) => n.kind);
+  assert.deepEqual(fresh, ['task_assigned', 'mention'], 'комментарий отключён, упоминание — нет');
+
+  await oleg({ method: 'POST', url: '/admin/api/notifications/test', payload: {} });
+  const test = (await oleg({ url: `/admin/api/notifications?after=${start}` })).json().items.at(-1);
+  assert.equal(test.kind, 'test');
+});

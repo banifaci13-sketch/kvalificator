@@ -1657,3 +1657,32 @@ select.select[data-open] { background-image: url("data:image/svg+xml,%3Csvg xmln
 .meeting-countdown { margin: -4px 0 0; }
 @keyframes live-blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .countdown[data-state="live"]::before { animation: none; } }
+
+/* всплывающие уведомления в углу экрана */
+.notif-toasts { position: fixed; top: 16px; right: 16px; z-index: 95; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); }
+.notif-toast {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 12px; padding: 12px 12px 12px 14px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: var(--radius-m); box-shadow: var(--shadow); animation: notif-in .22s ease-out;
+}
+.notif-toast.k-mention, .notif-toast.k-payment { border-left-color: var(--due-today); }
+.notif-toast.out { opacity: 0; transform: translateX(12px); transition: opacity .2s, transform .2s; }
+.notif-toast > .avatar, .notif-toast-icon { width: 36px; height: 36px; font-size: 12px; }
+.notif-toast-icon { display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); }
+.notif-toast-icon .icon { width: 18px; height: 18px; }
+.notif-toast-body p { margin: 0 0 2px; font-size: 14px; line-height: 1.4; font-weight: 500; overflow-wrap: anywhere; }
+.notif-toast-actions { grid-column: 2; display: flex; align-items: center; gap: 6px; }
+.notif-toast-actions .toast-close { margin-left: auto; color: var(--muted); }
+@keyframes notif-in { from { opacity: 0; transform: translateX(16px); } }
+@media (prefers-reduced-motion: reduce) { .notif-toast { animation: none; } }
+
+/* настройки уведомлений */
+.notify-settings { display: grid; gap: 16px; max-width: 720px; }
+.notify-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.notify-row:first-of-type { border-top: 0; }
+div.notify-row { cursor: default; }
+.notify-text { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.notify-row .select { width: auto; min-width: 200px; }
+.notify-ask { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-radius: var(--radius-m); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.notify-ask .notif-toast-icon { width: 32px; height: 32px; flex: none; }
+.notify-ask .spacer { flex: 1; }

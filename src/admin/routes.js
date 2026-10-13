@@ -311,7 +311,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
             type: 'object',
             minProperties: 1,
             additionalProperties: false,
-            properties: Object.fromEntries(Object.keys(DEFAULT_PREFS).map((k) => [k, { type: 'string', maxLength: k === 'nav' ? 200 : 32 }])),
+            properties: Object.fromEntries(Object.keys(DEFAULT_PREFS).map((k) => [k, { type: 'string', maxLength: k === 'nav' || k === 'notifyMute' ? 200 : 32 }])),
           },
         },
       },
@@ -443,7 +443,17 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource, kb, files, money });
 
     // ---------- уведомления (колокольчик) ----------
-    api.get('/admin/api/notifications', async (req) => ({ items: notify.list(req.user.id), unread: notify.unread(req.user.id) }));
+    // after — только новые (для всплывающих окон): опрос раз в 20 секунд
+    api.get('/admin/api/notifications', { schema: { querystring: { type: 'object', properties: { after: { type: 'integer', minimum: 0 } } } } }, async (req) => ({
+      items: req.query.after != null ? notify.after(req.user.id, req.query.after) : notify.list(req.user.id),
+      unread: notify.unread(req.user.id),
+      last: notify.lastId(req.user.id),
+    }));
+    // проверка настроек: тестовое уведомление себе
+    api.post('/admin/api/notifications/test', async (req) => {
+      notify.add(req.user.id, { kind: 'test', text: 'Проверка: так выглядят уведомления кабинета', href: '#/notify-settings' });
+      return { unread: notify.unread(req.user.id) };
+    });
     api.post(
       '/admin/api/notifications/read',
       { schema: { body: { type: 'object', additionalProperties: false, properties: { id: { type: 'integer' } } } } },

@@ -11,7 +11,15 @@ export const PREF_OPTIONS = {
   // ассистент: на «вы» или на «ты», искать ли в интернете
   address: ['vy', 'ty'],
   webSearch: ['on', 'off'],
+  // уведомления: всплывающие в кабинете, системные браузера, звук, тихие часы
+  notifyPopup: ['on', 'off'],
+  notifyBrowser: ['off', 'on'],
+  notifySound: ['on', 'off'],
+  notifyQuiet: ['off', '22-9', '21-9', '20-8', '23-8', '19-9'],
 };
+// категории уведомлений, которые можно отключить: «-comments,-news» в notifyMute
+export const NOTIFY_CATEGORIES = ['tasks', 'comments', 'mentions', 'meetings', 'payments', 'news'];
+const validMute = (v) => typeof v === 'string' && v.length <= 100 && (v === '' || v.split(',').every((x) => NOTIFY_CATEGORIES.includes(x)));
 export const NAV_IDS = ['home', 'news', 'docs', 'templates', 'plans', 'tasks', 'calendar', 'leads', 'kb', 'staff'];
 const validNav = (v) => typeof v === 'string' && v.length <= 200 && (v === '' || v.split(',').every((x) => NAV_IDS.includes(x.replace(/^-/, ''))));
 // имя ассистента — свободное, но короткое и без разметки
@@ -29,6 +37,11 @@ export const DEFAULT_PREFS = {
   nav: '',
   address: 'vy',
   webSearch: 'on',
+  notifyPopup: 'on',
+  notifyBrowser: 'off',
+  notifySound: 'on',
+  notifyQuiet: 'off',
+  notifyMute: '',
 };
 
 // своё фото фоном — картинка из медиатеки: «media:<id>»
@@ -49,6 +62,7 @@ export function readPrefs(raw) {
     const v = saved?.[key];
     if (key === 'assistantName') out[key] = typeof v === 'string' && (v === '' || NAME_RE.test(v)) ? v : '';
     else if (key === 'nav') out[key] = validNav(v) ? v : '';
+    else if (key === 'notifyMute') out[key] = validMute(v) ? v : '';
     else if (PREF_OPTIONS[key].includes(v) || (key === 'background' && MEDIA_BG.test(v ?? ''))) out[key] = v;
   }
   return out;
@@ -65,6 +79,10 @@ export function checkPrefsPatch(patch, { mediaExists = () => false } = {}) {
     if (key === 'nav') {
       if (validNav(v)) continue;
       throw new PrefsError('Неизвестный раздел меню');
+    }
+    if (key === 'notifyMute') {
+      if (validMute(v)) continue;
+      throw new PrefsError('Неизвестная категория уведомлений');
     }
     if (PREF_OPTIONS[key].includes(v)) continue;
     const m = key === 'background' && MEDIA_BG.exec(v ?? '');

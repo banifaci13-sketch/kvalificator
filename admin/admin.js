@@ -11,6 +11,7 @@ import { renderKb } from './kb.js';
 import { renderHome, bellButton } from './home.js';
 import { renderNews, refreshNewsBadge } from './news.js';
 import { renderMoney } from './money.js';
+import { renderNotifySettings } from './notify.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -183,6 +184,7 @@ const routes = {
   home: renderHome,
   news: renderNews,
   money: renderMoney,
+  'notify-settings': renderNotifySettings,
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
@@ -223,6 +225,7 @@ const SECTION_TABS = {
   ],
   account: [
     ['account', 'Учётная запись'],
+    ['notify-settings', 'Уведомления'],
     ['appearance', 'Внешний вид'],
   ],
   tasks: [
@@ -722,7 +725,7 @@ function shell(active, content) {
         h(
           'div',
           { class: 'me' },
-          meLink(active === 'account' || active === 'appearance'),
+          meLink(active === 'account' || active === 'appearance' || active === 'notify-settings'),
           h('button', { type: 'button', class: 'logout', title: 'Выйти', 'aria-label': 'Выйти', onclick: logout }, icon('logout')),
         ),
       ),

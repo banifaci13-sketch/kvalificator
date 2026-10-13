@@ -3,6 +3,7 @@
 
 import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, countdown, taskDeadline } from './admin.js';
 import { fill } from './docs.js';
+import { watchNotifications, permissionBanner } from './notify.js';
 import { openTask, doneToggle, dueText, dueState, PRIORITY } from './tasks.js';
 import { openMeeting } from './calendar.js';
 
@@ -41,7 +42,7 @@ export async function renderHome() {
       if (err.status !== 401) fill(body, h('p', { class: 'error' }, err.message));
       return;
     }
-    fill(body, hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, moneyCard(d), newsCard(d), meetings(d, load), leads(d), notifications(d), recent(d))));
+    fill(body, permissionBanner(), hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, moneyCard(d), newsCard(d), meetings(d, load), leads(d), notifications(d), recent(d))));
   }
   await load();
 }
@@ -319,11 +320,8 @@ function team(d) {
 
 // ---------- колокольчик в боковой панели ----------
 
-let bellTimer = null;
 const bells = new Set();
-export function refreshBell() {
-  return api('/admin/api/notifications')
-    .then(({ unread }) => {
+function setBellCount(unread) {
       for (const b of bells) {
         if (!b.isConnected) {
           bells.delete(b);
@@ -334,7 +332,10 @@ export function refreshBell() {
         badge.hidden = !unread;
         b.setAttribute('aria-label', unread ? `Уведомления: непрочитанных ${unread}` : 'Уведомления');
       }
-    })
+}
+export function refreshBell() {
+  return api('/admin/api/notifications?after=999999999')
+    .then(({ unread }) => setBellCount(unread))
     .catch(() => {});
 }
 
@@ -343,7 +344,8 @@ export function bellButton() {
   btn.addEventListener('click', () => openBell(btn));
   bells.add(btn);
   refreshBell();
-  if (!bellTimer) bellTimer = setInterval(() => document.visibilityState === 'visible' && ctx.me && refreshBell(), 60e3);
+  // новые уведомления — всплывающим окном, в браузере и звуком (настройки — «Уведомления»)
+  watchNotifications(setBellCount);
   return btn;
 }
 
