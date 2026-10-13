@@ -54,6 +54,9 @@ const publicUser = (u) =>
     id: u.id,
     login: u.email,
     name: u.name,
+    position: u.position ?? null,
+    phone: u.phone ?? null,
+    telegram: Boolean(u.telegram_chat_id),
     role: u.role,
     disabled: Boolean(u.disabled),
     created_at: u.created_at,
@@ -76,6 +79,9 @@ export function createAuth(db) {
     setDisabled: db.prepare('UPDATE admin_users SET disabled = ? WHERE id = ?'),
     setRole: db.prepare('UPDATE admin_users SET role = ? WHERE id = ?'),
     setName: db.prepare('UPDATE admin_users SET name = ? WHERE id = ?'),
+    setLogin: db.prepare('UPDATE admin_users SET email = ? WHERE id = ?'),
+    setProfile: db.prepare('UPDATE admin_users SET position = ?, phone = ? WHERE id = ?'),
+    deleteUser: db.prepare('DELETE FROM admin_users WHERE id = ?'),
     insertSession: db.prepare(
       `INSERT INTO admin_sessions (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', '+${SESSION_DAYS} days'))`,
     ),
@@ -164,11 +170,45 @@ export function createAuth(db) {
         q.setRole.run(change.role, id);
       }
       if (change.name !== undefined) q.setName.run(String(change.name).trim().slice(0, 100) || user.email, id);
+      if (change.login !== undefined) {
+        const login = normalizeLogin(change.login);
+        const other = q.userByLogin.get(login);
+        if (other && other.id !== user.id) throw new AuthError('Такой логин уже есть');
+        // со сменой логина пароль прежний, сессии остаются
+        q.setLogin.run(login, id);
+      }
+      if (change.position !== undefined || change.phone !== undefined) {
+        const clean = (v, max) => (v == null ? null : String(v).trim().slice(0, max) || null);
+        q.setProfile.run(
+          change.position !== undefined ? clean(change.position, 100) : user.position,
+          change.phone !== undefined ? clean(change.phone, 40) : user.phone,
+          id,
+        );
+      }
       if (change.disabled !== undefined) {
         q.setDisabled.run(change.disabled ? 1 : 0, id);
         if (change.disabled) q.deleteUserSessions.run(id);
       }
       return publicUser(q.userById.get(id));
+    },
+
+    /** Удалить можно только отключённого сотрудника, за которым ничего не числится. */
+    deleteUser(id, actorId) {
+      const user = mustGet(id);
+      if (user.id === actorId) throw new AuthError('Себя удалить нельзя');
+      if (!user.disabled) throw new AuthError('Сначала отключите сотрудника');
+      try {
+        db.exec('BEGIN');
+        q.deleteUserSessions.run(id);
+        q.deleteUser.run(id);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        if (/FOREIGN KEY/i.test(err.message)) {
+          throw new AuthError('За сотрудником числятся задачи, встречи или клиенты — оставьте его отключённым, чтобы не потерять историю');
+        }
+        throw err;
+      }
     },
 
     // Для консольной команды scripts/admin.js

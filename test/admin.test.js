@@ -297,7 +297,7 @@ test('после обновления первый сотрудник старо
   const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
   const fresh = openDb(path);
   // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
-  fresh.raw.exec(`DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
+  fresh.raw.exec(`ALTER TABLE admin_users DROP COLUMN position; ALTER TABLE admin_users DROP COLUMN phone; DROP TABLE media; DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
     ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
     INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
   fresh.close();
@@ -327,4 +327,30 @@ test('имя: каждый меняет своё, чужое — только а
   assert.equal(byAdmin.json().user.name, 'Даниил К.');
   auth.setNameByLogin('dmitry', 'Даниил Карацапов');
   assert.equal(auth.listUsers().find((u) => u.login === 'dmitry').name, 'Даниил Карацапов');
+});
+
+test('данные сотрудника: логин, должность, телефон; удаление отключённого', async () => {
+  const { app, auth } = await setup();
+  const anna = await login(app);
+  auth.addUser('d.karatsapov@yandex.ri', 'Опечатка', { password: PASSWORD, role: 'admin' });
+  auth.addUser('oleg', 'Олег', { password: PASSWORD });
+  const typo = auth.listUsers().find((u) => u.login === 'd.karatsapov@yandex.ri');
+  const oleg = auth.listUsers().find((u) => u.login === 'oleg');
+
+  const upd = await app.inject({ method: 'PATCH', url: `/admin/api/users/${oleg.id}`, headers: anna, payload: { login: 'Oleg.Petrov@Soroka.ru', position: 'Таргетолог', phone: '+7 900 000-00-00' } });
+  assert.equal(upd.statusCode, 200);
+  assert.deepEqual([upd.json().user.login, upd.json().user.position, upd.json().user.phone], ['oleg.petrov@soroka.ru', 'Таргетолог', '+7 900 000-00-00']);
+  // со сменой логина входят по новому, пароль прежний
+  assert.equal((await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'oleg.petrov@soroka.ru', password: PASSWORD } })).statusCode, 200);
+  const dup = await app.inject({ method: 'PATCH', url: `/admin/api/users/${oleg.id}`, headers: anna, payload: { login: 'anna@soroka-marketing.ru' } });
+  assert.match(dup.json().error, /уже есть/);
+
+  // удалить можно только отключённого
+  assert.match((await app.inject({ method: 'DELETE', url: `/admin/api/users/${typo.id}`, headers: anna })).json().error, /отключите/);
+  await app.inject({ method: 'PATCH', url: `/admin/api/users/${typo.id}`, headers: anna, payload: { disabled: true } });
+  assert.equal((await app.inject({ method: 'DELETE', url: `/admin/api/users/${typo.id}`, headers: anna })).statusCode, 200);
+  assert.equal(auth.listUsers().some((u) => u.login === 'd.karatsapov@yandex.ri'), false);
+
+  const me = await app.inject({ method: 'PATCH', url: '/admin/api/me', headers: anna, payload: { position: 'Руководитель', phone: '+7 911 111-11-11' } });
+  assert.equal(me.json().user.position, 'Руководитель');
 });

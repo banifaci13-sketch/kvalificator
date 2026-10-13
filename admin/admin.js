@@ -1,7 +1,7 @@
 // Админка ассистента агентства. Без сборки и зависимостей: модули ES, DOM строится через h(),
 // пользовательские данные выводятся только как текст (никакого innerHTML с данными).
 
-import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
+import { renderDocs, renderDoc, renderTemplates, leadDocuments, formDialog } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderBoards, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
@@ -915,6 +915,35 @@ function passwordNotice(login, password, note) {
   );
 }
 
+/** Карточка сотрудника: имя, логин, должность, телефон. */
+function editUser(u, self, onSaved = () => renderStaff()) {
+  const field = (id, label, value, attrs = {}) => {
+    const input = h('input', { class: 'input', id, value: value ?? '', maxlength: 100, ...attrs });
+    return [input, h('div', { class: 'field' }, h('label', { for: id }, label), input)];
+  };
+  const [name, nameF] = field('u-name', 'Имя и фамилия', u.name, { required: true });
+  const [loginI, loginF] = field('u-login', 'Логин для входа', u.login, { required: true, maxlength: 64, autocapitalize: 'none', spellcheck: 'false' });
+  const [position, positionF] = field('u-position', 'Должность', u.position, { placeholder: 'Аккаунт-менеджер' });
+  const [phone, phoneF] = field('u-phone', 'Телефон', u.phone, { type: 'tel', maxlength: 40 });
+  formDialog({
+    title: `Сотрудник: ${u.name}`,
+    submitLabel: 'Сохранить',
+    body: [nameF, loginF, h('p', { class: 'hint' }, 'Логин — латиница или почта. Пароль при смене логина не меняется.'), positionF, phoneF],
+    onSubmit: async () => {
+      const { user } = await api(`/admin/api/users/${u.id}`, {
+        method: 'PATCH',
+        body: { name: name.value.trim(), login: loginI.value.trim(), position: position.value.trim() || null, phone: phone.value.trim() || null },
+      });
+      if (self) {
+        Object.assign(ctx.me, { name: user.name, login: user.login });
+        document.querySelector('.user .name').textContent = user.name;
+      }
+      toast('Данные сотрудника сохранены');
+      onSaved();
+    },
+  });
+}
+
 async function renderStaff() {
   if (ctx.me.role !== 'admin') return navigate('docs');
   const notice = h('div');
@@ -996,25 +1025,12 @@ async function renderStaff() {
           'tr',
           { class: u.disabled ? 'disabled' : '' },
           h('td', { class: 'mono' }, u.login, self ? h('span', { class: 'muted' }, ' (вы)') : null),
-          h('td', {}, h('input', {
-            class: 'input name-input', value: u.name, maxlength: 100, 'aria-label': `Имя ${u.login}`,
-            onchange: (e) => {
-              const name = e.target.value.trim();
-              if (!name) return (e.target.value = u.name);
-              act(async () => {
-                await api(`/admin/api/users/${u.id}`, { method: 'PATCH', body: { name } });
-                toast('Имя изменено');
-                if (self) {
-                  ctx.me.name = name;
-                  document.querySelector('.user .name').textContent = name;
-                }
-              });
-            },
-          })),
+          h('td', {}, h('strong', {}, u.name), u.position ? h('span', { class: 'task' }, u.position) : null, u.phone ? h('span', { class: 'task num' }, u.phone) : null),
           h('td', {}, roleSelect),
           h('td', {}, u.disabled ? h('span', { class: 'status', dataset: { s: 'lost' } }, 'Отключён') : h('span', { class: 'status', dataset: { s: 'won' } }, 'Активен')),
           h('td', { class: 'num nowrap' }, fmtDateTime(u.created_at)),
           h('td', { class: 'row-actions' },
+            h('button', { type: 'button', class: 'btn', onclick: () => editUser(u, self) }, 'Изменить'),
             h('button', {
               type: 'button', class: 'btn',
               onclick: () => {
@@ -1030,6 +1046,18 @@ async function renderStaff() {
               type: 'button', class: 'btn',
               onclick: () => act(() => api(`/admin/api/users/${u.id}`, { method: 'PATCH', body: { disabled: !u.disabled } })),
             }, u.disabled ? 'Включить' : 'Отключить'),
+            u.disabled && !self
+              ? h('button', {
+                  type: 'button', class: 'btn',
+                  onclick: () => {
+                    if (!confirm(`Удалить ${u.login} насовсем? Если за сотрудником есть задачи или встречи, удалить не получится — тогда оставьте его отключённым.`)) return;
+                    act(async () => {
+                      await api(`/admin/api/users/${u.id}`, { method: 'DELETE' });
+                      toast('Сотрудник удалён');
+                    });
+                  },
+                }, 'Удалить')
+              : null,
           ),
         );
       }),
@@ -1042,6 +1070,8 @@ async function renderStaff() {
 
 function renderAccount() {
   const nameInput = h('input', { class: 'input', id: 'my-name', value: ctx.me.name, maxlength: 100, required: true });
+  const positionInput = h('input', { class: 'input', id: 'my-position', value: ctx.me.position ?? '', maxlength: 100, placeholder: 'Аккаунт-менеджер' });
+  const phoneInput = h('input', { class: 'input', id: 'my-phone', type: 'tel', value: ctx.me.phone ?? '', maxlength: 40 });
   const nameMsg = h('p', { role: 'status' });
   const nameForm = h(
     'form',
@@ -1050,20 +1080,25 @@ function renderAccount() {
       onsubmit: async (e) => {
         e.preventDefault();
         try {
-          const { user } = await api('/admin/api/me', { method: 'PATCH', body: { name: nameInput.value.trim() } });
-          ctx.me.name = user.name;
+          const { user } = await api('/admin/api/me', {
+            method: 'PATCH',
+            body: { name: nameInput.value.trim(), position: positionInput.value.trim() || null, phone: phoneInput.value.trim() || null },
+          });
+          Object.assign(ctx.me, { name: user.name, position: user.position, phone: user.phone });
           document.querySelector('.user .name').textContent = user.name;
           nameMsg.className = 'saved';
-          nameMsg.textContent = 'Имя изменено';
+          nameMsg.textContent = 'Сохранено';
         } catch (err) {
           nameMsg.className = 'error';
           nameMsg.textContent = err.message;
         }
       },
     },
-    h('h2', {}, 'Как вас зовут'),
-    h('p', { class: 'muted' }, 'Имя видно в шапке, в задачах, встречах и документах.'),
+    h('h2', {}, 'Мои данные'),
+    h('p', { class: 'muted' }, 'Видны коллегам в задачах, встречах и документах.'),
     h('div', { class: 'field' }, h('label', { for: 'my-name' }, 'Имя и фамилия'), nameInput),
+    h('div', { class: 'field' }, h('label', { for: 'my-position' }, 'Должность'), positionInput),
+    h('div', { class: 'field' }, h('label', { for: 'my-phone' }, 'Телефон'), phoneInput),
     nameMsg,
     h('button', { type: 'submit', class: 'btn btn-primary' }, 'Сохранить'),
   );

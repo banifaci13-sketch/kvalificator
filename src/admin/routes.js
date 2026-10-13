@@ -247,12 +247,22 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       '/admin/api/me',
       {
         schema: {
-          body: { type: 'object', required: ['name'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 100 } } },
+          body: {
+            type: 'object',
+            minProperties: 1,
+            additionalProperties: false,
+            properties: {
+              name: { type: 'string', minLength: 1, maxLength: 100 },
+              position: { type: ['string', 'null'], maxLength: 100 },
+              phone: { type: ['string', 'null'], maxLength: 40 },
+            },
+          },
         },
       },
       async (req) => {
-        if (!req.body.name.trim()) throw new AuthError('Укажите имя');
-        return { user: auth.updateUser(req.user.id, { name: req.body.name }) };
+        if (req.body.name !== undefined && !req.body.name.trim()) throw new AuthError('Укажите имя');
+        const { name, position, phone } = req.body;
+        return { user: auth.updateUser(req.user.id, { name, position, phone }) };
       },
     );
 
@@ -323,6 +333,9 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
               additionalProperties: false,
               properties: {
                 name: { type: 'string', maxLength: 100 },
+                login: { type: 'string', maxLength: 64 },
+                position: { type: ['string', 'null'], maxLength: 100 },
+                phone: { type: ['string', 'null'], maxLength: 40 },
                 role: { type: 'string', enum: Object.keys(ROLES) },
                 disabled: { type: 'boolean' },
               },
@@ -331,6 +344,11 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         },
         async (req) => ({ user: auth.updateUser(req.params.id, req.body) }),
       );
+
+      staff.delete('/admin/api/users/:id', { schema: { params: idParams } }, async (req) => {
+        auth.deleteUser(req.params.id, req.user.id);
+        return { ok: true };
+      });
     });
 
     if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });

@@ -310,6 +310,8 @@ table.staff { width: 100%; border-collapse: collapse; min-width: 860px; }
 .staff tr.disabled td { color: var(--muted); }
 .staff tbody tr { cursor: default; }
 .name-input { min-height: 34px; padding: 4px 8px; min-width: 180px; }
+.staff td .task { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.staff td strong { display: block; }
 .row-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 .secret { max-width: 980px; margin-bottom: 16px; padding: 16px 20px; background: var(--surface); border: 2px solid var(--accent); border-radius: var(--radius-m); }

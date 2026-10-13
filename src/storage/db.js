@@ -237,6 +237,25 @@ const MIGRATIONS = [
      error       TEXT,
      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );`,
+
+  // Медиатека: фото и креативы для документов (файлы — в data/media, здесь описание)
+  `CREATE TABLE media (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     sha256      TEXT NOT NULL,
+     mime        TEXT NOT NULL,
+     width       INTEGER NOT NULL,
+     height      INTEGER NOT NULL,
+     bytes       INTEGER NOT NULL,
+     name        TEXT,
+     uploaded_by TEXT,
+     uploaded_by_id INTEGER,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX media_sha ON media (sha256);`,
+
+  // Данные сотрудника: должность и телефон (видны коллегам в задачах и встречах)
+  `ALTER TABLE admin_users ADD COLUMN position TEXT;
+   ALTER TABLE admin_users ADD COLUMN phone TEXT;`,
 ];
 
 /** Номер текущей версии схемы базы. */
