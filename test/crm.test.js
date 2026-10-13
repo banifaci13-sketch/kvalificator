@@ -100,3 +100,28 @@ test('задачи: доска, исполнитель, статус, лента
   assert.equal(archived.archived, 1);
   assert.equal((await oleg({ url: '/admin/api/clients' })).json().clients.length, 0);
 });
+
+test('доски: по клиенту и «Внутренние», счётчики по статусам, просрочка, мои', async () => {
+  const { as } = await setup();
+  const anna = await as('anna');
+  const team = (await anna({ url: '/admin/api/team' })).json().team;
+  const annaId = team.find((u) => u.name === 'Анна').id;
+  const a = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Альфа' } })).json().client;
+  await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Бета' } });
+  const t1 = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Аудит', clientId: a.id, assigneeId: annaId, due: '2020-01-01' } })).json().task;
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Запуск', clientId: a.id, status: 'doing' } });
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Обновить шаблоны КП' } });
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t1.id}`, payload: { status: 'review' } });
+
+  const boards = (await anna({ url: '/admin/api/boards' })).json().boards;
+  assert.deepEqual(boards.map((b) => b.name), ['Альфа', 'Бета', 'Внутренние задачи']);
+  const alpha = boards[0];
+  assert.deepEqual(alpha.counts, { todo: 0, doing: 1, review: 1, done: 0 });
+  assert.equal(alpha.overdue, 1);
+  assert.equal(alpha.mine, 1);
+  assert.equal(boards[2].counts.todo, 1);
+
+  const internal = (await anna({ url: '/admin/api/tasks?client=none' })).json().tasks;
+  assert.deepEqual(internal.map((t) => t.title), ['Обновить шаблоны КП']);
+  assert.equal((await anna({ url: '/admin/api/tasks?client=abc' })).statusCode, 400);
+});

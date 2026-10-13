@@ -3,7 +3,7 @@
 
 import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
-import { renderTasks, renderClients, renderClient, leadClient } from './tasks.js';
+import { renderBoards, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
 
 const app = document.getElementById('app');
@@ -134,7 +134,9 @@ const routes = {
   plans: renderPlans,
   plan: renderPlan,
   benchmarks: renderBenchmarks,
-  tasks: renderTasks,
+  tasks: renderBoards,
+  taskboard: renderTaskBoard,
+  mytasks: renderMyTasks,
   clients: renderClients,
   client: renderClient,
   calendar: renderCalendar,
@@ -158,12 +160,13 @@ const SECTION_TABS = {
     ['benchmarks', 'Нормативы'],
   ],
   tasks: [
-    ['tasks', 'Доска'],
+    ['tasks', 'Доски'],
+    ['mytasks', 'Мои задачи'],
     ['clients', 'Клиенты'],
   ],
 };
 // Страницы внутри раздела без своей вкладки
-const PAGE_SECTION = { doc: 'docs', plan: 'plans', client: 'tasks' };
+const PAGE_SECTION = { doc: 'docs', plan: 'plans', client: 'tasks', taskboard: 'tasks' };
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');

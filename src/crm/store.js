@@ -155,7 +155,8 @@ export function createCrm({ db }) {
   function listTasks({ clientId = null, assigneeId = null, mine = null, q: search = '' } = {}) {
     const where = [`(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
     const params = [];
-    if (clientId) {
+    if (clientId === 'none') where.push('t.client_id IS NULL');
+    else if (clientId) {
       where.push('t.client_id = ?');
       params.push(Number(clientId));
     }
@@ -185,7 +186,33 @@ export function createCrm({ db }) {
       .all(...params);
   }
 
+  /** Доски: клиенты в работе и «Внутренние» (задачи без клиента) — со счётчиками по статусам. */
+  function boards(userId) {
+    const stats = db
+      .prepare(
+        `SELECT client_id, status, COUNT(*) AS n,
+                SUM(CASE WHEN status != 'done' AND due < date('now', '+3 hours') THEN 1 ELSE 0 END) AS overdue,
+                SUM(CASE WHEN status != 'done' AND assignee_id = ? THEN 1 ELSE 0 END) AS mine
+         FROM tasks WHERE status != 'done' OR done_at >= datetime('now', '-${DONE_DAYS} days')
+         GROUP BY client_id, status`,
+      )
+      .all(userId);
+    const empty = () => ({ counts: Object.fromEntries(Object.keys(TASK_STATUSES).map((s) => [s, 0])), overdue: 0, mine: 0 });
+    const byClient = new Map();
+    for (const r of stats) {
+      const key = r.client_id ?? 'none';
+      if (!byClient.has(key)) byClient.set(key, empty());
+      const b = byClient.get(key);
+      b.counts[r.status] = r.n;
+      b.overdue += r.overdue;
+      b.mine += r.mine;
+    }
+    const list = q.clients.all(0).map((c) => ({ id: c.id, name: c.name, manager_name: c.manager_name, lead_id: c.lead_id, ...(byClient.get(c.id) ?? empty()) }));
+    return [...list, { id: 'none', name: 'Внутренние задачи', internal: true, manager_name: null, ...(byClient.get('none') ?? empty()) }];
+  }
+
   return {
+    boards,
     listClients: ({ archived = false } = {}) => q.clients.all(Number(archived)),
     getClient,
     createClient,

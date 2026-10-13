@@ -2,7 +2,7 @@
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
 import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx } from './admin.js';
-import { fill } from './docs.js';
+import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 
 let team = null;
@@ -201,7 +201,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
 
 // ---------- доска ----------
 
-function card(t, onOpen) {
+function card(t, onOpen, showClient = true) {
   const state = dueState(t);
   const el = h(
     'button',
@@ -216,7 +216,7 @@ function card(t, onOpen) {
     },
     t.priority ? h('span', { class: 'urgent-chip' }, 'Срочно') : null,
     h('span', { class: 'task-name' }, t.title),
-    t.client_name ? h('span', { class: 'task-client' }, t.client_name) : null,
+    showClient && t.client_name ? h('span', { class: 'task-client' }, t.client_name) : null,
     h(
       'span',
       { class: 'row' },
@@ -227,27 +227,30 @@ function card(t, onOpen) {
   return el;
 }
 
-export async function renderTasks(params) {
+/** Канбан задач: доска клиента (fixedClient), «Внутренние» (fixedClient = 'none') или «Мои задачи» со всех досок. */
+async function kanban(params, { route, fixedClient = null, forceMine = false, title = 'Задачи', back = null, extra = null }) {
   const { team: people, statuses } = await loadTeam().catch(() => ({ team: [], statuses: {} }));
-  const mine = params.get('mine') === '1';
-  const f = { assignee: params.get('assignee') ?? '', client: params.get('client') ?? '', q: params.get('q') ?? '' };
+  const mine = forceMine || params.get('mine') === '1';
+  const f = { assignee: params.get('assignee') ?? '', client: fixedClient ?? params.get('client') ?? '', q: params.get('q') ?? '' };
   const board = h('div', { class: 'board task-board' });
   const go = (patch) => {
     const p = new URLSearchParams({ ...(mine ? { mine: '1' } : {}), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) });
     for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
-    navigate('tasks', p);
+    navigate(route, p);
   };
   const clientSel = h('select', { class: 'select', 'aria-label': 'Клиент', onchange: (e) => go({ client: e.target.value }) }, h('option', { value: '' }, 'Все клиенты'));
   const search = h('input', { class: 'input', type: 'search', placeholder: 'Поиск по задачам', value: f.q, 'aria-label': 'Поиск', onchange: (e) => go({ q: e.target.value.trim() }) });
   const filters = h(
     'div',
     { class: 'filters' },
-    h(
-      'div',
-      { class: 'rating-filter', role: 'group', 'aria-label': 'Чьи задачи' },
-      h('button', { type: 'button', 'aria-pressed': String(!mine), onclick: () => go({ mine: '' }) }, 'Все'),
-      h('button', { type: 'button', 'aria-pressed': String(mine), onclick: () => go({ mine: '1', assignee: '' }) }, 'Мои'),
-    ),
+    forceMine
+      ? null
+      : h(
+          'div',
+          { class: 'rating-filter', role: 'group', 'aria-label': 'Чьи задачи' },
+          h('button', { type: 'button', 'aria-pressed': String(!mine), onclick: () => go({ mine: '' }) }, 'Все'),
+          h('button', { type: 'button', 'aria-pressed': String(mine), onclick: () => go({ mine: '1', assignee: '' }) }, 'Мои'),
+        ),
     mine
       ? null
       : h(
@@ -257,18 +260,29 @@ export async function renderTasks(params) {
           h('option', { value: 'none', selected: f.assignee === 'none' }, 'Не назначены'),
           people.map((u) => h('option', { value: u.id, selected: String(u.id) === f.assignee }, u.name)),
         ),
-    clientSel,
+    fixedClient ? null : clientSel,
     search,
   );
   const newBtn = h('button', { type: 'button', class: 'btn btn-primary', onclick: () => openTask(null, { defaults: newDefaults(), onChange: load }) }, 'Новая задача');
   const counter = h('span', { class: 'count' });
-  fill(app, shell('tasks', [h('div', { class: 'page-head' }, h('h1', {}, 'Задачи'), counter, h('span', { class: 'spacer' }), newBtn), filters, board]));
+  fill(
+    app,
+    shell(route, [
+      back ? h('a', { class: 'back-link', href: back }, 'Все доски') : null,
+      h('div', { class: 'page-head' }, h('h1', {}, title), counter, h('span', { class: 'spacer' }), extra, newBtn),
+      filters,
+      board,
+    ]),
+  );
 
   function newDefaults() {
-    return { client_id: f.client ? Number(f.client) : null, assignee_id: mine ? ctx.me.id : f.assignee && f.assignee !== 'none' ? Number(f.assignee) : null };
+    return {
+      client_id: f.client && f.client !== 'none' ? Number(f.client) : null,
+      assignee_id: mine ? ctx.me.id : f.assignee && f.assignee !== 'none' ? Number(f.assignee) : null,
+    };
   }
 
-  api('/admin/api/clients')
+  if (!fixedClient) api('/admin/api/clients')
     .then(({ clients }) => clientSel.append(...clients.map((c) => h('option', { value: c.id, selected: String(c.id) === f.client }, c.name))))
     .catch(() => {});
 
@@ -322,7 +336,7 @@ export async function renderTasks(params) {
     function recount() {
       for (const { cards, count } of Object.values(columns)) count.textContent = cards.children.length;
     }
-    for (const t of tasks) columns[t.status]?.cards.append(card(t, (id) => openTask(id, { onChange: load })));
+    for (const t of tasks) columns[t.status]?.cards.append(card(t, (id) => openTask(id, { onChange: load }), !fixedClient));
     for (const { cards } of Object.values(columns)) if (!cards.children.length) cards.dataset.empty = '1';
     recount();
   }
@@ -353,6 +367,94 @@ export async function renderTasks(params) {
 
   load();
 }
+
+// ---------- доски ----------
+
+const STATUS_CLASS = { todo: 's-todo', doing: 's-doing', review: 's-review', done: 's-done' };
+
+export async function renderBoards() {
+  const grid = h('div', { class: 'boards' }, h('p', { class: 'muted' }, 'Загружаю…'));
+  const newBtn = h('button', { type: 'button', class: 'btn btn-primary', onclick: newBoard }, 'Новая доска');
+  fill(app, shell('tasks', [h('div', { class: 'page-head' }, h('h1', {}, 'Доски'), h('span', { class: 'count' }, 'по клиентам'), h('span', { class: 'spacer' }), newBtn), grid]));
+
+  let data;
+  try {
+    data = await api('/admin/api/boards');
+  } catch (err) {
+    if (err.status !== 401) fill(grid, h('p', { class: 'error' }, err.message));
+    return;
+  }
+  const { boards, statuses } = data;
+  fill(
+    grid,
+    boards.map((b) => {
+      const open = b.counts.todo + b.counts.doing + b.counts.review;
+      const all = open + b.counts.done;
+      const href = `#/taskboard?client=${b.id}`;
+      return h(
+        'a',
+        { class: `board-card${b.internal ? ' internal' : ''}`, href },
+        h('h2', {}, b.name),
+        h('p', { class: 'board-meta' }, b.internal ? 'Задачи команды без клиента' : b.manager_name ? `Ответственный: ${b.manager_name}` : 'Ответственный не назначен'),
+        // полоса: сколько задач на каждом этапе воронки
+        h(
+          'div',
+          { class: 'board-bar', role: 'img', 'aria-label': Object.entries(statuses).map(([k, l]) => `${l}: ${b.counts[k]}`).join(', ') },
+          all ? Object.keys(statuses).map((k) => (b.counts[k] ? h('span', { class: STATUS_CLASS[k], style: `flex:${b.counts[k]}` }) : null)) : h('span', { class: 'empty-bar' }),
+        ),
+        h(
+          'ul',
+          { class: 'board-counts' },
+          Object.entries(statuses).map(([k, l]) => h('li', {}, h('i', { class: STATUS_CLASS[k], 'aria-hidden': 'true' }), `${l}: `, h('b', { class: 'num' }, b.counts[k]))),
+        ),
+        h(
+          'div',
+          { class: 'board-flags' },
+          open ? null : h('span', { class: 'muted' }, all ? 'Всё сделано' : 'Задач пока нет'),
+          b.overdue ? h('span', { class: 'due overdue' }, `просрочено ${b.overdue}`) : null,
+          b.mine ? h('span', { class: 'tag' }, `мои: ${b.mine}`) : null,
+        ),
+      );
+    }),
+  );
+
+  async function newBoard() {
+    const { team: people } = await loadTeam();
+    const name = h('input', { class: 'input', id: 'nb-name', required: true, maxlength: 200, placeholder: 'ООО «Северный дом»' });
+    const manager = h('select', { class: 'select', id: 'nb-manager' }, h('option', { value: '' }, 'Не выбран'), people.map((u) => h('option', { value: u.id, selected: u.id === ctx.me.id }, u.name)));
+    formDialog({
+      title: 'Новая доска',
+      submitLabel: 'Создать доску',
+      body: [
+        h('p', { class: 'muted' }, 'Доска — это клиент. Контакты и заметки можно добавить позже в карточке клиента.'),
+        h('div', { class: 'field' }, h('label', { for: 'nb-name' }, 'Клиент'), name),
+        h('div', { class: 'field' }, h('label', { for: 'nb-manager' }, 'Ответственный'), manager),
+      ],
+      onSubmit: async () => {
+        const { client } = await api('/admin/api/clients', { method: 'POST', body: { name: name.value, managerId: manager.value ? Number(manager.value) : null } });
+        navigate('taskboard', new URLSearchParams({ client: String(client.id) }));
+      },
+    });
+  }
+}
+
+export async function renderTaskBoard(params) {
+  const client = params.get('client');
+  if (!client) return navigate('tasks');
+  let title = 'Внутренние задачи';
+  let extra = null;
+  if (client !== 'none') {
+    try {
+      title = (await api(`/admin/api/clients/${Number(client)}`)).client.name;
+    } catch {
+      return navigate('tasks');
+    }
+    extra = h('a', { class: 'btn', href: `#/client?id=${client}` }, 'Карточка клиента');
+  }
+  return kanban(params, { route: 'taskboard', fixedClient: client, title, back: '#/tasks', extra });
+}
+
+export const renderMyTasks = (params) => kanban(params, { route: 'mytasks', forceMine: true, title: 'Мои задачи' });
 
 // ---------- клиенты ----------
 
@@ -499,7 +601,7 @@ export async function renderClient(params) {
         name,
         saved,
         h('span', { class: 'spacer' }),
-        h('a', { class: 'btn', href: `#/tasks?client=${id}` }, 'Задачи на доске'),
+        h('a', { class: 'btn', href: `#/taskboard?client=${id}` }, 'Доска задач'),
         h('button', { type: 'button', class: 'btn', onclick: async () => { await save({ archived: !c.archived }); toast(c.archived ? 'Клиент в архиве' : 'Клиент снова в работе'); renderClient(params); } }, c.archived ? 'Вернуть из архива' : 'В архив'),
       ),
       h(

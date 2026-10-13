@@ -48,6 +48,9 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
     priorities: PRIORITIES,
   }));
 
+  // Доски задач: клиенты в работе и «Внутренние»
+  api.get('/admin/api/boards', async (req) => ({ boards: crm.boards(req.user.id), statuses: TASK_STATUSES }));
+
   // ---------- клиенты ----------
 
   api.get('/admin/api/clients', { schema: { querystring: { type: 'object', properties: { archived: { type: 'boolean' } } } } }, async (req) => ({
@@ -99,7 +102,7 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
       schema: {
         querystring: {
           type: 'object',
-          properties: { client: { type: 'integer' }, assignee: { type: 'string', maxLength: 12 }, mine: { type: 'boolean' }, q: { type: 'string', maxLength: 100 } },
+          properties: { client: { type: 'string', pattern: '^(\\d+|none)$' }, assignee: { type: 'string', maxLength: 12 }, mine: { type: 'boolean' }, q: { type: 'string', maxLength: 100 } },
         },
       },
     },
