@@ -286,11 +286,14 @@ export async function renderPlan(params) {
     const calc = () => sc.rows.map(calcRow);
     const out = {};
     const bodyRows = sc.rows.map((row, i) => {
-      const cpc = numInput(row, 'cpc', { label: `CPC, ${row.channel || `канал ${i + 1}`}`, unit: '₽' });
-      const cpm = numInput(row, 'cpm', { label: `CPM, ${row.channel || `канал ${i + 1}`}`, unit: '₽' });
+      const cpc = numInput(row, 'cpc', { label: `Цена клика, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽' });
+      const cpm = numInput(row, 'cpm', { label: `Цена 1000 показов, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽' });
+      // ставка нужна только для выбранной модели закупки — вторая выключается с пометкой
       const syncModel = () => {
         cpc.disabled = row.model !== 'cpc';
         cpm.disabled = row.model !== 'cpm';
+        cpc.placeholder = cpc.disabled ? 'не нужна' : '₽';
+        cpm.placeholder = cpm.disabled ? 'не нужна' : '₽';
       };
       syncModel();
       const cells = { impressions: h('td', { class: 'num calc' }), clicks: h('td', { class: 'num calc' }), leads: h('td', { class: 'num calc' }), cpl: h('td', { class: 'num calc' }) };
@@ -306,11 +309,11 @@ export async function renderPlan(params) {
           b ? h('span', { class: 'hint', title: b.note }, 'по нормативу') : null,
         ),
         h('td', {}, h('select', { class: 'select', 'aria-label': `Модель закупки, канал ${i + 1}`, onchange: (e) => { row.model = e.target.value; syncModel(); changed(); } }, MODELS.map(([v, l]) => h('option', { value: v, selected: v === row.model, title: l }, v.toUpperCase())))),
-        h('td', {}, numInput(row, 'budget', { label: `Бюджет в месяц, ${row.channel || `канал ${i + 1}`}`, unit: '₽' })),
+        h('td', {}, numInput(row, 'budget', { label: `Бюджет в месяц, ${row.channel || `канал ${i + 1}`}`, unit: '₽', placeholder: '₽ в месяц' })),
         h('td', {}, cpc),
         h('td', {}, cpm),
-        h('td', {}, numInput(row, 'ctr', { label: `CTR, ${row.channel || `канал ${i + 1}`}`, unit: '%' })),
-        h('td', {}, numInput(row, 'cr', { label: `Конверсия в лид, ${row.channel || `канал ${i + 1}`}`, unit: '%' })),
+        h('td', {}, numInput(row, 'ctr', { label: `CTR, ${row.channel || `канал ${i + 1}`}`, unit: '%', placeholder: '%' })),
+        h('td', {}, numInput(row, 'cr', { label: `Конверсия в лид, ${row.channel || `канал ${i + 1}`}`, unit: '%', placeholder: '%' })),
         cells.impressions, cells.clicks, cells.leads, cells.cpl,
         h('td', {}, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Удалить канал ${i + 1}`, title: 'Удалить канал', onclick: () => { sc.rows.splice(i, 1); changed(); renderScenario(); } }, '×')),
       );
@@ -376,14 +379,36 @@ export async function renderPlan(params) {
         h(
           'table',
           { class: 'mp-table' },
+          // ширины колонок: поля ввода стоят ровно под своими заголовками
+          h('colgroup', {}, ['channel', 'model', 'budget', 'rate', 'rate', 'pct', 'pct', 'out', 'out', 'out', 'out', 'act'].map((c) => h('col', { class: `c-${c}` }))),
           h(
             'thead',
             {},
             h(
               'tr',
+              { class: 'mp-groups' },
+              h('th', { colspan: 7, scope: 'colgroup' }, 'Вводите'),
+              h('th', { colspan: 4, scope: 'colgroup', class: 'calc' }, 'Считается само, в месяц'),
+              h('th'),
+            ),
+            h(
+              'tr',
               {},
-              ['Канал', 'Закупка', 'Бюджет в мес., ₽', 'CPC, ₽', 'CPM, ₽', 'CTR, %', 'Конв. в лид, %'].map((t) => h('th', { scope: 'col' }, t)),
-              ['Показы', 'Клики', 'Лиды', 'CPL'].map((t) => h('th', { scope: 'col', class: 'calc' }, t)),
+              [
+                ['Канал', ''],
+                ['Закупка', 'клики или показы'],
+                ['Бюджет', '₽ в месяц'],
+                ['CPC', 'цена клика, ₽'],
+                ['CPM', '1000 показов, ₽'],
+                ['CTR', 'кликабельность, %'],
+                ['Конверсия', 'клик → лид, %'],
+              ].map(([t, sub], i) => h('th', { scope: 'col', class: i > 1 ? 'num' : '' }, t, sub ? h('span', { class: 'th-sub' }, sub) : null)),
+              [
+                ['Показы', ''],
+                ['Клики', ''],
+                ['Лиды', ''],
+                ['CPL', 'цена лида, ₽'],
+              ].map(([t, sub]) => h('th', { scope: 'col', class: 'calc num' }, t, sub ? h('span', { class: 'th-sub' }, sub) : null)),
               h('th', {}, h('span', { class: 'sr-only' }, 'Действия')),
             ),
           ),
