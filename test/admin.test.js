@@ -196,6 +196,15 @@ test('админка отдаётся с защитными заголовкам
   assert.match(res.headers['content-security-policy'], /default-src 'self'/);
 });
 
+test('корень домена открывает рабочее место', async () => {
+  const { app } = await setup();
+  const res = await app.inject({ url: '/' });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/admin/');
+  const docsModule = await app.inject({ url: '/admin/docs.js' });
+  assert.equal(docsModule.statusCode, 200);
+});
+
 test('миграция старой базы без потери данных', () => {
   const dir = mkdtempSync(join(tmpdir(), 'kval-'));
   const path = join(dir, 'old.db');

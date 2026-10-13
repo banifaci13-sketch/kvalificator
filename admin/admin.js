@@ -1,5 +1,7 @@
-// Админка квалификатора. Без сборки и зависимостей: модуль ES, DOM строится через h(),
+// Админка ассистента агентства. Без сборки и зависимостей: модули ES, DOM строится через h(),
 // пользовательские данные выводятся только как текст (никакого innerHTML с данными).
+
+import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -47,9 +49,10 @@ function s(tag, attrs = {}, ...children) {
 }
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data = {}) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -65,7 +68,7 @@ async function api(path, { method = 'GET', body } = {}) {
     renderLogin();
     throw new HttpError(401, 'Нужно войти');
   }
-  if (!res.ok) throw new HttpError(res.status, data.error || 'Не удалось выполнить запрос');
+  if (!res.ok) throw new HttpError(res.status, data.error || 'Не удалось выполнить запрос', data);
   return data;
 }
 
@@ -119,11 +122,28 @@ const statusChip = (status) => h('span', { class: 'status', dataset: { s: status
 
 // ---------- маршруты ----------
 
-const routes = { leads: renderLeads, board: renderBoard, stats: renderStats, test: renderTest, staff: renderStaff, account: renderAccount };
+const routes = {
+  docs: renderDocs,
+  doc: renderDoc,
+  templates: renderTemplates,
+  leads: renderLeads,
+  board: renderBoard,
+  stats: renderStats,
+  test: renderTest,
+  staff: renderStaff,
+  account: renderAccount,
+};
+// Квалификатор — один раздел со своими вкладками
+const QUALIFIER = [
+  ['leads', 'Лиды'],
+  ['board', 'Воронка'],
+  ['stats', 'Сводка'],
+  ['test', 'Тест'],
+];
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
-  return { name: routes[name] ? name : 'leads', params: new URLSearchParams(query) };
+  return { name: routes[name] ? name : 'docs', params: new URLSearchParams(query) };
 }
 
 function navigate(name, params) {
@@ -155,22 +175,23 @@ async function boot() {
 }
 
 function shell(active, content) {
+  const inQualifier = QUALIFIER.some(([id]) => id === active);
+  const section = inQualifier ? 'leads' : active === 'doc' ? 'docs' : active;
   const nav = [
-    ['leads', 'Лиды'],
-    ['board', 'Воронка'],
-    ['stats', 'Сводка'],
-    ['test', 'Тест'],
+    ['docs', 'Документы'],
+    ['templates', 'Шаблоны'],
+    ['leads', 'Квалификатор'],
     ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
   ].filter(Boolean);
   return [
     h(
       'header',
       { class: 'topbar' },
-      h('a', { class: 'brand', href: '#/leads' }, logo(), h('span', { class: 'product' }, 'Квалификатор')),
+      h('a', { class: 'brand', href: '#/docs' }, logo(), h('span', { class: 'product' }, 'Ассистент')),
       h(
         'nav',
         { class: 'nav', 'aria-label': 'Разделы' },
-        nav.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
+        nav.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === section ? 'page' : null }, label)),
       ),
       h(
         'div',
@@ -179,8 +200,15 @@ function shell(active, content) {
         h('button', { type: 'button', onclick: logout }, 'Выйти'),
       ),
     ),
-    h('main', { class: 'page', id: 'main' }, content),
-  ];
+    inQualifier
+      ? h(
+          'nav',
+          { class: 'subnav', 'aria-label': 'Квалификатор' },
+          QUALIFIER.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
+        )
+      : null,
+    h('main', { class: `page${active === 'doc' ? ' page-wide' : ''}`, id: 'main' }, content),
+  ].filter(Boolean);
 }
 
 function renderRoute() {
@@ -240,8 +268,8 @@ async function renderLogin() {
         'div',
         { class: 'login-card' },
         h('div', { class: 'login-mark' }, logo()),
-        h('h1', {}, 'Квалификатор лидов'),
-        h('p', {}, 'Заявки с сайта и из мессенджеров с оценкой 1–5.'),
+        h('h1', {}, 'Ассистент агентства'),
+        h('p', {}, 'Презентации, КП и отчёты в фирменном стиле, заявки с сайта.'),
         errorEl,
         methods.yandex
           ? [
@@ -663,6 +691,7 @@ function fillLead(body, title, lead, events) {
     ),
     lead.tags.length ? h('div', {}, lead.tags.map((t) => h('span', { class: 'tag' }, t))) : null,
     form,
+    leadDocuments(lead),
     h('section', {}, h('h3', {}, 'Ответы'), h('dl', { class: 'answers' }, answers)),
     h('section', {}, h('h3', {}, 'Источник'), h('dl', { class: 'answers' }, source.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]))),
     h(
@@ -855,7 +884,7 @@ function passwordNotice(login, password, note) {
 }
 
 async function renderStaff() {
-  if (ctx.me.role !== 'admin') return navigate('leads');
+  if (ctx.me.role !== 'admin') return navigate('docs');
   const notice = h('div');
   const tbody = h('tbody');
   const login = h('input', { class: 'input', id: 'new-login', required: true, maxlength: 64, autocapitalize: 'none', spellcheck: 'false', placeholder: 'anna или anna@soroka-marketing.ru' });
@@ -1052,5 +1081,7 @@ function renderTest() {
 function logo() {
   return h('span', { class: 'wordmark' }, 'SOROKA MARKETING');
 }
+
+export { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx };
 
 boot();

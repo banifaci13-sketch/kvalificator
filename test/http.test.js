@@ -137,3 +137,12 @@ test('недоставленные лиды досылаются без дубл
   assert.deepEqual(sent, { telegram: 1, webhook: 1 });
   assert.equal(db.unnotifiedLeads(0).length, 0);
 });
+
+test('корень домена ведёт на демо-страницу виджета, а не отдаёт 403', async () => {
+  const { app } = await setup();
+  const res = await app.inject({ method: 'GET', url: '/' });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/demo.html');
+  const widget = await app.inject({ method: 'GET', url: '/widget.js' });
+  assert.equal(widget.statusCode, 200);
+});

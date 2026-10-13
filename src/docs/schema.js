@@ -162,5 +162,11 @@ export function emptySlide(type) {
   const base = { type, title: '' };
   if (SLIDE_TYPES[type]?.data) base.dataStatus = type === 'mediaplan' ? 'forecast' : 'fact';
   if (type === 'chart' || type === 'analytics') base.chart = { type: 'column', categories: [], series: [{ name: '', values: [] }] };
+  // списки — пустые, у повторяющихся блоков одна пустая карточка: так форму сразу видно целиком
+  for (const f of SLIDE_FIELDS[type] ?? []) {
+    if (f.type === 'lines' || f.type === 'csv') base[f.key] = [];
+    if (f.type === 'repeater') base[f.key] = [Object.fromEntries(f.fields.map((x) => [x.key, x.type === 'number' ? null : x.type === 'csv' ? [] : '']))];
+    if (f.type === 'group') base[f.key] = {};
+  }
   return base;
 }

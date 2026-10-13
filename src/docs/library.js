@@ -74,9 +74,9 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir }) {
   }
 
   /** Свой шаблон: из документа или с нуля. Переменные определяются по {{…}} в тексте. */
-  function saveTemplate({ id = null, name, description = '', spec, variables = null }, user) {
+  function saveTemplate({ id = null, name, description = '', spec, variables = null, known = [] }, user) {
     validateSpec(spec);
-    const vars = variables ?? detectVariables(spec);
+    const vars = variables ?? detectVariables(spec, known);
     const args = [String(name).trim().slice(0, 120) || 'Без названия', String(description).slice(0, 500), JSON.stringify(vars), JSON.stringify(spec)];
     if (id) {
       if (String(id).startsWith('builtin:')) throw new DocError('Встроенный шаблон менять нельзя — сохраните копию');
@@ -167,12 +167,26 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir }) {
 
 // ---------- переменные ----------
 
-export function detectVariables(spec) {
+// Подписи стандартных переменных — те же, что во встроенных шаблонах
+const KNOWN_VARIABLES = {
+  client: { label: 'Клиент', from: 'lead.company' },
+  service: { label: 'Услуга', from: 'lead.service' },
+  task: { label: 'Задача клиента', from: 'lead.task' },
+  budget: { label: 'Бюджет', from: 'lead.budget' },
+  industry: { label: 'Сфера', from: 'lead.industry' },
+  contact_name: { label: 'Контактное лицо', from: 'lead.name' },
+  date: { label: 'Дата', from: 'today' },
+  manager: { label: 'Менеджер', from: 'user.name' },
+};
+
+/** Переменные {{…}} в тексте; подписи берутся из прежнего описания шаблона или стандартных. */
+export function detectVariables(spec, known = []) {
   const keys = new Set();
   walk(spec, (s) => {
     for (const m of s.matchAll(VAR_RE)) keys.add(m[1]);
   });
-  return [...keys].map((key) => ({ key, label: key, from: '' }));
+  const prev = Object.fromEntries(known.map((v) => [v.key, v]));
+  return [...keys].map((key) => prev[key] ?? { key, ...(KNOWN_VARIABLES[key] ?? { label: key, from: '' }) });
 }
 
 /** Подставляет значения {{key}}; незаполненные переменные остаются — проверка их поймает. */

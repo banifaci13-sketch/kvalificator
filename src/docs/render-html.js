@@ -13,7 +13,20 @@ export function layoutDeck(deck, brand) {
   const L = createLayout(brand);
   const total = deck.slides.length;
   return deck.slides.map((slide, index) => {
-    const built = renderSlide(slide, { brand, L, deck, index, total });
+    let built;
+    try {
+      built = renderSlide(slide, { brand, L, deck, index, total });
+    } catch (err) {
+      // Недозаполненный слайд не роняет превью всего документа; проверка не пустит его в выгрузку
+      built = {
+        theme: 'light',
+        buildError: err.message,
+        elements: [
+          { kind: 'text', name: 'title', placeholder: 'title', ...L.titleBox, style: 'title', color: 'ink', text: 'Слайд не собран' },
+          { kind: 'text', name: 'body', x: L.M, y: L.contentTop, w: L.CW, h: 120, style: 'body', color: 'steel', text: 'Заполните обязательные поля слайда — после этого он появится здесь.' },
+        ],
+      };
+    }
     if (built.theme === 'light') built.elements.push(...footer(brand, L, deck, index));
     return { ...built, index, source: slide };
   });
@@ -50,7 +63,7 @@ ${fontFaces(brand)}
 ${baseCss(brand, L, mode)}
 </style>
 </head>
-<body class="mode-${mode}">
+<body class="mode-${mode}${only?.length === 1 ? ' single' : ''}">
 <main class="deck">
 ${body}
 </main>
@@ -165,6 +178,7 @@ ${
     ? `.deck{display:flex;flex-direction:column;align-items:center;gap:24px;padding:24px}
 .frame{width:100%;max-width:1280px;aspect-ratio:16/9;overflow:hidden;box-shadow:0 8px 30px rgba(32,37,42,.18);border-radius:6px}
 .frame .slide{transform-origin:0 0;transform:scale(var(--s,0.6667))}
+.single .deck{padding:0}.single .frame{max-width:none;border-radius:0;box-shadow:none}
 @media print{.deck{padding:0;gap:0}.frame{max-width:none;width:auto;aspect-ratio:auto;box-shadow:none;border-radius:0}.frame .slide{transform:none}}`
     : `.deck{display:block}.frame{display:block}`
 }

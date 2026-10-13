@@ -4,7 +4,7 @@
 //     кегль, контраст, иерархия, наложения, изображения, логотип.
 
 import { SLIDE_TYPES } from './templates.js';
-import { renderDeckHtml } from './render-html.js';
+import { renderDeckHtml, layoutDeck } from './render-html.js';
 import { withPage } from './browser.js';
 import { FIGURE_STYLES } from './layout.js';
 
@@ -191,6 +191,11 @@ function runChecks({ minFont, margin, W, H, logoMin, figureStyles }) {
 export async function runQa(deck, brand) {
   const content = checkContent(deck, brand);
   const renderable = !content.errors.some((e) => /неизвестный тип|нет слайдов|у графика/.test(e));
+  if (renderable) {
+    layoutDeck(deck, brand).forEach((s) => {
+      if (s.buildError) content.errors.push(`Слайд ${s.index + 1}: не собирается — заполните обязательные поля (${s.buildError})`);
+    });
+  }
   const layout = renderable ? await checkLayout(deck, brand) : { errors: [], warnings: [] };
   return {
     ok: !content.errors.length && !layout.errors.length,

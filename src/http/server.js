@@ -75,6 +75,9 @@ export async function buildServer({ config, qualifier, logger, admin, brand = nu
 
   app.get('/health', async () => ({ ok: true }));
 
+  // Корень домена ведёт в рабочее место (виджет живёт по прямым ссылкам на файлы)
+  app.get('/', (req, reply) => reply.redirect(admin ? '/admin/' : '/demo.html'));
+
   // Утверждённый логотип для виджета и документов (файл проверен по sha256 при загрузке бренда)
   app.get('/brand/logo/:variant', async (req, reply) => {
     const asset = brand?.logo?.[req.params.variant];

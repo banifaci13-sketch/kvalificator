@@ -32,6 +32,16 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
 
   // ---------- шаблоны ----------
 
+  // Подписи переменных шаблона-основы (шаблон могли удалить — тогда стандартные)
+  const templateVariables = (id) => {
+    if (!id) return [];
+    try {
+      return library.getTemplate(id).variables;
+    } catch {
+      return [];
+    }
+  };
+
   api.get('/admin/api/templates', async () => ({ templates: library.listTemplates() }));
 
   api.get('/admin/api/templates/:id', async (req) => ({ template: library.getTemplate(req.params.id) }));
@@ -58,14 +68,19 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
       const { name, description = '', fromDocument, fromTemplate, spec } = req.body;
       let source = spec;
       let variables = null;
-      if (fromDocument) source = library.getDocument(fromDocument).spec;
+      let known = [];
+      if (fromDocument) {
+        const doc = library.getDocument(fromDocument);
+        source = doc.spec;
+        known = templateVariables(doc.template);
+      }
       if (fromTemplate) {
         const t = library.getTemplate(fromTemplate);
         source = t.spec;
         variables = t.variables;
       }
       if (!source) throw new DocError('Нужен документ или шаблон-основа');
-      return { template: library.saveTemplate({ name, description, spec: source, variables }, req.user.name) };
+      return { template: library.saveTemplate({ name, description, spec: source, variables, known }, req.user.name) };
     },
   );
 
@@ -84,7 +99,14 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
       const current = library.getTemplate(req.params.id);
       return {
         template: library.saveTemplate(
-          { id: req.params.id, name: req.body.name ?? current.name, description: req.body.description ?? current.description, spec: req.body.spec ?? current.spec, variables: req.body.spec ? null : current.variables },
+          {
+            id: req.params.id,
+            name: req.body.name ?? current.name,
+            description: req.body.description ?? current.description,
+            spec: req.body.spec ?? current.spec,
+            variables: req.body.spec ? null : current.variables,
+            known: current.variables,
+          },
           req.user.name,
         ),
       };
@@ -112,14 +134,18 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
             title: { type: 'string', maxLength: 200 },
             values: { type: 'object', additionalProperties: { type: 'string', maxLength: 2000 } },
             leadId: { type: 'integer' },
+            // для правки шаблона: {{переменные}} остаются как есть, дата и менеджер не подставляются
+            keepVariables: { type: 'boolean' },
           },
         },
       },
     },
     async (req) => {
-      const { templateId, title, leadId } = req.body;
+      const { templateId, title, leadId, keepVariables } = req.body;
       let values = req.body.values ?? {};
-      if (leadId) {
+      if (keepVariables) {
+        values = {};
+      } else if (leadId) {
         const lead = db.getLead(leadId);
         if (!lead) throw new DocError('Лид не найден');
         // из лида — то, что не задано вручную
@@ -154,10 +180,13 @@ export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
   });
 
   // Превью для редактора: свой CSP (стили документа встроены), без доступа к остальной админке
-  api.get('/admin/api/documents/:id/preview', { schema: { params: idParams } }, async (req, reply) => {
+  // ?slide=N — один слайд (с нуля) для редактора, без параметра — весь документ
+  const previewQuery = { type: 'object', properties: { slide: { type: 'integer', minimum: 0 } } };
+  api.get('/admin/api/documents/:id/preview', { schema: { params: idParams, querystring: previewQuery } }, async (req, reply) => {
     const doc = library.getDocument(req.params.id);
-    const html = doc.spec.slides.length
-      ? renderDeckHtml({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, brand, { mode: 'screen' })
+    const { slide } = req.query;
+    const html = doc.spec.slides.length && (slide == null || slide < doc.spec.slides.length)
+      ? renderDeckHtml({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, brand, slide == null ? { mode: 'screen' } : { mode: 'print', only: [slide] })
       : '<!doctype html><meta charset="utf-8"><body style="font:16px sans-serif;color:#5F6B72;padding:40px">Добавьте первый слайд</body>';
     return reply
       .header('content-type', 'text/html; charset=utf-8')
