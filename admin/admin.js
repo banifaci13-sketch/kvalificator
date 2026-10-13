@@ -5,6 +5,7 @@ import { renderDocs, renderDoc, renderTemplates, leadDocuments, formDialog } fro
 import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderBoards, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
+import { renderIntegrations } from './integrations.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -140,6 +141,7 @@ const routes = {
   clients: renderClients,
   client: renderClient,
   calendar: renderCalendar,
+  integrations: renderIntegrations,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -158,6 +160,10 @@ const SECTION_TABS = {
   plans: [
     ['plans', 'Медиапланы'],
     ['benchmarks', 'Нормативы'],
+  ],
+  staff: [
+    ['staff', 'Сотрудники'],
+    ['integrations', 'Подключения'],
   ],
   tasks: [
     ['tasks', 'Доски'],

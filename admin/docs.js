@@ -95,6 +95,19 @@ function download(exportId) {
   a.remove();
 }
 
+/** ИИ не подключён: что он умеет и что сделать — администратору ссылка на «Подключения». */
+function aiNotice() {
+  return h(
+    'div',
+    { class: 'note ai-notice full' },
+    h('strong', {}, 'ИИ-помощник пока не подключён'),
+    h('p', {}, 'Он собирает черновик презентации по брифу и заявке, сокращает и переписывает слайды. Цифр не придумывает, данные клиентов в модель не уходят.'),
+    ctx.me?.role === 'admin'
+      ? h('a', { class: 'btn btn-s', href: '#/integrations' }, 'Как подключить YandexGPT')
+      : h('p', { class: 'muted' }, 'Попросите администратора подключить YandexGPT в разделе «Подключения».'),
+  );
+}
+
 // ---------- фото: подготовка, загрузка, медиатека ----------
 
 const MAX_SIDE = 2560;
@@ -287,7 +300,7 @@ export async function renderDocs(params) {
 /** Создание документа: выбор шаблона → данные для подстановки → редактор. */
 function createPanel(templates, preselect, onCancel) {
   const choices = [
-    ...(aiInfo?.enabled ? [{ id: 'ai', ai: true, name: 'Собрать с ИИ', description: 'Черновик по брифу и заявке. Цифр ИИ не придумывает — оставит заготовки.', variables: [] }] : []),
+    { id: 'ai', ai: true, name: 'Собрать с ИИ', description: aiInfo?.enabled ? 'Черновик по брифу и заявке. Цифр ИИ не придумывает — оставит заготовки.' : 'Черновик по брифу и заявке. Нужно подключить YandexGPT — покажем как.', variables: [] },
     { id: '', name: 'Пустой документ', description: 'Слайды добавите сами.', types: [], variables: [] },
     ...templates,
   ];
@@ -309,6 +322,7 @@ function createPanel(templates, preselect, onCancel) {
 
   async function fillFields() {
     if (chosen.ai) return fillAiFields();
+    submit.disabled = false;
     submit.textContent = 'Создать и открыть';
     const title = h('input', { class: 'input', id: 'c-title', maxlength: 200, placeholder: chosen.id ? `${chosen.name} — название клиента` : 'Например: Отчёт за сентябрь' });
     const vars = chosen.variables.filter((v) => v.key !== 'date' && v.key !== 'manager');
@@ -358,6 +372,13 @@ function createPanel(templates, preselect, onCancel) {
   }
 
   async function fillAiFields() {
+    if (!aiInfo?.enabled) {
+      submit.textContent = 'Собрать черновик';
+      submit.disabled = true;
+      fill(fields, aiNotice());
+      return;
+    }
+    submit.disabled = false;
     submit.textContent = 'Собрать черновик';
     const kind = h('select', { class: 'select', id: 'ai-kind' }, Object.entries(aiInfo.kinds).map(([k, l]) => h('option', { value: k }, l)));
     const count = h('select', { class: 'select', id: 'ai-count' }, [6, 8, 10, 12].map((n) => h('option', { value: n, selected: n === 8 }, `${n} слайдов`)));
@@ -642,7 +663,10 @@ export async function renderDoc(params) {
   let aiBusy = false;
 
   function aiMenu() {
-    if (!aiInfo?.enabled) return null;
+    if (!aiInfo?.enabled) {
+      const off = h('details', { class: 'menu ai-menu' }, h('summary', { class: 'btn btn-s' }, 'ИИ'), h('div', { class: 'menu-list ai-off' }, aiNotice()));
+      return off;
+    }
     const menu = h(
       'details',
       { class: 'menu ai-menu' },

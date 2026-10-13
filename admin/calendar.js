@@ -352,7 +352,9 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {} } = {
       state.provider && state.provider !== 'other' && link.value ? `Встреча в ${settings.providers[state.provider]}. ` : null,
       state.hostLink ? h('a', { href: state.hostLink, target: '_blank', rel: 'noopener' }, 'Войти как организатор') : null,
       state.hostLink ? ' — эту ссылку клиенту не отправляйте.' : null,
-      !settings.video.zoom && !settings.video.telemost ? 'Zoom и Телемост не подключены — вставьте ссылку вручную или попросите администратора добавить ключи.' : null,
+      !settings.video.zoom && !settings.video.telemost
+        ? ['Zoom и Телемост ещё не подключены — пока вставьте ссылку вручную. ', ctx.me.role === 'admin' ? h('a', { href: '#/integrations' }, 'Как подключить') : 'Подключает администратор в разделе «Подключения».']
+        : null,
     );
   }
   const onlineBox = h('div', { class: 'field full' }, h('label', { for: 'm-link' }, 'Ссылка на встречу'), h('div', { class: 'video-btns' }, videoBtns), link, providerInfo);

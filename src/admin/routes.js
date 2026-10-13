@@ -11,6 +11,7 @@ import { LEAD_STATUSES, leadsToCsv } from './reports.js';
 import { createYandexOAuth } from './yandex.js';
 import { AuthError, ROLES } from './auth.js';
 import { docsRoutes } from './docs-routes.js';
+import { chromiumPath } from '../docs/browser.js';
 import { mediaplanRoutes } from './mediaplan-routes.js';
 import { crmRoutes } from './crm-routes.js';
 import { calendarRoutes } from './calendar-routes.js';
@@ -292,6 +293,24 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
 
       staff.get('/admin/api/users', async () => ({ users: auth.listUsers(), roles: ROLES }));
+
+      // Что подключено на сервере: ключи не показываем, только «есть / нет»
+      staff.get('/admin/api/integrations', async () => {
+        let pdf = true;
+        try {
+          chromiumPath();
+        } catch {
+          pdf = false;
+        }
+        return {
+          ai: { enabled: Boolean(ai?.enabled), provider: ai?.provider ?? null, model: ai?.model ?? null },
+          zoom: Boolean(video?.available.zoom),
+          telemost: Boolean(video?.available.telemost),
+          telegram: { enabled: config.telegram.botEnabled, bot: config.telegram.botUsername ?? null, managerChat: Boolean(config.telegram.managerChatId) },
+          pdf,
+          publicUrl: config.publicUrl,
+        };
+      });
 
       staff.post(
         '/admin/api/users',
