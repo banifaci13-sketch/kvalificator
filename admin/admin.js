@@ -207,6 +207,47 @@ async function boot() {
   }
 }
 
+// Значки разделов: простые контуры 24×24, цвет берут от текста
+const ICONS = {
+  docs: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6',
+  templates: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  plans: 'M3 21h18M6 17v-5M11 17V5M16 17V9M21 17v-3',
+  tasks: 'M10 6h10M10 12h10M10 18h10M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17',
+  calendar: 'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4',
+  leads: 'M3 4h18l-7 8.5V19l-4 2v-8.5z',
+  staff: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6',
+  light: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  dark: 'M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.5 6.5 0 0 0 10 10z',
+  system: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  logout: 'M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3',
+};
+function icon(name) {
+  return s('svg', { class: 'icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' }, s('path', { d: ICONS[name] }));
+}
+function initials(name = '') {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+}
+
+const THEMES = [
+  ['light', 'Светлая тема'],
+  ['dark', 'Тёмная тема'],
+  ['system', 'Как в системе'],
+];
+function themeSwitch() {
+  const current = window.sorokaTheme?.get() ?? 'system';
+  const buttons = THEMES.map(([id, label]) =>
+    h('button', { type: 'button', title: label, 'aria-label': label, 'aria-pressed': String(id === current), dataset: { theme: id } }, icon(id)),
+  );
+  const box = h('div', { class: 'theme-switch', role: 'group', 'aria-label': 'Тема оформления' }, buttons);
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    window.sorokaTheme?.set(btn.dataset.theme);
+    for (const b of buttons) b.setAttribute('aria-pressed', String(b === btn));
+  });
+  return box;
+}
+
 function shell(active, content) {
   const section =
     PAGE_SECTION[active] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === active)) ?? active;
@@ -222,30 +263,47 @@ function shell(active, content) {
   ].filter(Boolean);
   return [
     h(
-      'header',
-      { class: 'topbar' },
+      'aside',
+      // В редакторах документа и медиаплана панель сворачивается до значков — больше места под работу
+      { class: `sidebar${active === 'doc' || active === 'plan' ? ' compact' : ''}` },
       h('a', { class: 'brand', href: '#/docs' }, logo(), h('span', { class: 'product' }, 'Ассистент')),
       h(
         'nav',
         { class: 'nav', 'aria-label': 'Разделы' },
-        nav.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === section ? 'page' : null }, label)),
+        nav.map(([id, label]) =>
+          h('a', { href: `#/${id}`, title: label, 'aria-current': id === section ? 'page' : null }, icon(id), h('span', { class: 'nav-label' }, label)),
+        ),
       ),
       h(
         'div',
-        { class: 'user' },
-        h('a', { class: 'name', href: '#/account', title: 'Мой пароль' }, ctx.me.name),
-        h('button', { type: 'button', onclick: logout }, 'Выйти'),
+        { class: 'side-foot' },
+        themeSwitch(),
+        h(
+          'div',
+          { class: 'me' },
+          h(
+            'a',
+            { class: 'me-link', href: '#/account', title: 'Учётная запись', 'aria-current': active === 'account' ? 'page' : null },
+            h('span', { class: 'avatar' }, initials(ctx.me.name)),
+            h('span', { class: 'me-text' }, h('span', { class: 'name' }, ctx.me.name), ctx.me.position ? h('span', { class: 'me-pos' }, ctx.me.position) : null),
+          ),
+          h('button', { type: 'button', class: 'logout', title: 'Выйти', 'aria-label': 'Выйти', onclick: logout }, icon('logout')),
+        ),
       ),
     ),
-    tabs
-      ? h(
-          'nav',
-          { class: 'subnav', 'aria-label': nav.find(([id]) => id === section)?.[1] },
-          tabs.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
-        )
-      : null,
-    h('main', { class: `page${active === 'doc' || active === 'plan' ? ' page-wide' : ''}`, id: 'main' }, content),
-  ].filter(Boolean);
+    h(
+      'div',
+      { class: 'workspace' },
+      tabs
+        ? h(
+            'nav',
+            { class: 'subnav', 'aria-label': nav.find(([id]) => id === section)?.[1] },
+            tabs.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
+          )
+        : null,
+      h('main', { class: `page${active === 'doc' || active === 'plan' ? ' page-wide' : ''}`, id: 'main' }, content),
+    ),
+  ];
 }
 
 function renderRoute() {

@@ -29,7 +29,7 @@ export async function renderIntegrations() {
     h(
       'section',
       { class: `panel integration${ok ? ' on' : ''}` },
-      h('div', { class: 'integration-head' }, h('h2', {}, title), h('span', { class: `status`, dataset: { s: ok ? 'won' : 'new' } }, ok ? 'Подключено' : 'Не подключено')),
+      h('div', { class: 'integration-head' }, h('h2', {}, title), h('span', { class: `status`, dataset: { s: ok ? 'won' : 'lost' } }, ok ? 'Подключено' : 'Не подключено')),
       h('p', { class: 'muted' }, what),
       status ? h('p', { class: 'integration-state' }, status) : null,
       !ok && steps ? h('ol', { class: 'steps' }, steps.map((st) => h('li', {}, st))) : null,
