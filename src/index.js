@@ -17,6 +17,7 @@ import { createCrm } from './crm/store.js';
 import { createCalendar } from './calendar/store.js';
 import { createVideo } from './calendar/video.js';
 import { startReminders, telegramSender } from './calendar/reminders.js';
+import { createAi } from './ai/client.js';
 import { closeBrowser } from './docs/browser.js';
 import { dirname, resolve } from 'node:path';
 
@@ -58,6 +59,7 @@ const app = await buildServer({
     crm,
     calendar,
     video: createVideo(config),
+    ai: createAi(config.ai),
   },
 });
 

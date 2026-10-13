@@ -222,6 +222,21 @@ const MIGRATIONS = [
      day         TEXT NOT NULL,
      PRIMARY KEY (user_id, day)
    );`,
+
+  // Журнал запросов к ИИ: кто, что и сколько — для контроля расходов (тексты не храним)
+  `CREATE TABLE ai_log (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id     INTEGER,
+     action      TEXT NOT NULL,
+     provider    TEXT,
+     model       TEXT,
+     chars_in    INTEGER,
+     chars_out   INTEGER,
+     replaced    INTEGER,
+     ok          INTEGER NOT NULL,
+     error       TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );`,
 ];
 
 /** Номер текущей версии схемы базы. */

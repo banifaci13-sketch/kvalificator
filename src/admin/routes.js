@@ -14,6 +14,7 @@ import { docsRoutes } from './docs-routes.js';
 import { mediaplanRoutes } from './mediaplan-routes.js';
 import { crmRoutes } from './crm-routes.js';
 import { calendarRoutes } from './calendar-routes.js';
+import { aiRoutes } from './ai-routes.js';
 import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
@@ -45,7 +46,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -322,6 +323,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     if (mediaplans) await api.register(mediaplanRoutes, { mediaplans });
     if (crm) await api.register(crmRoutes, { crm, auth, db, scenarioSource });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config });
+    if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 

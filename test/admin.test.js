@@ -297,7 +297,7 @@ test('после обновления первый сотрудник старо
   const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
   const fresh = openDb(path);
   // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
-  fresh.raw.exec(`DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
+  fresh.raw.exec(`DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; DROP TABLE meeting_participants; DROP TABLE meetings; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
     ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
     INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
   fresh.close();

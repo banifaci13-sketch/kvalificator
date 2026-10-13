@@ -1,6 +1,7 @@
 // Поля каждого типа слайда: по ним админка строит формы редактора, проверка — подписи ошибок.
 // Типы полей: text, textarea, number, select, checkbox, lines (по строке на пункт),
 // repeater (список карточек с полями), group (вложенный объект), chart (данные графика).
+// figure: true — факт (значение KPI, результат кейса, источник, период, клиент, дата): ИИ-правка его не меняет.
 
 import { SLIDE_TYPES } from './templates.js';
 
@@ -16,8 +17,8 @@ const DATA_STATUS = {
     ['plan', 'План'],
   ],
 };
-const SOURCE = { key: 'source', label: 'Источник данных', type: 'text', hint: 'Откуда цифры: Метрика клиента, CRM, расчёт агентства…' };
-const PERIOD = { key: 'period', label: 'Период', type: 'text', hint: 'Например: январь — март 2027' };
+const SOURCE = { key: 'source', label: 'Источник данных', type: 'text', figure: true, hint: 'Откуда цифры: Метрика клиента, CRM, расчёт агентства…' };
+const PERIOD = { key: 'period', label: 'Период', type: 'text', figure: true, hint: 'Например: январь — март 2027' };
 const TITLE = { key: 'title', label: 'Заголовок', type: 'text', max: 90 };
 const CHART = { key: 'chart', label: 'График', type: 'chart' };
 
@@ -25,9 +26,9 @@ export const SLIDE_FIELDS = {
   cover: [
     TITLE,
     { key: 'subtitle', label: 'Подзаголовок', type: 'textarea', max: 160 },
-    { key: 'client', label: 'Клиент', type: 'text' },
-    { key: 'date', label: 'Дата', type: 'text' },
-    { key: 'author', label: 'Автор', type: 'text' },
+    { key: 'client', label: 'Клиент', type: 'text', figure: true },
+    { key: 'date', label: 'Дата', type: 'text', figure: true },
+    { key: 'author', label: 'Автор', type: 'text', figure: true },
   ],
   section: [
     { key: 'number', label: 'Номер раздела', type: 'number' },
@@ -40,7 +41,7 @@ export const SLIDE_FIELDS = {
     {
       key: 'kpis', label: 'Показатели', type: 'repeater', max: 4, item: 'Показатель',
       fields: [
-        { key: 'value', label: 'Значение', type: 'text', hint: '1 200 или 1 850 ₽' },
+        { key: 'value', label: 'Значение', type: 'text', hint: '1 200 или 1 850 ₽', figure: true },
         { key: 'label', label: 'Что это', type: 'text' },
         { key: 'delta', label: 'Сравнение', type: 'text', hint: 'сейчас 640' },
       ],
@@ -66,14 +67,14 @@ export const SLIDE_FIELDS = {
   ],
   case: [
     TITLE,
-    { key: 'client', label: 'Клиент', type: 'text' },
+    { key: 'client', label: 'Клиент', type: 'text', figure: true },
     { key: 'industry', label: 'Сфера', type: 'text' },
     { key: 'task', label: 'Задача', type: 'textarea' },
     { key: 'solution', label: 'Что сделали', type: 'lines', max: 5 },
     {
       key: 'results', label: 'Результаты', type: 'repeater', max: 3, item: 'Результат',
       fields: [
-        { key: 'value', label: 'Значение', type: 'text', hint: '−38%' },
+        { key: 'value', label: 'Значение', type: 'text', hint: '−38%', figure: true },
         { key: 'label', label: 'Что это', type: 'text' },
       ],
     },
