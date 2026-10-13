@@ -403,6 +403,10 @@ const MIGRATIONS = [
      PRIMARY KEY (post_id, user_id, emoji)
    );
    ALTER TABLE admin_users ADD COLUMN news_seen INTEGER NOT NULL DEFAULT 0;`,
+
+  // Повторяющиеся задачи: правило повтора и ссылка на уже созданную следующую (чтобы не плодить копии)
+  `ALTER TABLE tasks ADD COLUMN repeat TEXT;
+   ALTER TABLE tasks ADD COLUMN repeat_next INTEGER;`,
 ];
 
 /** Номер текущей версии схемы базы. */

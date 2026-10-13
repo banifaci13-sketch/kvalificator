@@ -2,7 +2,7 @@
 // задачи команды и комментарии.
 // Подключается внутри авторизованной части админки (req.user уже есть).
 
-import { CrmError, PRIORITIES, COLUMN_COLORS, LINK_KINDS } from '../crm/store.js';
+import { REPEATS, CrmError, PRIORITIES, COLUMN_COLORS, LINK_KINDS } from '../crm/store.js';
 import { leadValues } from '../docs/library.js';
 
 const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
@@ -36,6 +36,7 @@ const taskBody = {
     clientId: nullableId,
     due: { type: ['string', 'null'], maxLength: 10 },
     dueTime: { type: ['string', 'null'], maxLength: 5 },
+    repeat: { type: ['string', 'null'], enum: [...Object.keys(REPEATS), null] },
   },
 };
 const projectParams = { type: 'object', properties: { key: { type: 'string', pattern: '^(\\d+|none)$' } } };
@@ -60,6 +61,7 @@ export async function crmRoutes(api, { crm, auth, db, scenarioSource }) {
   api.get('/admin/api/team', async () => ({
     team: auth.listUsers().filter((u) => !u.disabled).map((u) => ({ id: u.id, name: u.name })),
     priorities: PRIORITIES,
+    repeats: REPEATS,
     colors: COLUMN_COLORS,
   }));
 

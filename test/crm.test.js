@@ -323,3 +323,21 @@ test('выполненные задачи остаются на доске пр�
   assert.ok((await anna({ url: `/admin/api/tasks?board=${board.id}` })).json().tasks.some((t) => t.id === task.id), 'на доске видна');
   assert.ok(!(await anna({ url: '/admin/api/tasks?mine=true' })).json().tasks.some((t) => t.id === task.id), 'в «Моих задачах» — только за две недели');
 });
+
+test('повторяющаяся задача: выполнили — следующая с новым сроком, без дублей', async () => {
+  const { as } = await setup();
+  const anna = await as('anna');
+  const today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+  const t = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Еженедельный отчёт', due: today, dueTime: '18:00', repeat: 'weekly', priority: 3 } })).json().task;
+  assert.equal(t.repeat, 'weekly');
+  assert.equal((await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'x', repeat: 'hourly' } })).statusCode, 400);
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t.id}`, payload: { done: true } });
+  const week = new Date(Date.parse(`${today}T12:00:00Z`) + 7 * 864e5).toISOString().slice(0, 10);
+  let open = (await anna({ url: '/admin/api/tasks?mine=false' })).json().tasks.filter((x) => x.title === 'Еженедельный отчёт' && x.status !== 'done');
+  assert.deepEqual(open.map((x) => [x.due, x.due_time, x.repeat, x.priority]), [[week, '18:00', 'weekly', 3]]);
+  // сняли и снова отметили — второй копии нет
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t.id}`, payload: { done: false } });
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${t.id}`, payload: { done: true } });
+  open = (await anna({ url: '/admin/api/tasks' })).json().tasks.filter((x) => x.title === 'Еженедельный отчёт' && x.status !== 'done');
+  assert.equal(open.length, 1);
+});

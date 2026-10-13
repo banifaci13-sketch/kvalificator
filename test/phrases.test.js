@@ -200,3 +200,21 @@ test('медиаплан из фразы: площадки, бюджеты, ко
   const d = parse('создай медиаплан для Медлайн, авито 1,5 млн');
   assert.deepEqual(d.channels, [{ name: 'Авито', budget: 1500000 }]);
 });
+
+test('повторяющиеся задачи из фразы', () => {
+  const cases = [
+    ['каждый понедельник отчёт для Таллера', { intent: 'task_create', repeat: 'weekly', date: '2026-10-19', client: { id: 1 } }],
+    ['поставь задачу проверять ставки по будням в 10', { intent: 'task_create', repeat: 'weekdays', time: '10:00' }],
+    ['ежемесячно 5 числа выставить счёт Ромашке', { intent: 'task_create', repeat: 'monthly', date: '2026-11-05' }],
+    ['напомни раз в две недели обновить нормативы', { intent: 'task_create', repeat: 'biweekly', date: '2026-10-14' }],
+    ['поручи Олегу каждую пятницу отчёт для Медлайн', { intent: 'task_create', repeat: 'weekly', date: '2026-10-16', assignee: { id: 2 } }],
+  ];
+  for (const [phrase, want] of cases) {
+    const got = parse(phrase);
+    for (const [k, v] of Object.entries(want)) {
+      if (v && typeof v === 'object') assert.equal(got[k]?.id, v.id, `${k} для «${phrase}»: ${JSON.stringify(got)}`);
+      else assert.equal(got[k], v, `${k} для «${phrase}»: ${JSON.stringify(got)}`);
+    }
+    assert.doesNotMatch(got.title, /кажд|ежемесячно|будням|раз в/i, got.title);
+  }
+});

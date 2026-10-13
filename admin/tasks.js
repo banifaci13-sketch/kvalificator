@@ -321,7 +321,28 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     { class: 'select', id: 't-priority', onchange: (e) => patch({ priority: Number(e.target.value) }) },
     Object.entries(PRIORITY).map(([v, l]) => h('option', { value: v, selected: Number(v) === Number(task.priority) }, v === '0' ? 'Не задана' : l)),
   );
-  const done = h('input', { type: 'checkbox', id: 't-done', checked: task.status === 'done', onchange: (e) => patch({ done: e.target.checked }) });
+  const repeat = h(
+    'select',
+    {
+      class: 'select', id: 't-repeat',
+      onchange: async (e) => {
+        if (e.target.value && !due.value) due.value = today();
+        if (task.id) await patch({ repeat: e.target.value || null, ...(e.target.value && !task.due ? { due: due.value } : {}) });
+      },
+    },
+    h('option', { value: '' }, 'Не повторять'),
+    Object.entries(team?.repeats ?? {}).map(([v, l]) => h('option', { value: v, selected: v === task.repeat }, l)),
+  );
+  const done = h('input', {
+    type: 'checkbox', id: 't-done', checked: task.status === 'done',
+    onchange: async (e) => {
+      await patch({ done: e.target.checked });
+      if (task.repeat_spawned) {
+        toast(`Повторяющаяся задача: следующая уже на доске, срок — ${fmtDue(task.due ?? today())}`);
+        delete task.repeat_spawned;
+      }
+    },
+  });
   const description = h('textarea', { class: 'textarea', id: 't-desc', rows: 5, maxlength: 10000, placeholder: 'Подробности, ссылки, критерии готовности', onchange: (e) => patch({ description: e.target.value || null }) }, task.description ?? '');
 
   const fields = h(
@@ -333,6 +354,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     h('div', { class: 'field' }, h('label', { for: 't-assignee' }, 'Исполнитель'), assignee),
     h('div', { class: 'field' }, h('label', { for: 't-due' }, 'Срок и время (МСК)'), h('div', { class: 'due-pair' }, due, dueTime)),
     h('div', { class: 'field' }, h('label', { for: 't-priority' }, 'Важность'), importance),
+    h('div', { class: 'field' }, h('label', { for: 't-repeat' }, 'Повтор'), repeat, h('span', { class: 'hint' }, 'Выполнили — появится следующая с новым сроком.')),
     task.id ? h('div', { class: 'field task-flags' }, h('label', { class: 'check' }, done, 'Выполнена')) : null,
     h('div', { class: 'field full' }, h('label', { for: 't-desc' }, 'Описание'), description),
   );
@@ -361,7 +383,8 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
               method: 'POST',
               body: {
                 title: title.value, description: description.value || null, priority: Number(importance.value),
-                assigneeId: assignee.value ? Number(assignee.value) : null, due: due.value || (dueTime.value ? today() : null), dueTime: dueTime.value || null,
+                assigneeId: assignee.value ? Number(assignee.value) : null, due: due.value || (dueTime.value || repeat.value ? today() : null), dueTime: dueTime.value || null,
+                repeat: repeat.value || null,
                 ...(column.value ? { columnId: Number(column.value) } : { clientId: project.value === 'none' ? null : Number(project.value) }),
               },
             });
@@ -455,7 +478,8 @@ export function doneToggle(t, onToggled) {
       onclick: async (e) => {
         e.stopPropagation();
         try {
-          await api(`/admin/api/tasks/${t.id}`, { method: 'PATCH', body: { done: !isDone } });
+          const res = await api(`/admin/api/tasks/${t.id}`, { method: 'PATCH', body: { done: !isDone } });
+          if (res.task?.repeat_spawned) toast('Повторяющаяся задача: следующая уже на доске');
           onToggled();
         } catch (err) {
           toast(err.message);
@@ -575,6 +599,7 @@ function stickers(t, onChange) {
     prio,
     t.comments ? h('span', { class: 'chip', title: 'Комментарии' }, `💬 ${t.comments}`) : null,
     t.links ? h('span', { class: 'chip chip-link', title: 'Медиапланы, документы и встречи по задаче' }, icon('docs'), t.links) : null,
+    t.repeat ? h('span', { class: 'chip chip-repeat', title: `Повтор: ${(team?.repeats?.[t.repeat] ?? '').toLowerCase()}` }, '↻') : null,
     h('span', { class: 'spacer' }),
     who,
   );

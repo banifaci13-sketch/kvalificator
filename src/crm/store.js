@@ -27,6 +27,35 @@ const LIMITS = { boards: 20, columns: 12 };
 // что можно привязать к задаче — результат работы по ней
 export const LINK_KINDS = { mediaplan: 'Медиаплан', document: 'Документ', meeting: 'Встреча' };
 
+// Повтор задачи: выполнили — появляется следующая с новым сроком
+export const REPEATS = { daily: 'Каждый день', weekdays: 'По будням', weekly: 'Каждую неделю', biweekly: 'Раз в две недели', monthly: 'Каждый месяц', quarterly: 'Каждый квартал' };
+
+/** Следующий срок по правилу повтора: позже прошлого срока и не раньше сегодняшнего дня. */
+export function nextDue(due, rule, today) {
+  const step = (iso) => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    if (rule === 'daily') d.setUTCDate(d.getUTCDate() + 1);
+    else if (rule === 'weekdays') {
+      do d.setUTCDate(d.getUTCDate() + 1);
+      while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+    } else if (rule === 'weekly') d.setUTCDate(d.getUTCDate() + 7);
+    else if (rule === 'biweekly') d.setUTCDate(d.getUTCDate() + 14);
+    else {
+      // месяц и квартал: то же число, а если его нет (31-е) — последний день месяца
+      const day = Number(iso.slice(8, 10));
+      const months = rule === 'quarterly' ? 3 : 1;
+      const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1, 12));
+      const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0, 12)).getUTCDate();
+      target.setUTCDate(Math.min(day, last));
+      return target.toISOString().slice(0, 10);
+    }
+    return d.toISOString().slice(0, 10);
+  };
+  let next = step(due ?? today);
+  for (let i = 0; next < today && i < 1000; i++) next = step(next);
+  return next;
+}
+
 // Выполненные задачи на доске — только недавние, чтобы колонки не разрастались
 const DONE_DAYS = 14;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -87,9 +116,11 @@ export function createCrm({ db }) {
     ),
     // задачи
     task: db.prepare(`SELECT ${TASK_COLS} ${TASK_JOINS} WHERE t.id = ?`),
-    insertTask: db.prepare('INSERT INTO tasks (client_id, column_id, title, description, status, priority, assignee_id, due, due_time, created_by, created_by_id, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    insertTask: db.prepare('INSERT INTO tasks (client_id, column_id, title, description, status, priority, assignee_id, due, due_time, created_by, created_by_id, done_at, repeat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    setRepeatNext: db.prepare('UPDATE tasks SET repeat_next = ? WHERE id = ?'),
+    taskExists: db.prepare('SELECT 1 FROM tasks WHERE id = ?'),
     updateTask: db.prepare(
-      "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, due_time = ?, done_at = ?, updated_at = datetime('now') WHERE id = ?",
+      "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, due_time = ?, done_at = ?, repeat = ?, updated_at = datetime('now') WHERE id = ?",
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
     comments: db.prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY id'),
@@ -352,7 +383,9 @@ export function createCrm({ db }) {
     if (v.dueTime != null && !TIME_RE.test(v.dueTime)) throw new CrmError('Время срока — ЧЧ:ММ');
     if (v.dueTime != null && v.due == null) throw new CrmError('Время срока задаётся вместе с датой');
     if (v.priority != null && !(v.priority in PRIORITIES)) throw new CrmError('Неизвестная важность');
+    if (v.repeat != null && !(v.repeat in REPEATS)) throw new CrmError('Неизвестный повтор');
     return {
+      repeat: v.repeat ?? null,
       title,
       description: text(v.description, 10000),
       priority: Number(v.priority ?? 0),
@@ -368,7 +401,7 @@ export function createCrm({ db }) {
       const col = placeTask(v);
       const done = Boolean(col.is_done || v.done);
       const { lastInsertRowid } = q.insertTask.run(
-        col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, t.dueTime, user.name, user.id, done ? now() : null,
+        col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, t.dueTime, user.name, user.id, done ? now() : null, t.repeat,
       );
       const created = getTask(lastInsertRowid);
       if (created.assignee_id) tell(created.assignee_id, created, 'task_assigned', `Вам поручена задача ${label(created)}`, user);
@@ -386,7 +419,9 @@ export function createCrm({ db }) {
       due: patch.due !== undefined ? patch.due : cur.due,
       // снятый срок снимает и время; новая дата без времени сохраняет прежнее время
       dueTime: patch.dueTime !== undefined ? patch.dueTime : patch.due === null ? null : cur.due_time,
+      repeat: patch.repeat !== undefined ? patch.repeat : cur.repeat,
     });
+    let spawned = null;
     tx(() => {
       // перенос: в колонку, на доску или в другой проект
       let col = cur.column_id ? getColumn(cur.column_id) : placeTask({ clientId: cur.client_id });
@@ -402,7 +437,17 @@ export function createCrm({ db }) {
       const wasDone = cur.status === 'done';
       const doneAt = done ? (wasDone ? cur.done_at : now()) : null;
 
-      q.updateTask.run(col.client_id, col.id, next.title, next.description, done ? 'done' : 'todo', next.priority, next.assigneeId, next.due, next.dueTime, doneAt, cur.id);
+      q.updateTask.run(col.client_id, col.id, next.title, next.description, done ? 'done' : 'todo', next.priority, next.assigneeId, next.due, next.dueTime, doneAt, next.repeat, cur.id);
+      // повторяющаяся выполнена — следующая на той же доске, в первой колонке; повторное «выполнено» копий не плодит
+      if (done && !wasDone && next.repeat && !(cur.repeat_next && q.taskExists.get(cur.repeat_next))) {
+        const today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+        const due = nextDue(next.due, next.repeat, today);
+        const first = placeTask({ boardId: col.board_id });
+        const { lastInsertRowid } = q.insertTask.run(first.client_id, first.id, next.title, next.description, 'todo', next.priority, next.assigneeId, due, next.dueTime, user.name, user.id, null, next.repeat);
+        q.setRepeatNext.run(Number(lastInsertRowid), cur.id);
+        q.addComment.run(cur.id, 'event', `Повтор: следующая — ${fmtDate(due)}`, user.name);
+        spawned = Number(lastInsertRowid);
+      }
       // лента изменений: перенос, выполнение, исполнитель, срок
       if (moved) {
         const where = col.board_id !== from.board_id || col.client_id !== from.client_id ? `${col.board_name}: ${col.name}` : col.name;
@@ -417,8 +462,10 @@ export function createCrm({ db }) {
         q.addComment.run(cur.id, 'event', next.due ? `Срок: ${fmtDate(next.due)}${next.dueTime ? `, ${next.dueTime}` : ''}` : 'Срок снят', user.name);
       }
       if (next.priority !== cur.priority) q.addComment.run(cur.id, 'event', next.priority ? `Важность: ${PRIORITIES[next.priority]}` : 'Важность снята', user.name);
+      if (next.repeat !== cur.repeat) q.addComment.run(cur.id, 'event', next.repeat ? `Повтор: ${REPEATS[next.repeat].toLowerCase()}` : 'Повтор снят', user.name);
     });
     const t = getTask(id);
+    if (spawned) t.repeat_spawned = spawned;
     if (next.assigneeId && next.assigneeId !== cur.assignee_id) tell(next.assigneeId, t, 'task_assigned', `Вам поручена задача ${label(t)}`, user);
     if (t.status === 'done' && cur.status !== 'done') {
       for (const uid of new Set([cur.created_by_id, cur.assignee_id])) tell(uid, t, 'task_done', `Выполнена задача ${label(t)}`, user);
@@ -466,7 +513,7 @@ export function createCrm({ db }) {
     }
     return db
       .prepare(
-        `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.created_by_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
+        `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.created_by_id, t.column_id, t.assignee_id, t.updated_at, t.done_at, t.repeat,
                 c.name AS client_name, u.name AS assignee_name,
                 col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments,

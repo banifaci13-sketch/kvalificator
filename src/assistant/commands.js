@@ -87,6 +87,55 @@ export function tidyTitle(s) {
   return t ? t[0].toUpperCase() + t.slice(1) : t;
 }
 
+const todayIso = (now) => new Date(now.getTime() + 3 * 3600e3).toISOString().slice(0, 10);
+const DAYS = [['понедельник', 'понедельникам'], ['вторник', 'вторникам'], ['сред', 'средам'], ['четверг', 'четвергам'], ['пятниц', 'пятницам'], ['суббот', 'субботам'], ['воскресень', 'воскресеньям']];
+
+/**
+ * Повтор задачи из фразы: «каждый день», «по будням», «каждый понедельник», «по пятницам»,
+ * «раз в две недели», «ежемесячно 5 числа», «каждый квартал». Возвращает { repeat, date, rest }.
+ */
+export function parseRepeat(text, now = new Date()) {
+  let rest = ` ${text} `;
+  let repeat = null;
+  let date = null;
+  const cut = (re) => {
+    const m = re.exec(rest);
+    if (m) rest = rest.replace(m[0], ' ');
+    return m;
+  };
+  if (cut(word('каждый\\s+будний\\s+день|по\\s+будням|в\\s+будни'))) repeat = 'weekdays';
+  else if (cut(word('каждый\\s+день|ежедневно|раз\\s+в\\s+день'))) repeat = 'daily';
+  else if (cut(word('раз\\s+в\\s+(?:две|2)\\s+недели|кажд(?:ые|ую)\\s+(?:две|2|вторую)\\s+недел[июь]'))) repeat = 'biweekly';
+  else if (cut(word('кажд(?:ый|ые)\\s+(?:квартал|3\\s+месяца|три\\s+месяца)|ежеквартально|раз\\s+в\\s+квартал'))) repeat = 'quarterly';
+  else if (cut(word('каждую\\s+неделю|еженедельно|раз\\s+в\\s+неделю'))) repeat = 'weekly';
+  else {
+    // «каждый понедельник», «каждую среду», «по пятницам» — раз в неделю, ближайший такой день
+    for (const [one, many] of DAYS) {
+      const m = cut(word(`кажд(?:ый|ую|ое)\\s+${one}\\S*|по\\s+${many}`));
+      if (m) {
+        repeat = 'weekly';
+        rest = ` в ${one}${one.endsWith('ц') ? 'у' : one.endsWith('д') ? 'у' : one.endsWith('т') ? 'у' : one.endsWith('нь') ? 'е' : ''} ${rest}`;
+        break;
+      }
+    }
+    if (!repeat) {
+      const monthly = cut(word('каждое\\s+(\\d{1,2})(?:-?е)?\\s+число|(\\d{1,2})(?:-?го)?\\s+числа(?:\\s+каждого\\s+месяца)?|ежемесячно(?:\\s+(\\d{1,2})(?:-?го)?\\s+числа)?|каждый\\s+месяц|раз\\s+в\\s+месяц'));
+      if (monthly) {
+        repeat = 'monthly';
+        const day = Number(monthly[1] ?? monthly[2] ?? monthly[3]);
+        if (day >= 1 && day <= 31) {
+          const t = new Date(`${todayIso(now)}T12:00:00Z`);
+          const d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), Math.min(day, 28), 12));
+          if (day > 28) d.setUTCDate(Math.min(day, new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()));
+          if (d < t) d.setUTCMonth(d.getUTCMonth() + 1);
+          date = d.toISOString().slice(0, 10);
+        }
+      }
+    }
+  }
+  return { repeat, date, rest: rest.replace(/\s+/g, ' ').trim() };
+}
+
 const PRIORITY_WORDS = [
   [word('критично|горит|аврал'), 4],
   [word('срочно|важно|приоритетно|высокий приоритет'), 3],
@@ -145,7 +194,10 @@ export function parseCommand(message, { clients = [], team = [], now = new Date(
     /^напомни(?:\s+мне)?\s+(.+)$/i.exec(text);
   if (create) {
     let body = create[1];
+    const rep = parseRepeat(body, now);
+    body = rep.rest;
     const w = parseWhen(body, now);
+    if (rep.date && !w.date) w.date = rep.date;
     body = w.rest;
     let priority = 0;
     for (const [re, p] of PRIORITY_WORDS) {
@@ -166,7 +218,7 @@ export function parseCommand(message, { clients = [], team = [], now = new Date(
     }
     const title = tidyTitle(body);
     if (!title) return { intent: 'chat' };
-    return { intent: 'task_create', title, client, assignee: person?.user ?? null, date: w.date, time: w.time, priority };
+    return { intent: 'task_create', title, client, assignee: person?.user ?? null, date: w.date ?? (rep.repeat ? todayIso(now) : null), time: w.time, priority, repeat: rep.repeat };
   }
 
   return { intent: 'chat' };

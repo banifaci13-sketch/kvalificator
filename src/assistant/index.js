@@ -29,7 +29,7 @@ export const DEFAULT_NAME = 'Ассистент';
 
 // Образцы фраз для модели: просьбу своими словами она переписывает в одну из этих форм
 const COMMAND_SAMPLES = [
-  'поставь задачу <что сделать> для <клиент> на <когда> [в <время>] [срочно|критично]',
+  'поставь задачу <что сделать> для <клиент> на <когда> [в <время>] [срочно|критично] [каждый день|по будням|каждый понедельник|раз в две недели|ежемесячно 5 числа|каждый квартал]',
   'поручи <Имя> <что сделать> до <когда>',
   'закрой задачу <слова из названия>',
   'верни в работу задачу <слова из названия>',
@@ -122,12 +122,13 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
 
   function createTask(user, cmd) {
     const task = crm.createTask(
-      { title: cmd.title, clientId: cmd.client?.id ?? null, assigneeId: cmd.assignee?.id ?? user.id, due: cmd.date, dueTime: cmd.date ? cmd.time : null, priority: cmd.priority },
+      { title: cmd.title, clientId: cmd.client?.id ?? null, assigneeId: cmd.assignee?.id ?? user.id, due: cmd.date, dueTime: cmd.date ? cmd.time : null, priority: cmd.priority, repeat: cmd.repeat ?? null },
       user,
     );
     const who = !cmd.assignee || cmd.assignee.id === user.id ? 'вы' : cmd.assignee.name;
     const parts = [`проект «${task.client_name ?? 'Общие задачи'}»`, `срок — ${fmtDue(task)}`, `ответственный — ${who}`];
     if (task.priority >= 3) parts.push(task.priority === 4 ? 'критично' : 'важно');
+    if (task.repeat) parts.push(`повтор — ${{ daily: 'каждый день', weekdays: 'по будням', weekly: 'каждую неделю', biweekly: 'раз в две недели', monthly: 'каждый месяц', quarterly: 'каждый квартал' }[task.repeat]}`);
     return {
       reply: `Поставил задачу «${task.title}»: ${parts.join(', ')}.`,
       actions: [{ type: 'task', id: task.id, title: task.title, href: taskHref(task), client: task.client_name, created: true }],
