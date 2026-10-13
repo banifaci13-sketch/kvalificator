@@ -3,6 +3,8 @@ ARG NODE_IMAGE=mirror.gcr.io/library/node:22-alpine
 FROM ${NODE_IMAGE}
 WORKDIR /app
 ENV NODE_ENV=production
+# Chromium — для PDF и проверки вёрстки презентаций; DejaVu — запасной шрифт (фирменные встроены в документы)
+RUN apk add --no-cache chromium font-dejavu
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY config ./config
@@ -10,6 +12,8 @@ COPY src ./src
 COPY widget ./widget
 COPY admin ./admin
 COPY scripts ./scripts
+COPY brand ./brand
+COPY templates ./templates
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME /app/data
 EXPOSE 3000

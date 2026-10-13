@@ -5,6 +5,7 @@ import { createReadStream } from 'node:fs';
 import { DocError, leadValues } from '../docs/library.js';
 import { QaError, FORMATS } from '../docs/build.js';
 import { runQa } from '../docs/qa.js';
+import { BrowserUnavailable } from '../docs/browser.js';
 import { renderDeckHtml } from '../docs/render-html.js';
 import { slideCatalog, emptySlide, CHART_TYPES } from '../docs/schema.js';
 
@@ -20,6 +21,10 @@ const specSchema = { type: 'object', required: ['slides'], properties: { meta: {
 export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
   api.setErrorHandler((err, req, reply) => {
     if (err instanceof DocError) return reply.code(400).send({ error: err.message });
+    if (err instanceof BrowserUnavailable) {
+      req.log.error({ err }, 'Chromium недоступен');
+      return reply.code(503).send({ error: err.message });
+    }
     throw err;
   });
 
