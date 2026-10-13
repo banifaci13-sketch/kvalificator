@@ -87,7 +87,8 @@ DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d= -f2-)
 # ---------- 3. Проверка DNS ----------
 say "Проверяю, что $DOMAIN указывает на этот сервер"
 server_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
-domain_ip=$(getent ahostsv4 "$DOMAIN" | awk 'NR==1 {print $1}')
+# getent возвращает ошибку, если домен ещё не резолвится, — это не повод прерывать установку
+domain_ip=$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR==1 {print $1}' || true)
 if [[ -z "$domain_ip" ]]; then
   warn "Домен $DOMAIN пока не резолвится. Добавьте A-запись на ${server_ip:-IP сервера} и подождите — HTTPS заработает, когда DNS обновится."
 elif [[ -n "$server_ip" && "$domain_ip" != "$server_ip" ]]; then
@@ -104,7 +105,7 @@ fi
 
 # ---------- 5. HTTPS: Caddy или уже установленный nginx ----------
 set_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
-env_get() { grep -E "^$1=" .env | cut -d= -f2-; }
+env_get() { { grep -E "^$1=" .env || true; } | cut -d= -f2-; }
 
 proxy_mode=caddy
 busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
@@ -226,7 +227,8 @@ if [[ $proxy_mode == nginx ]]; then
     echo "  ✓ сертификат для $DOMAIN уже есть"
   elif [[ -n "$domain_ip" && "$domain_ip" == "$server_ip" ]]; then
     domains=(-d "$DOMAIN")
-    [[ "$(getent ahostsv4 "www.$DOMAIN" | awk 'NR==1 {print $1}')" == "$server_ip" ]] && domains+=(-d "www.$DOMAIN")
+    www_ip=$(getent ahostsv4 "www.$DOMAIN" 2>/dev/null | awk 'NR==1 {print $1}' || true)
+    [[ "$www_ip" == "$server_ip" ]] && domains+=(-d "www.$DOMAIN")
     say "Выпускаю HTTPS-сертификат для ${domains[*]//-d /}"
     certbot --nginx "${domains[@]}" --non-interactive --agree-tos --register-unsafely-without-email --redirect \
       || warn "Сертификат не выпущен. Повторите позже: certbot --nginx ${domains[*]} --redirect"
