@@ -9,6 +9,21 @@ docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/ba
 echo "▸ Загружаю изменения"
 git pull --ff-only
 
+# Лимит загрузки в nginx (наш сайт, другие не трогаем): фото, видео и вложения — до 120 МБ
+for site in /etc/nginx/sites-available/kvalificator.conf /etc/nginx/conf.d/kvalificator.conf; do
+  [[ -f "$site" ]] || continue
+  if grep -qE 'client_max_body_size[[:space:]]+2m;' "$site"; then
+    cp "$site" /tmp/kval-nginx.bak
+    sed -i -E 's/client_max_body_size[[:space:]]+2m;/client_max_body_size 120m;/' "$site"
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx && echo "▸ nginx: загрузка файлов до 120 МБ"
+    else
+      cp /tmp/kval-nginx.bak "$site"
+      echo "! nginx не принял новый лимит загрузки — оставил как было"
+    fi
+  fi
+done
+
 echo "▸ Пересобираю и перезапускаю"
 docker compose up -d --build
 docker image prune -f >/dev/null

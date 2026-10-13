@@ -116,7 +116,7 @@ const MAX_SIDE = 2560;
  * Перед загрузкой браузер сам разворачивает фото по EXIF (иначе в PowerPoint оно ляжет набок),
  * уменьшает до 2560 px и переводит WebP/HEIC в JPEG — сервер принимает только JPG и PNG.
  */
-async function prepareImage(file) {
+export async function prepareImage(file) {
   let bmp;
   try {
     bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });

@@ -438,7 +438,8 @@ export function createCrm({ db }) {
   }
 
   function listTasks({ boardId = null, clientId = null, assigneeId = null, mine = null, q: search = '', open = false } = {}) {
-    const where = [open ? "t.status != 'done'" : `(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
+    // на доске проекта выполненные остаются всегда; в общих списках — за последние две недели
+    const where = [open ? "t.status != 'done'" : boardId ? '1 = 1' : `(t.status != 'done' OR t.done_at >= datetime('now', '-${DONE_DAYS} days'))`];
     const params = [];
     if (boardId) {
       where.push('col.board_id = ?');

@@ -2,7 +2,7 @@
 // Ещё «Мои задачи» со всех проектов, клиенты агентства и карточка клиента.
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, confirmDialog } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, confirmDialog, rowActions } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 import { setAssistantTask } from './assistant.js';
@@ -111,7 +111,7 @@ export async function createFromTask(tool, task, onLinked) {
       navigate('doc', new URLSearchParams({ id: String(document.id) }));
     } else if (tool.kind === 'meeting') {
       const { openMeeting } = await import('./calendar.js');
-      openMeeting(null, { defaults: { title: task.title, client_id: task.client_id }, onCreated: (m) => link(m.id).then(() => toast('Встреча привязана к задаче')) });
+      openMeeting(null, { defaults: { title: task.title, client_id: task.client_id, date: task.due ?? undefined, time: task.due_time ?? undefined }, onCreated: (m) => link(m.id).then(() => toast('Встреча привязана к задаче')) });
     }
   } catch (err) {
     toast(err.message);
@@ -1151,7 +1151,7 @@ export async function renderClients(params) {
       h(
         'table',
         { class: 'leads docs' },
-        h('thead', {}, h('tr', {}, ['Клиент', 'Ответственный', 'Открытых задач', 'Просрочено', 'Контакт'].map((t) => h('th', { scope: 'col' }, t)))),
+        h('thead', {}, h('tr', {}, ['Клиент', 'Ответственный', 'Открытых задач', 'Просрочено', 'Контакт'].map((t) => h('th', { scope: 'col' }, t)), h('th', { scope: 'col' }, h('span', { class: 'sr-only' }, 'Действия')))),
         h(
           'tbody',
           {},
@@ -1165,6 +1165,28 @@ export async function renderClients(params) {
               h('td', { class: 'num' }, c.open_tasks || h('span', { class: 'muted' }, '—')),
               h('td', { class: 'num' }, c.overdue ? h('span', { class: 'due overdue' }, c.overdue) : h('span', { class: 'muted' }, '—')),
               h('td', {}, [c.contact, c.phone ?? c.email].filter(Boolean).join(', ') || h('span', { class: 'muted' }, '—')),
+              // удалить насовсем — администратор; остальные убирают клиента в архив
+              ctx.me.role === 'admin'
+                ? rowActions({
+                    name: c.name,
+                    onDelete: async () => {
+                      if (!(await confirmDialog(`Удалить клиента «${c.name}» насовсем? Его доски удалятся, задачи перейдут в «Общие задачи». Если клиент просто не активен — лучше перенести в архив из карточки.`))) return;
+                      await api(`/admin/api/clients/${c.id}`, { method: 'DELETE' });
+                      toast(`Клиент «${c.name}» удалён`);
+                      renderClients(params);
+                    },
+                  })
+                : rowActions({
+                    name: c.name,
+                    deleteTitle: 'В архив',
+                    deleteIcon: 'archive',
+                    onDelete: async () => {
+                      if (!(await confirmDialog(`Перенести клиента «${c.name}» в архив? Задачи и история сохранятся, вернуть можно из архива.`, { ok: 'В архив', danger: false }))) return;
+                      await api(`/admin/api/clients/${c.id}`, { method: 'PUT', body: { archived: true } });
+                      toast(`«${c.name}» в архиве`);
+                      renderClients(params);
+                    },
+                  }),
             );
           }),
         ),

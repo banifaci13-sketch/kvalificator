@@ -41,7 +41,7 @@ export async function renderHome() {
       if (err.status !== 401) fill(body, h('p', { class: 'error' }, err.message));
       return;
     }
-    fill(body, hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, meetings(d, load), leads(d), notifications(d), recent(d))));
+    fill(body, hero(d), stats(d), h('div', { class: 'home-grid' }, h('div', { class: 'home-col' }, hot(d, load), week(d, load), delegated(d), team(d)), h('div', { class: 'home-col' }, newsCard(d), meetings(d, load), leads(d), notifications(d), recent(d))));
   }
   await load();
 }
@@ -209,6 +209,31 @@ export function notificationRow(n, onOpen = () => {}) {
       },
       n.text,
       h('span', { class: 'muted small' }, fmtDateTime(n.created_at)),
+    ),
+  );
+}
+
+function newsCard(d) {
+  if (!d.news?.length) return null;
+  return card(
+    d.newsUnseen ? `Новости · ${d.newsUnseen} ${plural(d.newsUnseen, 'новая', 'новые', 'новых')}` : 'Новости',
+    { action: h('a', { class: 'linkish small', href: '#/news' }, 'Вся лента') },
+    h(
+      'ul',
+      { class: 'home-list' },
+      d.news.map((p) =>
+        h(
+          'li',
+          { class: 'home-news' },
+          p.image ? h('img', { class: 'home-news-img', src: `/admin/api/files/${p.image}`, alt: '', loading: 'lazy' }) : userAvatar({ id: p.author_id, name: p.author }),
+          h(
+            'div',
+            { class: 'home-task-main' },
+            h('a', { class: 'task-link', href: `#/news?post=${p.id}` }, `${p.pinned ? '📌 ' : ''}${p.title || p.body.split('\n')[0] || (p.files ? 'Фото и видео' : 'Запись')}`),
+            h('span', { class: 'muted small' }, `${p.author}, ${fmtDateTime(p.created_at)}${p.comments ? ` · 💬 ${p.comments}` : ''}`),
+          ),
+        ),
+      ),
     ),
   );
 }

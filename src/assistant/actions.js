@@ -23,7 +23,7 @@ const company = (l) => l.answers?.company?.raw ?? l.answers?.company ?? null;
 const leadLabel = (l) => `№${l.id}${company(l) ? ` «${company(l)}»` : ''}`;
 const RU_MONTH = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, findTask, choose }) {
+export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, findTask, choose }) {
   const need = (store, what) => {
     if (!store) throw new Error(`${what} недоступны на этом сервере`);
   };
@@ -363,6 +363,22 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       return { reply: lines.join('\n'), actions: [{ type: 'link', title: 'Сводка по заявкам', href: '#/stats' }] };
     },
 
+    // ---------- новости ----------
+    news_create(user, cmd) {
+      if (!news) return { reply: 'Новости недоступны.' };
+      const p = news.create({ body: cmd.body }, user);
+      return { reply: 'Опубликовал в «Новостях». Фото, видео или кейс удобнее добавить в самой ленте.', actions: [{ type: 'link', title: 'Запись в новостях', href: `#/news?post=${p.id}` }] };
+    },
+    news_list(user) {
+      if (!news) return { reply: 'Новости недоступны.' };
+      const { posts } = news.list(user.id, { limit: 5 });
+      if (!posts.length) return { reply: 'В новостях пока пусто. Напишите: «опубликуй в новости: …»', navigate: '#/news' };
+      return {
+        reply: ['Последнее в новостях:', ...posts.map((p) => `• ${p.pinned ? '📌 ' : ''}${p.author}: ${(p.title || p.body || p.link || 'фото и видео').split('\n')[0].slice(0, 120)}${p.comments ? ` (💬 ${p.comments})` : ''}`)].join('\n'),
+        actions: posts.slice(0, 5).map((p) => ({ type: 'link', title: (p.title || p.body || 'Запись').split('\n')[0].slice(0, 60), href: `#/news?post=${p.id}` })),
+      };
+    },
+
     // ---------- регламенты ----------
     kb_open(user, cmd) {
       if (!kb) return { reply: 'Регламенты недоступны.' };
@@ -386,6 +402,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     if (calendar) g.push('', 'Встречи', '• «встреча с Ромашкой завтра в 15 в Телемосте»', '• «перенеси встречу с Таллером на четверг», «отмени планёрку», «встречи на неделе»');
     if (mediaplans || library) g.push('', 'Медиапланы и документы', '• «создай медиаплан для Таллера на квартал», «медиаплан для интернет-магазина»', '• «создай КП для Юнистрима», «сделай отчёт для Таллера за сентябрь», «открой медиаплан Таллер»');
     if (reports) g.push('', 'Заявки', '• «новые заявки», «горячие заявки за неделю», «сколько заявок за месяц»', '• «возьми заявку 123», «заявка 123 — спам», «заведи клиента по заявке 123»');
+    g.push('', 'Новости', '• «опубликуй в новости: запустили РСЯ для Таллера», «покажи новости»');
     g.push('', 'Кабинет', '• «открой календарь», «перейди в медиапланы», «что нового», «включи тёмную тему»');
     g.push('', 'Остальное — свободным вопросом: помогу разложить задачу, составить текст и найду ответ в регламентах или в интернете.');
     return g.join('\n');

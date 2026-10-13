@@ -19,6 +19,8 @@ import { aiRoutes } from './ai-routes.js';
 import { DEFAULT_PREFS, PrefsError, checkPrefsPatch } from './prefs.js';
 import { assistantRoutes } from './assistant-routes.js';
 import { createNotifications } from '../notify/store.js';
+import { createNews } from '../news/store.js';
+import { newsRoutes } from './news-routes.js';
 import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
 import { createSearch } from '../assistant/search.js';
@@ -54,11 +56,13 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media, files = null }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   // уведомления в кабинете: задачи шлют их сами, встречам — через маршруты календаря
   const notify = createNotifications({ db: db.raw });
   crm?.useNotify?.(notify);
+  const news = createNews({ db: db.raw, files });
+  news.useNotify(notify);
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
       ? createYandexOAuth({
@@ -104,7 +108,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         reply.header('x-frame-options', 'DENY');
         reply.header(
           'content-security-policy',
-          "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.yandex.ru",
+          "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.yandex.ru",
         );
       }
     }
@@ -515,9 +519,12 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         delegated: home.delegated.all(req.user.id).map((t) => ({ ...t, overdue: !!t.overdue })),
         team: req.user.role === 'admin' ? home.team.all().filter((u) => u.open || u.done_week) : null,
         notifications: notify.list(req.user.id, 6).filter((n) => !n.read_at),
+        news: news.list(req.user.id, { limit: 3 }).posts.map((p) => ({ id: p.id, kind: p.kind, title: p.title, body: p.body.slice(0, 220), author: p.author, author_id: p.author_id, created_at: p.created_at, pinned: p.pinned, comments: p.comments, image: p.files.find((f) => f.kind === 'image')?.id ?? null, files: p.files.length })),
+        newsUnseen: news.unseen(req.user.id),
       };
     });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify });
+    await api.register(newsRoutes, { news, files });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
 
     // ИИ-ассистент в боковой панели: поручения, помощь по регламентам, поиск в интернете
@@ -525,7 +532,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       const kb = createKb({ db: db.raw });
       const search = createSearch(config.search);
       const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify });
+      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news });
       await api.register(assistantRoutes, { assistant, kb, ai, search });
     }
 

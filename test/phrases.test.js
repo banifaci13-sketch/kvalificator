@@ -3,13 +3,16 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePhrase } from '../src/assistant/phrases.js';
+import { parsePhrase, normalize } from '../src/assistant/phrases.js';
 import { parseCommand } from '../src/assistant/commands.js';
 
 const clients = [{ id: 1, name: 'Таллер' }, { id: 2, name: 'ООО Ромашка' }, { id: 3, name: 'Клиника Медлайн' }];
 const team = [{ id: 1, name: 'Анна Сорокина' }, { id: 2, name: 'Олег Петров' }, { id: 3, name: 'Даниил Карацапов' }];
 const now = new Date('2026-10-14T09:00:00Z'); // среда, 12:00 по Москве
-const parse = (t) => parsePhrase(t, { clients, team, now }) ?? parseCommand(t, { clients, team, now });
+const parse = (raw) => {
+  const t = normalize(raw);
+  return parsePhrase(t, { clients, team, now }) ?? parseCommand(t, { clients, team, now });
+};
 
 const CASES = [
   // справка, уведомления, оформление
@@ -121,6 +124,11 @@ const CASES = [
   ['отметь заявку 12 как сделку', { intent: 'lead_status', id: 12, status: 'won' }],
   ['переведи заявку 9 в отказ', { intent: 'lead_status', id: 9, status: 'lost' }],
   ['заявка 5 кп отправлено', { intent: 'lead_status', id: 5, status: 'proposal' }],
+  // новости
+  ['опубликуй в новости: запустили РСЯ для Таллера', { intent: 'news_create', body: 'запустили РСЯ для Таллера' }],
+  ['напиши в ленту — завтра субботник', { intent: 'news_create', body: 'завтра субботник' }],
+  ['покажи новости', { intent: 'news_list' }],
+  ['открой новости', { intent: 'navigate', section: 'news' }],
   // регламенты и поиск
   ['открой регламент по КП', { intent: 'kb_open', query: 'КП' }],
   ['найди в интернете требования SberAds к баннерам', { intent: 'search' }],
@@ -139,3 +147,39 @@ for (const [phrase, want] of CASES) {
     }
   });
 }
+
+test('встреча, где «встреча» не сразу после глагола, и время через пробел', () => {
+  const m = parse('поставь на завтра на 13 00 встречу с клиентом таллер');
+  assert.deepEqual([m.intent, m.client?.id, m.date, m.time], ['meeting', 1, '2026-10-15', '13:00'], JSON.stringify(m));
+  assert.doesNotMatch(m.title, /00/);
+  const t = parse('поставь задачу подготовиться ко встрече с Таллером завтра в 15 30');
+  assert.deepEqual([t.intent, t.time], ['task_create', '15:30']);
+  assert.equal(parse('назначь в пятницу в 11 созвон с Ромашкой').intent, 'meeting');
+});
+
+test('живая речь: обращения, «пожалуйста», неопределённая форма, слово «встреча» в любом месте', () => {
+  const cases = [
+    ['слушай, поставь пожалуйста задачу отчёт для Таллера на пятницу', { intent: 'task_create', client: { id: 1 }, date: '2026-10-16' }],
+    ['можешь поставить задачу обновить нормативы на завтра?', { intent: 'task_create', date: '2026-10-15' }],
+    ['надо подготовить КП для Медлайн к пятнице', { intent: 'task_create', client: { id: 3 }, date: '2026-10-16' }],
+    ['не забыть позвонить в Ромашку завтра в 11', { intent: 'task_create', date: '2026-10-15', time: '11:00' }],
+    ['мне нужна встреча с Ромашкой в пятницу в 15', { intent: 'meeting', client: { id: 2 }, date: '2026-10-16', time: '15:00' }],
+    ['завтра в 15 30 созвон с Таллером', { intent: 'meeting', client: { id: 1 }, date: '2026-10-15', time: '15:30' }],
+    ['давай на завтра на 13 00 встречу с клиентом таллер', { intent: 'meeting', client: { id: 1 }, time: '13:00' }],
+    ['организуй планёрку в понедельник в 10', { intent: 'meeting', date: '2026-10-19', time: '10:00' }],
+    ['запланировать встречу с Таллером на 20.10 в 12', { intent: 'meeting', date: '2026-10-20', time: '12:00' }],
+    ['перенеси встречу с Таллером на пятницу', { intent: 'meeting_move' }],
+    ['отмени созвон с Ромашкой', { intent: 'meeting_cancel' }],
+    ['какие встречи завтра', { intent: 'agenda', only: 'meetings' }],
+    ['открыть календарь', { intent: 'navigate', section: 'calendar' }],
+    ['добавить клиента Юнистрим, спасибо', { intent: 'client_create', name: 'Юнистрим' }],
+    ['пожалуйста, что у меня сегодня?', { intent: 'agenda', range: 'today' }],
+  ];
+  for (const [phrase, want] of cases) {
+    const got = parse(phrase);
+    for (const [k, v] of Object.entries(want)) {
+      if (v && typeof v === 'object') assert.equal(got[k]?.id, v.id, `${k} для «${phrase}»: ${JSON.stringify(got)}`);
+      else assert.equal(got[k], v, `${k} для «${phrase}»: ${JSON.stringify(got)}`);
+    }
+  }
+});

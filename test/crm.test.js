@@ -213,7 +213,7 @@ test('обновление базы: старые статусы задач ст
   const path = join(mkdtempSync(join(tmpdir(), 'crm-')), 'old.db');
   const fresh = openDb(path);
   // состояние до досок: колонок и досок ещё нет, у задач — статусы
-  fresh.raw.exec(`DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
+  fresh.raw.exec(`DROP TABLE news_reactions; DROP TABLE news_comments; DROP TABLE news_files; DROP TABLE news_posts; DROP TABLE files; ALTER TABLE admin_users DROP COLUMN news_seen; DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; ALTER TABLE admin_users DROP COLUMN prefs; DROP INDEX tasks_column; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards;
     CREATE TABLE tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL, title TEXT NOT NULL, description TEXT,
       status TEXT NOT NULL DEFAULT 'todo', priority INTEGER NOT NULL DEFAULT 0, assignee_id INTEGER REFERENCES admin_users(id), due TEXT,
@@ -310,4 +310,16 @@ test('уведомления: поручили задачу, комментар�
   assert.equal(day.team, null, 'нагрузку команды видит только администратор');
   const boss = (await anna({ url: '/admin/api/home' })).json();
   assert.ok(boss.team.some((u) => u.name === 'Олег' && u.overdue === 1));
+});
+
+test('выполненные задачи остаются на доске проекта, сколько бы времени ни прошло', async () => {
+  const { as, db } = await setup();
+  const anna = await as('anna');
+  const client = (await anna({ method: 'POST', url: '/admin/api/clients', payload: { name: 'Архивный' } })).json().client;
+  const task = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Старая выполненная', clientId: client.id } })).json().task;
+  await anna({ method: 'PATCH', url: `/admin/api/tasks/${task.id}`, payload: { done: true } });
+  db.raw.prepare("UPDATE tasks SET done_at = datetime('now', '-90 days') WHERE id = ?").run(task.id);
+  const board = (await anna({ url: `/admin/api/projects/${client.id}/boards` })).json().boards[0];
+  assert.ok((await anna({ url: `/admin/api/tasks?board=${board.id}` })).json().tasks.some((t) => t.id === task.id), 'на доске видна');
+  assert.ok(!(await anna({ url: '/admin/api/tasks?mine=true' })).json().tasks.some((t) => t.id === task.id), 'в «Моих задачах» — только за две недели');
 });

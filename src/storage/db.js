@@ -350,6 +350,59 @@ const MIGRATIONS = [
      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
    );
    ALTER TABLE admin_users ADD COLUMN avatar_ver INTEGER;`,
+
+  // Файлы сотрудников (фото, видео, вложения) и «Новости» агентства: записи, кейсы, ссылки,
+  // комментарии и реакции. news_seen — до какой записи сотрудник уже смотрел ленту (счётчик в меню).
+  `CREATE TABLE files (
+     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+     sha256         TEXT NOT NULL,
+     mime           TEXT NOT NULL,
+     kind           TEXT NOT NULL,
+     name           TEXT NOT NULL,
+     bytes          INTEGER NOT NULL,
+     uploaded_by    TEXT,
+     uploaded_by_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE news_posts (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     kind        TEXT NOT NULL DEFAULT 'news',
+     title       TEXT,
+     body        TEXT NOT NULL DEFAULT '',
+     link        TEXT,
+     client_id   INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     case_task   TEXT,
+     case_result TEXT,
+     verified    INTEGER NOT NULL DEFAULT 0,
+     pinned      INTEGER NOT NULL DEFAULT 0,
+     author_id   INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     author      TEXT NOT NULL,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     edited_at   TEXT
+   );
+   CREATE INDEX news_posts_order ON news_posts (pinned, id);
+   CREATE TABLE news_files (
+     post_id  INTEGER NOT NULL REFERENCES news_posts(id) ON DELETE CASCADE,
+     file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+     position INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (post_id, file_id)
+   );
+   CREATE TABLE news_comments (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     post_id    INTEGER NOT NULL REFERENCES news_posts(id) ON DELETE CASCADE,
+     author_id  INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     author     TEXT NOT NULL,
+     body       TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX news_comments_post ON news_comments (post_id, id);
+   CREATE TABLE news_reactions (
+     post_id INTEGER NOT NULL REFERENCES news_posts(id) ON DELETE CASCADE,
+     user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+     emoji   TEXT NOT NULL,
+     PRIMARY KEY (post_id, user_id, emoji)
+   );
+   ALTER TABLE admin_users ADD COLUMN news_seen INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Номер текущей версии схемы базы. */

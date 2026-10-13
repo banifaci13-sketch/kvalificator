@@ -9,6 +9,7 @@ import { renderIntegrations } from './integrations.js';
 import { assistantEntry } from './assistant.js';
 import { renderKb } from './kb.js';
 import { renderHome, bellButton } from './home.js';
+import { renderNews, refreshNewsBadge } from './news.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -179,6 +180,7 @@ const statusChip = (status) => h('span', { class: 'status', dataset: { s: status
 
 const routes = {
   home: renderHome,
+  news: renderNews,
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
@@ -269,6 +271,9 @@ async function boot() {
 // Значки разделов: простые контуры 24×24, цвет берут от текста
 const ICONS = {
   home: 'M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5',
+  news: 'M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5M8 16h3',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5a1.5 1.5 0 1 0 0-.01',
+  clip: 'M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.7 1.7 0 0 1-2.4-2.4L15 7.2',
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   up: 'M12 19V5M6 11l6-6 6 6',
@@ -289,6 +294,7 @@ const ICONS = {
   due: 'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4',
   priority: 'M5 20v-4M10 20v-8M15 20V8M20 20V4',
   person: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1',
+  archive: 'M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4',
   trash: 'M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3',
   kb: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 5v16M8 7h7M8 11h5',
 };
@@ -299,7 +305,7 @@ function initials(name = '') {
   return String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 }
 /** Кнопки в строке таблицы: скопировать и удалить. Щелчок по ним не открывает строку. */
-function rowActions({ name, onCopy, onDelete }) {
+function rowActions({ name, onCopy, onDelete, deleteTitle = 'Удалить', deleteIcon = 'trash' }) {
   const btn = (title, iconName, fn, cls = '') =>
     h('button', {
       type: 'button', class: `icon-btn row-btn ${cls}`, title, 'aria-label': `${title}: ${name}`,
@@ -316,7 +322,7 @@ function rowActions({ name, onCopy, onDelete }) {
         }
       },
     }, icon(iconName));
-  return h('td', { class: 'row-btns' }, h('div', {}, onCopy ? btn('Скопировать', 'copy', onCopy) : null, onDelete ? btn('Удалить', 'trash', onDelete, 'danger') : null));
+  return h('td', { class: 'row-btns' }, h('div', {}, onCopy ? btn('Скопировать', 'copy', onCopy) : null, onDelete ? btn(deleteTitle, deleteIcon, onDelete, 'danger') : null));
 }
 
 /** Кружок сотрудника: фото профиля, если загружено, иначе инициалы. */
@@ -381,6 +387,7 @@ function refreshMe() {
 // (настройка nav: «home,tasks,-templates»; минус — раздел спрятан; новые разделы встают в конец).
 const NAV = [
   ['home', 'Главная'],
+  ['news', 'Новости'],
   ['docs', 'Документы'],
   ['templates', 'Шаблоны'],
   ['plans', 'Медиапланы'],
@@ -502,6 +509,8 @@ function renderRoute() {
   renderedKey = `${name}?${params}`;
   routes[name](params);
   if (lead) openLead(Number(lead));
+  // счётчик новых записей у пункта «Новости» (в самой ленте он обнуляется)
+  if (name !== 'news') setTimeout(() => refreshNewsBadge(), 0);
 }
 
 async function logout() {
@@ -1355,6 +1364,7 @@ const APPEARANCE = {
   ],
   start: [
     ['home', 'Главная'],
+    ['news', 'Новости'],
     ['docs', 'Документы'],
     ['tasks', 'Задачи — проекты'],
     ['mytasks', 'Мои задачи'],
