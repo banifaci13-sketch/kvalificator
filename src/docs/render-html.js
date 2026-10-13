@@ -134,7 +134,7 @@ function elementHtml(el, brand, L, theme) {
   }
 }
 
-function fontFaces(brand) {
+export function fontFaces(brand) {
   const out = [];
   for (const role of ['heading', 'body']) {
     const t = brand.typography[role];

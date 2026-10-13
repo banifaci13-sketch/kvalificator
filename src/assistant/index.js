@@ -58,13 +58,13 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
 
   // ---------- поручения ----------
 
-  function agenda(user, range) {
+  function agenda(user, range, now = new Date()) {
     if (!crm) return { reply: 'Задачи недоступны.' };
-    const today = todayMsk();
+    const today = todayMsk(now);
     const open = crm.listTasks({ mine: user.id, open: true });
     const until = { today, tomorrow: addDays(today, 1), week: addDays(today, 7), overdue: today, open: '9999-12-31' }[range];
     const from = range === 'tomorrow' ? addDays(today, 1) : null;
-    const nowMsk = new Date(Date.now() + MSK).toISOString().slice(0, 16).replace('T', ' ');
+    const nowMsk = new Date(now.getTime() + MSK).toISOString().slice(0, 16).replace('T', ' ');
     let tasks = open.filter((t) => (range === 'open' ? true : t.due && t.due <= until && (!from || t.due >= from)));
     if (range === 'overdue') tasks = open.filter((t) => t.due && `${t.due} ${t.due_time ?? '23:59'}` < nowMsk);
     let meetings = [];
@@ -149,7 +149,7 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
     return { reply: `Готово: «${t.title}» отмечена выполненной.`, actions: [{ type: 'task', id: t.id, title: t.title, href: taskHref(t) }], focus: { type: 'task', id: t.id } };
   }
 
-  function taskMove(user, cmd) {
+  function taskMove(user, cmd, now = new Date()) {
     if (!cmd.date && !cmd.time) return { reply: 'На когда перенести? Например: «перенеси отчёт на пятницу в 12».' };
     const r = findTask(user, cmd.query);
     if (r.error) return { reply: r.error };
@@ -157,7 +157,7 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
       const when = [cmd.date ? fmtDay(cmd.date) : '', cmd.time ? `в ${cmd.time}` : ''].join(' ').trim();
       return { reply: `Нашёл несколько похожих — какую перенести на ${when}?`, options: r.ambiguous.map((t) => ({ label: `${t.title}${t.client_name ? ` — ${t.client_name}` : ''}`, command: `перенеси задачу #${t.id} ${cmd.date ? cmd.date.split('-').reverse().slice(0, 2).join('.') : ''} ${cmd.time ? `в ${cmd.time}` : ''}`.trim() })) };
     }
-    const due = cmd.date ?? r.task.due ?? todayMsk();
+    const due = cmd.date ?? r.task.due ?? todayMsk(now);
     const t = crm.updateTask(r.task.id, { due, dueTime: cmd.time ?? r.task.due_time ?? null }, user);
     return { reply: `Перенёс «${t.title}» на ${fmtDue(t)}.`, actions: [{ type: 'task', id: t.id, title: t.title, href: taskHref(t) }], focus: { type: 'task', id: t.id } };
   }
@@ -177,9 +177,9 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
     };
   }
 
-  function moveMeeting(user, cmd) {
+  function moveMeeting(user, cmd, now = new Date()) {
     if (!calendar) return { reply: 'Календарь недоступен.' };
-    const today = todayMsk();
+    const today = todayMsk(now);
     const upcoming = calendar
       .list({ from: `${today}T00:00:00+03:00`, to: `${addDays(today, 60)}T00:00:00+03:00`, userId: user.id })
       .filter((m) => !m.cancelled);
@@ -283,12 +283,12 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
         const open = /^открыть встречу #(\d+)$/i.exec(text);
         if (open) out = { reply: 'Открываю встречу.', actions: [{ type: 'meeting', id: Number(open[1]), title: 'Встреча', href: `#/calendar?meeting=${open[1]}` }], navigate: `#/calendar?meeting=${open[1]}` };
         else if (cmd.intent === 'help') out = { reply: HELP };
-        else if (cmd.intent === 'agenda') out = agenda(user, cmd.range);
+        else if (cmd.intent === 'agenda') out = agenda(user, cmd.range, now);
         else if (cmd.intent === 'task_create') out = crm ? createTask(user, cmd) : { reply: 'Задачи недоступны.' };
         else if (cmd.intent === 'task_done') out = taskDone(user, cmd);
-        else if (cmd.intent === 'task_move') out = taskMove(user, cmd);
+        else if (cmd.intent === 'task_move') out = taskMove(user, cmd, now);
         else if (cmd.intent === 'meeting') out = createMeeting(user, cmd);
-        else if (cmd.intent === 'meeting_move') out = moveMeeting(user, cmd);
+        else if (cmd.intent === 'meeting_move') out = moveMeeting(user, cmd, now);
         else if (cmd.intent === 'search') out = await webSearch(user, cmd.query, prefs);
         else out = await chat(user, text, context, prefs);
       } catch (err) {

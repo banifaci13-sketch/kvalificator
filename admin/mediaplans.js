@@ -250,6 +250,26 @@ export async function renderPlan(params) {
     oninput: (e) => { spec.assumptions = e.target.value; changed(); },
   }, spec.assumptions ?? '');
 
+  // Скачать: Excel с формулами, PDF со всеми сценариями, картинка текущего сценария
+  const FORMATS = [
+    ['xlsx', 'Excel', 'Таблица с формулами — можно менять цифры'],
+    ['pdf', 'PDF', spec.scenarios.length > 1 ? 'Все сценарии и сравнение — для отправки клиенту' : 'Для отправки клиенту и печати'],
+    ['png', 'PNG', 'Картинка сценария — в мессенджер или презентацию'],
+    ['jpg', 'JPG', 'Картинка полегче — для почты и мессенджеров'],
+  ];
+  const downloadMenu = h(
+    'details',
+    { class: 'menu download-menu' },
+    h('summary', { class: 'btn' }, 'Скачать ▾'),
+    h(
+      'div',
+      { class: 'menu-list' },
+      FORMATS.map(([f, label, hint]) =>
+        h('button', { type: 'button', class: 'menu-format', onclick: () => { downloadMenu.open = false; download(f); } }, h('b', {}, label), h('span', { class: 'muted small' }, hint)),
+      ),
+    ),
+  );
+
   const more = h(
     'details',
     { class: 'menu' },
@@ -273,7 +293,7 @@ export async function renderPlan(params) {
         title,
         saveState,
         h('span', { class: 'spacer' }),
-        h('button', { type: 'button', class: 'btn', onclick: (e) => downloadXlsx(e.currentTarget) }, 'Скачать Excel'),
+        downloadMenu,
         h('button', { type: 'button', class: 'btn btn-primary', onclick: toDocument }, 'В презентацию'),
         more,
       ),
@@ -577,18 +597,29 @@ export async function renderPlan(params) {
   }
 
   // ----- действия -----
-  async function downloadXlsx(btn) {
-    btn.disabled = true;
+  async function download(format) {
+    const btn = downloadMenu.querySelector('summary');
+    btn.setAttribute('aria-busy', 'true');
+    const label = btn.textContent;
+    btn.textContent = format === 'xlsx' ? 'Готовлю…' : 'Рисую…';
     try {
       await save();
-      const a = h('a', { href: `/admin/api/mediaplans/${id}/xlsx`, download: '' });
+      const url = format === 'xlsx' ? `/admin/api/mediaplans/${id}/xlsx` : `/admin/api/mediaplans/${id}/export?format=${format}&scenario=${current}`;
+      // PDF и картинки рисует сервер — сначала дождаться ответа, чтобы показать ошибку, если что-то не так
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Не удалось скачать');
+      const blob = await res.blob();
+      const name = decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${plan.title}.${format}`);
+      const a = h('a', { href: URL.createObjectURL(blob), download: name });
       document.body.append(a);
       a.click();
       a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
     } catch (err) {
       toast(err.message);
     } finally {
-      btn.disabled = false;
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
     }
   }
 

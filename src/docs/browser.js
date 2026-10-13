@@ -26,7 +26,7 @@ export function chromiumPath() {
 }
 
 /** Выполняет fn(page) на свежей странице; браузер переиспользуется. */
-export async function withPage(fn, { viewport = { width: 1920, height: 1080 } } = {}) {
+export async function withPage(fn, { viewport = { width: 1920, height: 1080 }, scale = 1 } = {}) {
   clearTimeout(idleTimer);
   users++;
   browserPromise ??= Promise.resolve()
@@ -46,7 +46,7 @@ export async function withPage(fn, { viewport = { width: 1920, height: 1080 } } 
     users--;
     throw err;
   }
-  const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport, deviceScaleFactor: scale });
   try {
     const page = await context.newPage();
     // Документ самодостаточный: любые внешние запросы — ошибка шаблона, не грузим их

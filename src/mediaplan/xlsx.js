@@ -142,6 +142,36 @@ function createSheet(name) {
   return sheet;
 }
 
+/** Колонки листа сценария — общие для Excel, PDF и картинок, чтобы выгрузки совпадали. */
+export function scenarioColumns(ecom, anyCpm) {
+  return [
+    { key: 'channel', head: 'Площадка', w: 16 },
+    { key: 'targeting', head: 'Таргетинг', w: 40 },
+    ...(anyCpm ? [{ key: 'model', head: 'Модель', w: 8 }, { key: 'cpm', head: 'CPM, ₽', w: 10 }, { key: 'ctr', head: 'CTR', w: 8 }] : []),
+    { key: 'clicks', head: 'Клики', w: 10 },
+    { key: 'cpc', head: anyCpm ? 'CPC (для CPM — итоговая), ₽' : 'CPC', w: 11 },
+    { key: 'net', head: 'Стоимость без НДС', w: 14 },
+    { key: 'gross', head: 'Стоимость с НДС', w: 14 },
+    ...(ecom
+      ? [
+          { key: 'cart', head: 'CR1 (в корзину)', w: 10 },
+          { key: 'carts', head: 'Кол-во корзин', w: 10 },
+          { key: 'cpa', head: 'CPA (цена доб. в корз.)', w: 12 },
+          { key: 'sale', head: 'CR2 (конверсия в продажу)', w: 12 },
+          { key: 'sales', head: 'Кол-во продаж', w: 10 },
+          { key: 'cps', head: 'CPS (цена продажи)', w: 11 },
+          { key: 'check', head: 'Ср. чек', w: 12 },
+          { key: 'revenue', head: 'Выручка', w: 14 },
+          { key: 'drr', head: 'ДРР', w: 9 },
+        ]
+      : [
+          { key: 'cr', head: 'Конверсия в лид', w: 11 },
+          { key: 'leads', head: 'Лиды', w: 9 },
+          { key: 'cpl', head: 'CPL без НДС', w: 12 },
+        ]),
+  ];
+}
+
 /** Имя листа Excel: до 31 символа, без []:*?/\ и уникальное. */
 function sheetNames(names) {
   const used = new Set(['Сводка', 'Допущения']);
@@ -279,32 +309,7 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     const calc = sc.rows.length ? res.rows : [{}];
     const anyCpm = rows.some((x) => x.model === 'cpm');
     // колонки собираются под план: модель, CPM и CTR — только если есть закупка по показам
-    const cols = [
-      { key: 'channel', head: 'Площадка', w: 16 },
-      { key: 'targeting', head: 'Таргетинг', w: 40 },
-      ...(anyCpm ? [{ key: 'model', head: 'Модель', w: 8 }, { key: 'cpm', head: 'CPM, ₽', w: 10 }, { key: 'ctr', head: 'CTR', w: 8 }] : []),
-      { key: 'clicks', head: 'Клики', w: 10 },
-      { key: 'cpc', head: anyCpm ? 'CPC (для CPM — итоговая), ₽' : 'CPC', w: 11 },
-      { key: 'net', head: 'Стоимость без НДС', w: 14 },
-      { key: 'gross', head: 'Стоимость с НДС', w: 14 },
-      ...(ecom
-        ? [
-            { key: 'cart', head: 'CR1 (в корзину)', w: 10 },
-            { key: 'carts', head: 'Кол-во корзин', w: 10 },
-            { key: 'cpa', head: 'CPA (цена доб. в корз.)', w: 12 },
-            { key: 'sale', head: 'CR2 (конверсия в продажу)', w: 12 },
-            { key: 'sales', head: 'Кол-во продаж', w: 10 },
-            { key: 'cps', head: 'CPS (цена продажи)', w: 11 },
-            { key: 'check', head: 'Ср. чек', w: 12 },
-            { key: 'revenue', head: 'Выручка', w: 14 },
-            { key: 'drr', head: 'ДРР', w: 9 },
-          ]
-        : [
-            { key: 'cr', head: 'Конверсия в лид', w: 11 },
-            { key: 'leads', head: 'Лиды', w: 9 },
-            { key: 'cpl', head: 'CPL без НДС', w: 12 },
-          ]),
-    ];
+    const cols = scenarioColumns(ecom, anyCpm);
     const C = Object.fromEntries(cols.map((c, i) => [c.key, i]));
     const L = Object.fromEntries(cols.map((c, i) => [c.key, colName(i)]));
     const sh = createSheet(names[si]);

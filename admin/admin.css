@@ -1270,3 +1270,8 @@ details.menu summary::-webkit-details-marker { display: none; }
 @media (min-width: 1280px) {
   :root.assist-open .workspace { padding-left: min(440px, 100vw); transition: padding-left .16s ease-out; }
 }
+
+/* меню «Скачать» у медиаплана */
+.download-menu .menu-list { min-width: 300px; }
+.menu-format { display: grid !important; gap: 1px; }
+.menu-format b { font-size: 14px; }

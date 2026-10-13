@@ -3,6 +3,8 @@
 
 import { DocError, slugify } from '../docs/library.js';
 import { mediaplanXlsx } from '../mediaplan/xlsx.js';
+import { mediaplanSheetFile, SHEET_FORMATS } from '../mediaplan/sheet.js';
+import { BrowserUnavailable } from '../docs/browser.js';
 import { MODELS } from '../mediaplan/calc.js';
 import { LIMITS } from '../mediaplan/store.js';
 
@@ -70,6 +72,35 @@ export async function mediaplanRoutes(api, { mediaplans, brand }) {
       .header('content-disposition', `attachment; filename="${slugify(plan.title)}.xlsx"; filename*=UTF-8''${encodeURIComponent(`${plan.title}.xlsx`)}`)
       .send(buf);
   });
+
+  // PDF (все сценарии) и картинки PNG/JPG (один сценарий) — в том же виде, что Excel
+  api.get(
+    '/admin/api/mediaplans/:id/export',
+    {
+      schema: {
+        params: idParams,
+        querystring: { type: 'object', required: ['format'], properties: { format: { type: 'string', enum: Object.keys(SHEET_FORMATS) }, scenario: { type: 'integer', minimum: 0 } } },
+      },
+    },
+    async (req, reply) => {
+      const plan = mediaplans.get(req.params.id);
+      const { format } = req.query;
+      const scenario = Math.min(req.query.scenario ?? 0, plan.spec.scenarios.length - 1);
+      let buf;
+      try {
+        buf = await mediaplanSheetFile(plan, format, { brand, logo: brand?.logo?.onLight?.dataUri ?? null, author: req.user.name, scenario });
+      } catch (err) {
+        if (err instanceof BrowserUnavailable) return reply.code(503).send({ error: err.message });
+        throw err;
+      }
+      const suffix = format === 'pdf' || plan.spec.scenarios.length === 1 ? '' : ` — ${plan.spec.scenarios[scenario].name}`;
+      const name = `${plan.title}${suffix}.${format}`;
+      return reply
+        .header('content-type', SHEET_FORMATS[format])
+        .header('content-disposition', `attachment; filename="${slugify(plan.title)}.${format}"; filename*=UTF-8''${encodeURIComponent(name)}`)
+        .send(buf);
+    },
+  );
 
   api.post(
     '/admin/api/mediaplans/:id/to-document',

@@ -16,6 +16,16 @@ import { checkContent } from '../src/docs/qa.js';
 import { calcRow, calcScenario, emptyPlan } from '../src/mediaplan/calc.js';
 import { createMediaplans, validatePlan } from '../src/mediaplan/store.js';
 import { mediaplanXlsx } from '../src/mediaplan/xlsx.js';
+import { mediaplanSheetHtml } from '../src/mediaplan/sheet.js';
+import { chromiumPath, closeBrowser } from '../src/docs/browser.js';
+
+const hasChromium = (() => {
+  try {
+    return Boolean(chromiumPath());
+  } catch {
+    return false;
+  }
+})();
 import { rules, staticSource, silentLog } from './helpers.js';
 
 const PASSWORD = 'correct-horse-battery';
@@ -239,4 +249,35 @@ test('Excel: логотип бренда в шапке, если он утвер
   assert.ok(zip.file('xl/drawings/drawing2.xml'), 'у каждого листа своя рисовалка');
   assert.doesNotMatch(sheet, />SOROKA</, 'с логотипом текстовая подпись не нужна');
   assert.match(sheet, /\$C\$5\*C/, 'фиксированная комиссия входит в формулу');
+});
+
+test('медиаплан в PDF и картинках: тот же вид, что Excel', { skip: !hasChromium && 'нет Chromium' }, async () => {
+  const { as } = await setup();
+  const req = await as('anna');
+  const spec = {
+    kind: 'ecom', months: 2, settings: { vat: 22, budgetWithVat: true, avgCheck: 5500 },
+    scenarios: [
+      { name: 'Основной', rows: [{ channel: 'SberAds', targeting: 'Посуда', model: 'cpc', budget: 20000, cpc: 33, cart: 15, sale: 1.85 }] },
+      { name: 'Максимум', rows: [{ channel: 'SberAds', targeting: 'Посуда', model: 'cpc', budget: 40000, cpc: 33, cart: 15, sale: 1.85 }] },
+    ],
+  };
+  const id = (await req({ method: 'POST', url: '/admin/api/mediaplans', payload: { title: 'Таллер МП', client: 'Таллер', spec } })).json().mediaplan.id;
+
+  const html = mediaplanSheetHtml({ title: 'Таллер МП', client: 'Таллер', spec }, { brand, logo: brand.logo.onLight.dataUri });
+  assert.match(html, /Медиаплан: Таллер — Основной/);
+  assert.match(html, /16\s393,44\s₽/, 'цифры — как в Excel');
+  assert.match(html, /сравнение сценариев/);
+  assert.doesNotMatch(html, /(src|href)="https?:/, 'страница самодостаточная');
+
+  const pdf = await req({ url: `/admin/api/mediaplans/${id}/export?format=pdf` });
+  assert.equal(pdf.statusCode, 200, pdf.body);
+  assert.equal(pdf.headers['content-type'], 'application/pdf');
+  assert.equal(pdf.rawPayload.subarray(0, 4).toString(), '%PDF');
+  const png = await req({ url: `/admin/api/mediaplans/${id}/export?format=png&scenario=1` });
+  assert.equal(png.rawPayload.subarray(1, 4).toString(), 'PNG');
+  assert.match(decodeURIComponent(png.headers['content-disposition']), /Максимум/, 'в имени картинки — сценарий');
+  const jpg = await req({ url: `/admin/api/mediaplans/${id}/export?format=jpg` });
+  assert.equal(jpg.rawPayload[0], 0xff);
+  assert.equal((await req({ url: `/admin/api/mediaplans/${id}/export?format=gif` })).statusCode, 400);
+  await closeBrowser();
 });
