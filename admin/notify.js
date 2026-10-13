@@ -5,12 +5,14 @@
 
 import { h, api, app, shell, toast, ctx, icon, userAvatar } from './admin.js';
 import { fill } from './docs.js';
+import { currentChat, setChatBadge } from './chat.js';
 
 const POLL_MS = 20e3;
 // значок системного уведомления — тот же, что у вкладки
 const NOTE_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2320252a'/%3E%3Crect x='8' y='14' width='16' height='4' rx='2' fill='%2312c9d6'/%3E%3C/svg%3E";
-const KIND_ICON = { task_assigned: 'tasks', task_done: 'tasks', task_file: 'clip', comment: 'news', mention: 'person', meeting: 'calendar', payment: 'plans', news: 'news', test: 'bell' };
+const KIND_ICON = { message: 'chat', task_assigned: 'tasks', task_done: 'tasks', task_file: 'clip', comment: 'news', mention: 'person', meeting: 'calendar', payment: 'plans', news: 'news', test: 'bell' };
 let lastId = null;
+let lastChatId = null;
 let timer = null;
 let onCount = () => {};
 
@@ -50,7 +52,7 @@ function ding() {
 
 const markRead = (n) => api('/admin/api/notifications/read', { method: 'POST', body: { id: n.id } }).then((d) => onCount(d.unread), () => {});
 const open = (n) => {
-  markRead(n);
+  if (!n.chat) markRead(n);
   if (n.href) location.hash = n.href.replace(/^#?/, '#');
 };
 
@@ -114,8 +116,34 @@ function deliver(items) {
   if (p.notifySound !== 'off') ding();
 }
 
+/** Новые сообщения мессенджера: счётчик в меню и всплывающее окно (кроме открытого чата). */
+async function pollChats() {
+  try {
+    const d = await api(`/admin/api/chats/incoming${lastChatId != null ? `?after=${lastChatId}` : ''}`);
+    setChatBadge(d.unread);
+    const first = lastChatId == null;
+    lastChatId = d.last;
+    if (first || String(prefs().notifyMute ?? '').split(',').includes('messages')) return;
+    const fresh = d.messages.filter((x) => x.chat_id !== currentChat());
+    deliver(
+      fresh.map((x) => ({
+        id: `m${x.id}`,
+        kind: 'message',
+        text: `${x.kind === 'direct' ? '' : `${x.chat_title} · `}${x.author}: ${x.body || (x.files ? '📎 файл' : '')}`.slice(0, 300),
+        actor: x.author,
+        actor_id: x.author_id,
+        href: `#/chat?id=${x.chat_id}`,
+        chat: true,
+      })),
+    );
+  } catch {
+    /* сеть пропала — попробуем в следующий раз */
+  }
+}
+
 async function poll() {
   if (!ctx.me) return;
+  pollChats();
   try {
     const d = await api(`/admin/api/notifications${lastId != null ? `?after=${lastId}` : ''}`);
     onCount(d.unread);
@@ -181,6 +209,7 @@ export function permissionBanner() {
 // ---------- страница настроек ----------
 
 const CATEGORIES = [
+  ['messages', 'Сообщения', 'Новые сообщения в мессенджере (личные и в группах)'],
   ['tasks', 'Поручения и задачи', 'Вам поручили задачу, ваша задача выполнена, новые файлы в задаче'],
   ['mentions', 'Упоминания', 'Кто-то написал @ваше имя в задаче, новостях или обсуждении'],
   ['comments', 'Комментарии', 'Новые комментарии к вашим задачам и записям'],

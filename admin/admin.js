@@ -12,6 +12,7 @@ import { renderHome, bellButton } from './home.js';
 import { renderNews, refreshNewsBadge } from './news.js';
 import { renderMoney } from './money.js';
 import { renderNotifySettings } from './notify.js';
+import { renderChat, refreshChatBadge } from './chat.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -185,6 +186,7 @@ const routes = {
   news: renderNews,
   money: renderMoney,
   'notify-settings': renderNotifySettings,
+  chat: renderChat,
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
@@ -278,6 +280,7 @@ async function boot() {
 const ICONS = {
   home: 'M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5',
   news: 'M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5M8 16h3',
+  chat: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5',
   image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5a1.5 1.5 0 1 0 0-.01',
   clip: 'M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.7 1.7 0 0 1-2.4-2.4L15 7.2',
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
@@ -632,6 +635,7 @@ function refreshMe() {
 const NAV = [
   ['home', 'Главная'],
   ['news', 'Новости'],
+  ['chat', 'Сообщения'],
   ['docs', 'Документы'],
   ['templates', 'Шаблоны'],
   ['plans', 'Медиапланы'],
@@ -755,6 +759,7 @@ function renderRoute() {
   if (lead) openLead(Number(lead));
   // счётчик новых записей у пункта «Новости» (в самой ленте он обнуляется)
   if (name !== 'news') setTimeout(() => refreshNewsBadge(), 0);
+  setTimeout(() => refreshChatBadge(), 0);
 }
 
 async function logout() {

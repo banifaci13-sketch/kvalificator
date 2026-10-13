@@ -467,6 +467,41 @@ const MIGRATIONS = [
      PRIMARY KEY (client_id, file_id)
    );
    CREATE INDEX client_files_file ON client_files (file_id);`,
+
+  // Мессенджер: личные и групповые чаты сотрудников (в том числе по проекту клиента)
+  `CREATE TABLE chats (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     kind       TEXT NOT NULL DEFAULT 'group',
+     title      TEXT,
+     client_id  INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     created_by INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     last_at    TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE chat_members (
+     chat_id   INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+     user_id   INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+     last_read INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (chat_id, user_id)
+   );
+   CREATE INDEX chat_members_user ON chat_members (user_id);
+   CREATE TABLE chat_messages (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+     author_id  INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     author     TEXT NOT NULL,
+     body       TEXT NOT NULL DEFAULT '',
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     edited_at  TEXT,
+     deleted    INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX chat_messages_chat ON chat_messages (chat_id, id);
+   CREATE TABLE chat_files (
+     message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+     file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+     PRIMARY KEY (message_id, file_id)
+   );
+   CREATE INDEX chat_files_file ON chat_files (file_id);`,
 ];
 
 /** Номер текущей версии схемы базы. */

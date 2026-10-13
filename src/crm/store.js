@@ -2,6 +2,8 @@
 // → доски проекта → колонки доски (свои названия и цвета) → задачи. Перенос между колонками,
 // смена исполнителя и срока, отметка «выполнено» записываются в ленту задачи.
 
+import { fileAccess } from '../files/store.js';
+
 export class CrmError extends Error {}
 
 // Важность — стикер на карточке, как в YouGile; 0 — не задана
@@ -69,6 +71,7 @@ const text = (v, max) => {
 };
 
 export function createCrm({ db }) {
+  const canReadFile = fileAccess(db);
   const TASK_COLS = `t.*, c.name AS client_name, u.name AS assignee_name,
                      col.name AS column_name, col.color AS column_color, col.is_done AS column_done,
                      col.board_id AS board_id, b.name AS board_name`;
@@ -495,7 +498,7 @@ export function createCrm({ db }) {
       for (const fid of [...new Set(fileIds.map(Number))]) {
         const f = q.fileRow.get(fid);
         if (!f) throw new CrmError('Файл не найден — загрузите его ещё раз');
-        if (f.uploaded_by_id !== user.id && user.role !== 'admin') throw new CrmError('Можно прикрепить только свои файлы');
+        if (f.uploaded_by_id !== user.id && !(user.role === 'admin' && canReadFile(f.id, user))) throw new CrmError('Можно прикрепить только свои файлы');
         if (q.attachFile.run(t.id, fid, user.name).changes) names.push(f.name);
       }
       if (names.length) q.addComment.run(t.id, 'event', `Файлы: ${names.join(', ')}`, user.name);
@@ -645,7 +648,7 @@ export function createCrm({ db }) {
         for (const fid of [...new Set(fileIds.map(Number))]) {
           const f = q.fileRow.get(fid);
           if (!f) throw new CrmError('Файл не найден — загрузите его ещё раз');
-          if (f.uploaded_by_id !== user.id && user.role !== 'admin') throw new CrmError('Можно прикрепить только свои файлы');
+          if (f.uploaded_by_id !== user.id && !(user.role === 'admin' && canReadFile(f.id, user))) throw new CrmError('Можно прикрепить только свои файлы');
           q.attachClientFile.run(c.id, fid, user.name);
         }
       });

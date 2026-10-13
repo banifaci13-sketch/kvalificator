@@ -50,7 +50,7 @@ export async function newsRoutes(api, { news, files }) {
     });
 
     api.get('/admin/api/files/:id', { schema: { params: idParams } }, async (req, reply) => {
-      const f = files.get(req.params.id);
+      const f = files.get(req.params.id, req.user);
       const inline = f.kind !== 'doc' || f.mime === 'application/pdf';
       reply
         .header('content-type', f.mime)

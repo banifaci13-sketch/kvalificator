@@ -7,7 +7,7 @@ export const PREF_OPTIONS = {
   background: ['none', 'mist', 'aurora', 'sunset', 'night', 'paper'],
   density: ['comfortable', 'compact'],
   sidebar: ['full', 'icons'],
-  start: ['home', 'news', 'docs', 'tasks', 'mytasks', 'calendar', 'plans', 'leads'],
+  start: ['home', 'news', 'chat', 'docs', 'tasks', 'mytasks', 'calendar', 'plans', 'leads'],
   // ассистент: на «вы» или на «ты», искать ли в интернете
   address: ['vy', 'ty'],
   webSearch: ['on', 'off'],
@@ -18,9 +18,9 @@ export const PREF_OPTIONS = {
   notifyQuiet: ['off', '22-9', '21-9', '20-8', '23-8', '19-9'],
 };
 // категории уведомлений, которые можно отключить: «-comments,-news» в notifyMute
-export const NOTIFY_CATEGORIES = ['tasks', 'comments', 'mentions', 'meetings', 'payments', 'news'];
+export const NOTIFY_CATEGORIES = ['messages', 'tasks', 'comments', 'mentions', 'meetings', 'payments', 'news'];
 const validMute = (v) => typeof v === 'string' && v.length <= 100 && (v === '' || v.split(',').every((x) => NOTIFY_CATEGORIES.includes(x)));
-export const NAV_IDS = ['home', 'news', 'docs', 'templates', 'plans', 'tasks', 'calendar', 'leads', 'kb', 'staff'];
+export const NAV_IDS = ['home', 'news', 'chat', 'docs', 'templates', 'plans', 'tasks', 'calendar', 'leads', 'kb', 'staff'];
 const validNav = (v) => typeof v === 'string' && v.length <= 200 && (v === '' || v.split(',').every((x) => NAV_IDS.includes(x.replace(/^-/, ''))));
 // имя ассистента — свободное, но короткое и без разметки
 const NAME_RE = /^[A-Za-zА-Яа-яЁё0-9 .-]{1,24}$/;

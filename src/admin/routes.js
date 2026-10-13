@@ -21,12 +21,16 @@ import { assistantRoutes } from './assistant-routes.js';
 import { createNotifications } from '../notify/store.js';
 import { createNews } from '../news/store.js';
 import { newsRoutes } from './news-routes.js';
+import { createChat } from '../chat/store.js';
+import { chatRoutes } from './chat-routes.js';
 import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
 import { createSearch } from '../assistant/search.js';
 import { meetingsIcs } from '../calendar/store.js';
 
 const SESSION_COOKIE = 'kval_admin';
+// Вход и смена пароля считаются по IP: иначе поддельная cookie давала бы новый счётчик на каждую попытку
+const byIp = (req) => `ip:${req.ip}`;
 const OVERDUE_SQL = "(t.due || ' ' || COALESCE(t.due_time, '23:59')) < strftime('%Y-%m-%d %H:%M', 'now', '+3 hours')";
 const STATE_COOKIE = 'kval_oauth_state';
 const CHANNELS = ['web', 'telegram', 'max'];
@@ -63,6 +67,8 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
   crm?.useNotify?.(notify);
   const news = createNews({ db: db.raw, files });
   const kb = createKb({ db: db.raw });
+  const chat = createChat({ db: db.raw, files });
+  chat.useNotify(notify);
   news.useNotify(notify);
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -149,7 +155,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
           properties: { login: { type: 'string', maxLength: 200 }, password: { type: 'string', maxLength: 200 } },
         },
       },
-      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+      config: { rateLimit: { max: 10, timeWindow: '15 minutes', keyGenerator: byIp } },
     },
     async (req, reply) => {
       const token = auth.login(req.body.login, req.body.password);
@@ -159,7 +165,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     },
   );
 
-  app.get('/admin/auth/yandex', { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } }, async (req, reply) => {
+  app.get('/admin/auth/yandex', { config: { rateLimit: { max: 20, timeWindow: '15 minutes', keyGenerator: byIp } } }, async (req, reply) => {
     if (!yandex) return reply.code(404).send({ error: 'Вход через Яндекс не настроен' });
     const state = randomBytes(16).toString('base64url');
     reply.setCookie(STATE_COOKIE, state, { path: '/admin/auth', httpOnly: true, sameSite: 'lax', secure, maxAge: 600 });
@@ -197,7 +203,8 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
   // ---------- данные ----------
 
   app.register(async (api) => {
-    api.addHook('preHandler', requireUser);
+    // проверка входа — первым делом, до разбора тела и приёма файлов
+    api.addHook('onRequest', requireUser);
     api.setErrorHandler((err, req, reply) => {
       if (err instanceof AuthError) return reply.code(400).send({ error: err.message });
       throw err;
@@ -345,7 +352,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
             properties: { current: { type: 'string', maxLength: 200 }, next: { type: 'string', minLength: 10, maxLength: 200 } },
           },
         },
-        config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+        config: { rateLimit: { max: 10, timeWindow: '15 minutes', keyGenerator: byIp } },
       },
       async (req) => {
         auth.changeOwnPassword(req.user.id, req.body.current ?? '', req.body.next, req.cookies[SESSION_COOKIE]);
@@ -537,13 +544,14 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
     });
     if (calendar) await api.register(calendarRoutes, { calendar, video, config, notify, crm, auth });
     await api.register(newsRoutes, { news, files });
+    await api.register(chatRoutes, { chat });
     if (library && ai) await api.register(aiRoutes, { ai, library, db, scenarioSource });
 
     // ИИ-ассистент в боковой панели: поручения, помощь по регламентам, поиск в интернете
     {
       const search = createSearch(config.search);
       const log = db.raw.prepare('INSERT INTO ai_log (user_id, action, provider, model, chars_in, chars_out, replaced, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news, money });
+      const assistant = createAssistant({ db: db.raw, crm, calendar, auth, ai, search, kb, log, mediaplans, library, leads: db, reports, notify, news, money, chat });
       await api.register(assistantRoutes, { assistant, kb, ai, search });
     }
 

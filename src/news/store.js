@@ -2,6 +2,8 @@
 // остальные читают, ставят реакции и обсуждают в комментариях.
 // Уведомления — только о важном: закреплённая запись (всем), упоминание @Имя, комментарий к вашей записи.
 
+import { fileAccess } from '../files/store.js';
+
 export class NewsError extends Error {}
 
 export const NEWS_KINDS = { news: 'Новость', case: 'Кейс', link: 'Ссылка' };
@@ -26,6 +28,7 @@ function checkLink(v) {
 }
 
 export function createNews({ db, files = null }) {
+  const canReadFile = fileAccess(db);
   let notify = null;
   const q = {
     insert: db.prepare('INSERT INTO news_posts (kind, title, body, link, client_id, case_task, case_result, pinned, author_id, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -123,7 +126,7 @@ export function createNews({ db, files = null }) {
     for (const id of list) {
       const f = q.file.get(id);
       if (!f) throw new NewsError('Файл не найден — загрузите его ещё раз');
-      if (f.uploaded_by_id !== user.id && user.role !== 'admin') throw new NewsError('Можно прикрепить только свои файлы');
+      if (f.uploaded_by_id !== user.id && !(user.role === 'admin' && canReadFile(f.id, user))) throw new NewsError('Можно прикрепить только свои файлы');
     }
     return list;
   }

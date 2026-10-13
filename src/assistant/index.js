@@ -51,13 +51,13 @@ const COMMAND_SAMPLES = [
   'новые заявки | горячие заявки за неделю | сколько заявок за месяц | открой заявку <номер>',
   'возьми заявку <номер> | заявка <номер> спам|отказ|сделка|кп отправлено | заведи клиента по заявке <номер>',
   'открой <раздел: главная, документы, шаблоны, медиапланы, нормативы, задачи, мои задачи, клиенты, календарь, квалификатор, воронка, сводка, регламенты, профиль, внешний вид>',
-  'опубликуй в новости: <текст> | покажи новости',
+  'напиши <Имя>: <текст> | опубликуй в новости: <текст> | покажи новости',
   '<клиент> оплатил <сумма> | выставь счёт <клиент> <сумма> до <когда> за <что> | ведение <клиент> <сумма> в месяц до <число> числа | кто должен',
   'запусти регламент <название> для <клиент> | открой регламент <слова> | что нового | включи тёмную тему | включи светлую тему',
   'найди в интернете <запрос>',
 ].map((x) => `— ${x}`).join('\n');
 
-export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log = null, mediaplans = null, library = null, leads = null, reports = null, notify = null, news = null, money = null }) {
+export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log = null, mediaplans = null, library = null, leads = null, reports = null, notify = null, news = null, money = null, chat = null }) {
   const q = {
     history: db.prepare('SELECT role, text, meta, created_at FROM assistant_messages WHERE user_id = ? ORDER BY id DESC LIMIT ?'),
     add: db.prepare('INSERT INTO assistant_messages (user_id, role, text, meta) VALUES (?, ?, ?, ?)'),
@@ -299,7 +299,7 @@ export function createAssistant({ db, crm, calendar, auth, ai, search, kb, log =
     return { reply: text, kb: [...new Set(kbParts.map((c) => c.title))] };
   }
 
-  const act = createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, money, findTask, choose });
+  const act = createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, money, chat, findTask, choose });
 
   /** Разбор фразы правилами: каталог phrases.js, затем commands.js. */
   const parse = (text, now) => {

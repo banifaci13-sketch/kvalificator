@@ -57,7 +57,17 @@ export async function buildServer({ config, qualifier, logger, admin, brand = nu
     allowedHeaders: ['content-type', 'x-session-token'],
     maxAge: 86400,
   });
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  // Лимит запросов: для посетителей сайта — по IP; для сотрудников в кабинете — по сессии и выше:
+  // в офисе все выходят в интернет с одного адреса, а мессенджер и уведомления опрашивают сервер.
+  const session = (req) => /(?:^|;\s*)kval_admin=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? null;
+  await app.register(rateLimit, {
+    timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const s = req.url.startsWith('/admin/') ? session(req) : null;
+      return s ? `staff:${s.slice(0, 32)}` : req.ip;
+    },
+    max: (req, key) => (key.startsWith('staff:') ? 900 : 120),
+  });
   await app.register(fastifyStatic, {
     root: resolve(config.root, 'widget'),
     prefix: '/',

@@ -25,7 +25,7 @@ const company = (l) => l.answers?.company?.raw ?? l.answers?.company ?? null;
 const leadLabel = (l) => `№${l.id}${company(l) ? ` «${company(l)}»` : ''}`;
 const RU_MONTH = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, money, findTask, choose }) {
+export function createActions({ crm, calendar, auth, mediaplans, library, leads, reports, notify, kb, news, money, chat, findTask, choose }) {
   const need = (store, what) => {
     if (!store) throw new Error(`${what} недоступны на этом сервере`);
   };
@@ -417,6 +417,15 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       return { reply: lines.join('\n'), actions: [{ type: 'link', title: 'Сводка по заявкам', href: '#/stats' }] };
     },
 
+    // ---------- мессенджер ----------
+    chat_send(user, cmd) {
+      if (!chat) return { reply: 'Мессенджер недоступен.' };
+      if (cmd.user.id === user.id) return { reply: 'Это вы сами 🙂 Кому написать?' };
+      const c = chat.direct(user, cmd.user.id);
+      chat.send(c.id, user, { text: cmd.text });
+      return { reply: `Отправил ${cmd.user.name}: «${cmd.text.length > 120 ? `${cmd.text.slice(0, 120)}…` : cmd.text}».`, actions: [{ type: 'link', title: `Чат с ${cmd.user.name}`, href: `#/chat?id=${c.id}` }] };
+    },
+
     // ---------- деньги ----------
     money_summary(user) {
       if (!money) return { reply: 'Учёт оплат недоступен.' };
@@ -514,6 +523,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     if (reports) g.push('', 'Заявки', '• «новые заявки», «горячие заявки за неделю», «сколько заявок за месяц»', '• «возьми заявку 123», «заявка 123 — спам», «заведи клиента по заявке 123»');
     if (money) g.push('', 'Деньги', '• «Таллер оплатил 80 000», «выставь счёт Ромашке 50 000 до 20.10 за аудит»', '• «ведение Таллер 80 000 в месяц до 10 числа», «кто должен»');
     if (kb) g.push('', 'Регламенты', '• «запусти регламент запуска рекламы для Таллера» — шаги задачами с чек-листами', '• «открой регламент по КП»');
+    if (chat) g.push('', 'Сообщения', '• «напиши Олегу: макеты готовы, глянь»', '• «открой сообщения»');
     g.push('', 'Новости', '• «опубликуй в новости: запустили РСЯ для Таллера», «покажи новости»');
     g.push('', 'Кабинет', '• «открой календарь», «перейди в медиапланы», «что нового», «включи тёмную тему»');
     g.push('', 'Остальное — свободным вопросом: помогу разложить задачу, составить текст и найду ответ в регламентах или в интернете.');
