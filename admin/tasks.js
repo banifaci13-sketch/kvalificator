@@ -334,7 +334,7 @@ function popover(anchor, build) {
   };
   const outside = (e) => !box.contains(e.target) && !anchor.contains(e.target) && close();
   const esc = (e) => e.key === 'Escape' && (e.stopPropagation(), close(), anchor.focus());
-  box.append(...[build(close)].flat());
+  box.append(...[build(close)].flat().filter(Boolean));
   document.body.append(box);
   const r = anchor.getBoundingClientRect();
   const w = box.offsetWidth;
@@ -432,7 +432,30 @@ function card(t, { onOpen, onChange, showProject = false }) {
       },
       ondragend: () => el.classList.remove('dragging'),
     },
-    h('div', { class: 'task-top' }, doneToggle(t, onChange), h('span', { class: 'task-name' }, t.title)),
+    h(
+      'div',
+      { class: 'task-top' },
+      doneToggle(t, onChange),
+      h('span', { class: 'task-name' }, t.title),
+      // удалить — автор задачи или администратор (сервер проверяет сам)
+      ctx.me.role === 'admin' || t.created_by_id === ctx.me.id
+        ? h('button', {
+            type: 'button', class: 'task-delete', title: 'Удалить задачу', 'aria-label': `Удалить задачу «${t.title}»`,
+            onclick: async (e) => {
+              e.stopPropagation();
+              if (!confirm(`Удалить задачу «${t.title}» вместе с комментариями?`)) return;
+              try {
+                await api(`/admin/api/tasks/${t.id}`, { method: 'DELETE' });
+                toast('Задача удалена');
+                onChange();
+              } catch (err) {
+                toast(err.message);
+              }
+            },
+            onkeydown: (e) => e.stopPropagation(),
+          }, icon('trash'))
+        : null,
+    ),
     showProject ? h('span', { class: 'task-client' }, t.client_name ?? 'Общие задачи', ' · ', t.board_name) : null,
     stickers(t, onChange),
   );

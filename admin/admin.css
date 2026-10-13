@@ -834,6 +834,16 @@ details.menu summary::-webkit-details-marker { display: none; }
 .task-card { cursor: pointer; }
 .task-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .task-top { display: flex; gap: 8px; align-items: flex-start; }
+.task-top .task-name { flex: 1; min-width: 0; }
+.task-delete {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin: -4px -6px 0 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.task-delete .icon { width: 16px; height: 16px; }
+.task-card:hover .task-delete, .task-card:focus-within .task-delete { opacity: 1; }
+.task-delete:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.task-delete:focus-visible { opacity: 1; }
+@media (hover: none) { .task-delete { opacity: .7; } }
 .task-bottom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .task-bottom .spacer { flex: 1; }
 .task-bottom:not(:has(> :not(.spacer))) { display: none; }

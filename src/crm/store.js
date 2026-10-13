@@ -414,7 +414,7 @@ export function createCrm({ db }) {
     }
     return db
       .prepare(
-        `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
+        `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.created_by_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
                 c.name AS client_name, u.name AS assignee_name,
                 col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments
