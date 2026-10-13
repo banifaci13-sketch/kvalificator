@@ -8,7 +8,11 @@ import { createWebhookNotifier } from './webhook.js';
 export function createNotifier(config) {
   const targets = {};
   if (config.telegram.token && config.telegram.managerChatId) {
-    targets.telegram = createTelegramNotifier({ token: config.telegram.token, chatId: config.telegram.managerChatId });
+    targets.telegram = createTelegramNotifier({
+      token: config.telegram.token,
+      chatId: config.telegram.managerChatId,
+      withTakeButton: config.telegram.botEnabled,
+    });
   }
   if (config.webhook.url) targets.webhook = createWebhookNotifier(config.webhook);
   if (!Object.keys(targets).length) return null;

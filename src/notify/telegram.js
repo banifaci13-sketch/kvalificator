@@ -5,7 +5,8 @@ const CHANNELS = { web: 'виджет на сайте', telegram: 'Telegram', ma
 // Лимит Telegram — 4096 символов; длинные ответы режем по отдельности, чтобы не сломать HTML-разметку
 const ANSWER_LIMIT = 400;
 
-export function createTelegramNotifier({ token, chatId, apiBase = 'https://api.telegram.org' }) {
+/** withTakeButton — под карточкой кнопка «Взять в работу» (обрабатывает Telegram-бот). */
+export function createTelegramNotifier({ token, chatId, withTakeButton = false, apiBase = 'https://api.telegram.org' }) {
   return {
     async notifyLead(lead, scenario) {
       const res = await fetch(`${apiBase}/bot${token}/sendMessage`, {
@@ -16,6 +17,9 @@ export function createTelegramNotifier({ token, chatId, apiBase = 'https://api.t
           text: formatLeadCard(lead, scenario),
           parse_mode: 'HTML',
           link_preview_options: { is_disabled: true },
+          ...(withTakeButton
+            ? { reply_markup: { inline_keyboard: [[{ text: '🙋 Взять в работу', callback_data: `take:${lead.id}` }]] } }
+            : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -46,8 +50,10 @@ export function formatLeadCard(lead, scenario) {
   }
 
   const meta = lead.meta ?? {};
+  const tg = meta.telegram;
   const source = [
     `Канал: ${CHANNELS[lead.channel] ?? lead.channel}`,
+    tg ? `Telegram: ${tg.username ? `@${tg.username}` : tg.name} (id ${tg.id})` : null,
     meta.page ? `Страница: ${meta.page}` : null,
     meta.referrer ? `Реферер: ${meta.referrer}` : null,
     meta.utm && Object.keys(meta.utm).length

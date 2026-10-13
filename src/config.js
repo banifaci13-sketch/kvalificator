@@ -25,6 +25,11 @@ export function loadConfig(env = process.env) {
       token: env.TELEGRAM_BOT_TOKEN || null,
       managerChatId: env.TELEGRAM_MANAGER_CHAT_ID || null,
       botUsername: env.TELEGRAM_BOT_USERNAME || null,
+      // Бот-собеседник для клиентов; выключите, если токен нужен только для уведомлений
+      botEnabled: Boolean(env.TELEGRAM_BOT_TOKEN) && env.TELEGRAM_BOT_ENABLED !== 'false',
+      // Пусто — long polling (проще, работает на любом сервере); иначе webhook на этот адрес
+      webhookUrl: env.TELEGRAM_WEBHOOK_URL || null,
+      webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || null,
     },
     max: {
       botUsername: env.MAX_BOT_USERNAME || null,

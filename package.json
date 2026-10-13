@@ -12,7 +12,8 @@
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
-    "scenario:csv": "node scripts/scenario-to-csv.js > config/scenario-template.csv"
+    "scenario:csv": "node scripts/scenario-to-csv.js > config/scenario-template.csv",
+    "check": "node --disable-warning=ExperimentalWarning scripts/check.js"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -20,6 +21,7 @@
     "@fastify/rate-limit": "^11.2.1",
     "@fastify/static": "^10.1.6",
     "fastify": "^5.12.5",
+    "grammy": "^1.46.0",
     "pino": "^10.4.0"
   }
 }

@@ -111,10 +111,10 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
   }
 
   /** Продолжение диалога из виджета в мессенджере по deep link. */
-  function claimHandoff(code, channel, channelUserId) {
+  function claimHandoff(code, channel, channelUserId, meta = {}) {
     const session = db.getSessionByHandoff(code);
     if (!session || session.status !== 'active') return null;
-    db.moveToChannel(session.id, channel, channelUserId);
+    db.moveToChannel(session.id, channel, channelUserId, meta);
     return db.getSession(session.id);
   }
 
@@ -122,7 +122,19 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
     return { ...reply, intro: scenarioSource.get().intro };
   }
 
-  return { startSession, getSession, resume, answer, claimHandoff, retryUndelivered };
+  /** Незавершённый диалог пользователя в мессенджере. */
+  function activeSession(channel, channelUserId) {
+    return db.getActiveSession(channel, channelUserId);
+  }
+
+  /** Менеджер берёт лид в работу. ok: false — лид уже взял кто-то другой. */
+  function takeLead(leadId, assignee) {
+    const lead = db.getLead(leadId);
+    if (!lead) return { ok: false, lead: null };
+    return { ok: db.assignLead(leadId, assignee), lead: db.getLead(leadId) };
+  }
+
+  return { startSession, getSession, resume, answer, claimHandoff, activeSession, takeLead, retryUndelivered };
 }
 
 function safeEqual(a, b) {

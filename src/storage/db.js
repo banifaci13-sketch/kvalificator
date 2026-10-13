@@ -53,13 +53,17 @@ export function openDb(path) {
     getByHandoff: db.prepare('SELECT * FROM sessions WHERE handoff_code = ?'),
     getActiveByUser: db.prepare(
       `SELECT * FROM sessions WHERE channel = ? AND channel_user_id = ? AND status = 'active'
-       ORDER BY updated_at DESC LIMIT 1`,
+       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+    ),
+    abandonActive: db.prepare(
+      `UPDATE sessions SET status = 'abandoned', updated_at = datetime('now')
+       WHERE channel = ? AND channel_user_id = ? AND status = 'active'`,
     ),
     updateState: db.prepare(
       `UPDATE sessions SET state = ?, status = ?, updated_at = datetime('now') WHERE id = ?`,
     ),
     moveToChannel: db.prepare(
-      `UPDATE sessions SET channel = ?, channel_user_id = ?, handoff_code = NULL, updated_at = datetime('now')
+      `UPDATE sessions SET channel = ?, channel_user_id = ?, meta = ?, handoff_code = NULL, updated_at = datetime('now')
        WHERE id = ?`,
     ),
     insertLead: db.prepare(
@@ -91,6 +95,8 @@ export function openDb(path) {
 
   return {
     createSession({ id, token, channel, channelUserId = null, handoffCode = null, state, meta = {} }) {
+      // В мессенджере у пользователя один активный опрос: новый закрывает предыдущий
+      if (channelUserId != null) q.abandonActive.run(channel, String(channelUserId));
       q.insertSession.run(id, token, channel, channelUserId, handoffCode, JSON.stringify(state), JSON.stringify(meta));
       return parseSession(q.getSession.get(id));
     },
@@ -100,8 +106,11 @@ export function openDb(path) {
     saveState(id, state, status = 'active') {
       q.updateState.run(JSON.stringify(state), status, id);
     },
-    moveToChannel(id, channel, userId) {
-      q.moveToChannel.run(channel, String(userId), id);
+    /** Переносит диалог в мессенджер (deep link из виджета); метаданные сайта сохраняются. */
+    moveToChannel(id, channel, userId, extraMeta = {}) {
+      const session = parseSession(q.getSession.get(id));
+      q.abandonActive.run(channel, String(userId));
+      q.moveToChannel.run(channel, String(userId), JSON.stringify({ ...session.meta, ...extraMeta }), id);
     },
     /** Сохраняет лид и закрывает сессию одной транзакцией. */
     completeSession(session, state, lead) {
