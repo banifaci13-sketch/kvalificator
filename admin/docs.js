@@ -11,7 +11,7 @@ const FORMATS = [
 const SAVE_DELAY = 600;
 
 /** replaceChildren, но как h(): массивы раскрываются, null и false пропускаются. */
-const fill = (el, ...children) => el.replaceChildren(...children.flat(Infinity).filter((c) => c != null && c !== false));
+export const fill = (el, ...children) => el.replaceChildren(...children.flat(Infinity).filter((c) => c != null && c !== false));
 
 let catalog = null;
 async function loadCatalog() {
@@ -22,7 +22,7 @@ const typeOf = (type) => catalog.types.find((t) => t.type === type);
 const typeLabel = (type) => typeOf(type)?.label ?? type;
 
 /** Пустое значение поля: число без значения — null, а не 0 (ноль — это тоже данные). */
-function parseNum(v) {
+export function parseNum(v) {
   const t = String(v).replace(/[\s ]/g, '').replace(',', '.');
   if (t === '') return null;
   const n = Number(t);
@@ -46,7 +46,7 @@ function relayoutSvg(frame) {
 }
 
 /** Модальное окно с формой. onSubmit бросает ошибку — она показывается в окне. */
-function formDialog({ title, body, submitLabel, onSubmit }) {
+export function formDialog({ title, body, submitLabel, onSubmit }) {
   const error = h('p', { class: 'error', role: 'alert', hidden: true });
   const submit = h('button', { type: 'submit', class: 'btn btn-primary' }, submitLabel);
   const dlg = h(

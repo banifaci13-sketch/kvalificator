@@ -495,6 +495,66 @@ details.menu summary::-webkit-details-marker { display: none; }
   .doc-head .spacer { display: none; }
 }
 
+/* ---------- медиапланы ---------- */
+.mp-settings { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(5, minmax(120px, 1fr)); gap: 0 12px; margin-bottom: 16px; padding-bottom: 2px; }
+.mp-tabs-row { margin-bottom: -1px; }
+.mp-tabs { display: flex; gap: 4px; align-items: flex-end; flex-wrap: wrap; }
+.mp-tab {
+  padding: 10px 16px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--radius-m) var(--radius-m) 0 0;
+  background: var(--surface-2); color: var(--muted); font-weight: 600; cursor: pointer;
+}
+.mp-tab[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 3px 0 var(--accent); position: relative; z-index: 1; }
+.mp-tabs .btn-s { margin: 0 0 6px 6px; }
+.mp-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; margin-bottom: 16px; }
+.mp-scenario { border-top-left-radius: 0; min-width: 0; }
+.mp-scenario-head { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.mp-name { max-width: 320px; font-weight: 600; }
+.mp-table { border-collapse: collapse; width: 100%; min-width: 1060px; font-size: 14px; }
+.mp-table th { text-align: right; font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.mp-table th:first-child, .mp-table th:nth-child(2) { text-align: left; }
+.mp-table th.calc { color: var(--text); }
+.mp-table td { padding: 4px; vertical-align: top; }
+.mp-table .input, .mp-table .select { min-height: 36px; padding: 5px 8px; }
+.mp-table .input.num { text-align: right; width: 92px; }
+.mp-table .input[disabled] { background: var(--surface-2); border-color: transparent; color: transparent; }
+.mp-channel { min-width: 200px; }
+.mp-table td:nth-child(2) .select { width: 84px; }
+.mp-channel .hint { font-size: 12px; margin-top: 2px; }
+.mp-table td.calc { text-align: right; padding: 12px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--surface-2); }
+.mp-table td.calc:first-of-type { border-radius: 0; }
+.mp-table tfoot td { border-top: 2px solid var(--text); padding: 10px 8px; font-weight: 700; text-align: right; white-space: nowrap; }
+.mp-table tfoot td:first-child { text-align: left; }
+.mp-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.mp-add .select { width: auto; min-width: 220px; min-height: 32px; padding: 4px 8px; font-size: 14px; }
+.mp-results { display: grid; gap: 8px; position: sticky; top: 76px; }
+.mp-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 14px 16px; }
+.mp-card.main { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.mp-value { font-family: var(--soroka-font-heading); font-size: 24px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.mp-card.main .mp-value { font-size: 28px; }
+.mp-label { font-size: 14px; margin-top: 2px; }
+.mp-sub { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+.mp-card.main .mp-sub, .mp-card.main .mp-label { color: var(--on-brand-muted); }
+.mp-compare { border-collapse: collapse; width: 100%; font-size: 14px; }
+.mp-compare th { text-align: right; font-size: 12px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.mp-compare td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.mp-compare th:first-child, .mp-compare td:first-child { text-align: left; }
+.mp-compare tr.current td { font-weight: 700; }
+.mp-compare tr.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.mp-notes { margin-top: 16px; max-width: 980px; }
+.dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.bench-note { max-width: 360px; color: var(--muted); font-size: 13px; }
+.panel.empty { text-align: center; }
+
+@media (max-width: 1200px) {
+  .mp-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mp-layout { grid-template-columns: minmax(0, 1fr); }
+  .mp-results { position: static; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+}
+@media (max-width: 720px) {
+  .mp-settings { grid-template-columns: 1fr 1fr; }
+  .dialog-grid { grid-template-columns: 1fr; }
+}
+
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: var(--radius-s); font-size: 14px; }
 
 /* ---------- мобильные ---------- */

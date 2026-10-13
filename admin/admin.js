@@ -2,6 +2,7 @@
 // пользовательские данные выводятся только как текст (никакого innerHTML с данными).
 
 import { renderDocs, renderDoc, renderTemplates, leadDocuments } from './docs.js';
+import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
@@ -126,6 +127,9 @@ const routes = {
   docs: renderDocs,
   doc: renderDoc,
   templates: renderTemplates,
+  plans: renderPlans,
+  plan: renderPlan,
+  benchmarks: renderBenchmarks,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -133,13 +137,21 @@ const routes = {
   staff: renderStaff,
   account: renderAccount,
 };
-// Квалификатор — один раздел со своими вкладками
-const QUALIFIER = [
-  ['leads', 'Лиды'],
-  ['board', 'Воронка'],
-  ['stats', 'Сводка'],
-  ['test', 'Тест'],
-];
+// Разделы со своими вкладками: ключ — первая вкладка (на неё ведёт пункт меню)
+const SECTION_TABS = {
+  leads: [
+    ['leads', 'Лиды'],
+    ['board', 'Воронка'],
+    ['stats', 'Сводка'],
+    ['test', 'Тест'],
+  ],
+  plans: [
+    ['plans', 'Медиапланы'],
+    ['benchmarks', 'Нормативы'],
+  ],
+};
+// Страницы внутри раздела без своей вкладки
+const PAGE_SECTION = { doc: 'docs', plan: 'plans' };
 
 function currentRoute() {
   const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
@@ -175,11 +187,13 @@ async function boot() {
 }
 
 function shell(active, content) {
-  const inQualifier = QUALIFIER.some(([id]) => id === active);
-  const section = inQualifier ? 'leads' : active === 'doc' ? 'docs' : active;
+  const section =
+    PAGE_SECTION[active] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === active)) ?? active;
+  const tabs = SECTION_TABS[section] && !PAGE_SECTION[active] ? SECTION_TABS[section] : null;
   const nav = [
     ['docs', 'Документы'],
     ['templates', 'Шаблоны'],
+    ['plans', 'Медиапланы'],
     ['leads', 'Квалификатор'],
     ctx.me.role === 'admin' ? ['staff', 'Сотрудники'] : null,
   ].filter(Boolean);
@@ -200,14 +214,14 @@ function shell(active, content) {
         h('button', { type: 'button', onclick: logout }, 'Выйти'),
       ),
     ),
-    inQualifier
+    tabs
       ? h(
           'nav',
-          { class: 'subnav', 'aria-label': 'Квалификатор' },
-          QUALIFIER.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
+          { class: 'subnav', 'aria-label': nav.find(([id]) => id === section)?.[1] },
+          tabs.map(([id, label]) => h('a', { href: `#/${id}`, 'aria-current': id === active ? 'page' : null }, label)),
         )
       : null,
-    h('main', { class: `page${active === 'doc' ? ' page-wide' : ''}`, id: 'main' }, content),
+    h('main', { class: `page${active === 'doc' || active === 'plan' ? ' page-wide' : ''}`, id: 'main' }, content),
   ].filter(Boolean);
 }
 
