@@ -1,0 +1,166 @@
+// Поля каждого типа слайда: по ним админка строит формы редактора, проверка — подписи ошибок.
+// Типы полей: text, textarea, number, select, checkbox, lines (по строке на пункт),
+// repeater (список карточек с полями), group (вложенный объект), chart (данные графика).
+
+import { SLIDE_TYPES } from './templates.js';
+
+const DATA_STATUS = {
+  key: 'dataStatus',
+  label: 'Статус данных',
+  type: 'select',
+  options: [
+    ['fact', 'Факт'],
+    ['estimate', 'Оценка'],
+    ['forecast', 'Прогноз'],
+    ['hypothesis', 'Гипотеза'],
+    ['plan', 'План'],
+  ],
+};
+const SOURCE = { key: 'source', label: 'Источник данных', type: 'text', hint: 'Откуда цифры: Метрика клиента, CRM, расчёт агентства…' };
+const PERIOD = { key: 'period', label: 'Период', type: 'text', hint: 'Например: январь — март 2027' };
+const TITLE = { key: 'title', label: 'Заголовок', type: 'text', max: 90 };
+const CHART = { key: 'chart', label: 'График', type: 'chart' };
+
+export const SLIDE_FIELDS = {
+  cover: [
+    TITLE,
+    { key: 'subtitle', label: 'Подзаголовок', type: 'textarea', max: 160 },
+    { key: 'client', label: 'Клиент', type: 'text' },
+    { key: 'date', label: 'Дата', type: 'text' },
+    { key: 'author', label: 'Автор', type: 'text' },
+  ],
+  section: [
+    { key: 'number', label: 'Номер раздела', type: 'number' },
+    TITLE,
+    { key: 'subtitle', label: 'Подзаголовок', type: 'textarea' },
+  ],
+  kpi: [
+    TITLE,
+    { key: 'lead', label: 'Пояснение', type: 'text' },
+    {
+      key: 'kpis', label: 'Показатели', type: 'repeater', max: 4, item: 'Показатель',
+      fields: [
+        { key: 'value', label: 'Значение', type: 'text', hint: '1 200 или 1 850 ₽' },
+        { key: 'label', label: 'Что это', type: 'text' },
+        { key: 'delta', label: 'Сравнение', type: 'text', hint: 'сейчас 640' },
+      ],
+    },
+    DATA_STATUS, SOURCE, PERIOD,
+  ],
+  chart: [
+    TITLE, CHART,
+    { key: 'takeaway', label: 'Главный вывод', type: 'textarea', max: 140 },
+    { key: 'points', label: 'Пояснения', type: 'lines', max: 4 },
+    DATA_STATUS, SOURCE, PERIOD,
+  ],
+  analytics: [
+    TITLE, CHART,
+    {
+      key: 'insights', label: 'Выводы', type: 'repeater', max: 3, item: 'Вывод',
+      fields: [
+        { key: 'title', label: 'Вывод', type: 'text' },
+        { key: 'text', label: 'Пояснение', type: 'textarea' },
+      ],
+    },
+    DATA_STATUS, SOURCE, PERIOD,
+  ],
+  case: [
+    TITLE,
+    { key: 'client', label: 'Клиент', type: 'text' },
+    { key: 'industry', label: 'Сфера', type: 'text' },
+    { key: 'task', label: 'Задача', type: 'textarea' },
+    { key: 'solution', label: 'Что сделали', type: 'lines', max: 5 },
+    {
+      key: 'results', label: 'Результаты', type: 'repeater', max: 3, item: 'Результат',
+      fields: [
+        { key: 'value', label: 'Значение', type: 'text', hint: '−38%' },
+        { key: 'label', label: 'Что это', type: 'text' },
+      ],
+    },
+    { key: 'verified', label: 'Кейс реальный, клиент согласен на публикацию', type: 'checkbox' },
+    SOURCE, PERIOD,
+  ],
+  strategy: [
+    TITLE,
+    { key: 'lead', label: 'Пояснение', type: 'textarea' },
+    {
+      key: 'pillars', label: 'Направления', type: 'repeater', max: 4, item: 'Направление',
+      fields: [
+        { key: 'title', label: 'Направление', type: 'text' },
+        { key: 'text', label: 'Что делаем', type: 'textarea' },
+        { key: 'channels', label: 'Каналы', type: 'csv', hint: 'Через запятую' },
+      ],
+    },
+  ],
+  mediaplan: [
+    TITLE,
+    {
+      key: 'rows', label: 'Каналы', type: 'repeater', max: 8, item: 'Канал',
+      fields: [
+        { key: 'channel', label: 'Канал', type: 'text' },
+        { key: 'budget', label: 'Бюджет, ₽', type: 'number' },
+        { key: 'impressions', label: 'Показы', type: 'number' },
+        { key: 'clicks', label: 'Клики', type: 'number' },
+        { key: 'leads', label: 'Лиды', type: 'number' },
+      ],
+    },
+    { key: 'assumptions', label: 'Допущения', type: 'textarea', hint: 'На чём основан прогноз' },
+    DATA_STATUS, SOURCE, PERIOD,
+  ],
+  proposal: [
+    TITLE,
+    { key: 'lead', label: 'Пояснение', type: 'text' },
+    {
+      key: 'items', label: 'Состав работ', type: 'repeater', max: 7, item: 'Работа',
+      fields: [
+        { key: 'name', label: 'Работа', type: 'text' },
+        { key: 'description', label: 'Что входит', type: 'text' },
+        { key: 'price', label: 'Стоимость, ₽', type: 'number' },
+      ],
+    },
+    { key: 'priceUnit', label: 'Единица стоимости', type: 'text', hint: 'в месяц' },
+    { key: 'terms', label: 'Условия', type: 'lines', max: 6 },
+    { key: 'validUntil', label: 'Действует до', type: 'text' },
+  ],
+  closing: [
+    TITLE,
+    { key: 'steps', label: 'Следующие шаги', type: 'lines', max: 4 },
+    {
+      key: 'contacts', label: 'Контакты', type: 'group',
+      fields: [
+        { key: 'name', label: 'Имя', type: 'text' },
+        { key: 'role', label: 'Должность', type: 'text' },
+        { key: 'phone', label: 'Телефон', type: 'text' },
+        { key: 'email', label: 'E-mail', type: 'text' },
+        { key: 'telegram', label: 'Telegram', type: 'text' },
+        { key: 'site', label: 'Сайт', type: 'text' },
+      ],
+    },
+  ],
+};
+
+export const CHART_TYPES = [
+  ['column', 'Столбцы'],
+  ['bar', 'Горизонтальные столбцы'],
+  ['line', 'Линия'],
+  ['stacked', 'Столбцы с накоплением'],
+];
+
+/** Описание для админки: типы слайдов, их поля и пустой слайд каждого типа. */
+export function slideCatalog() {
+  return Object.entries(SLIDE_TYPES).map(([type, t]) => ({
+    type,
+    label: t.label,
+    theme: t.theme,
+    data: Boolean(t.data),
+    required: t.required,
+    fields: [...SLIDE_FIELDS[type], { key: 'notes', label: 'Заметки докладчика', type: 'textarea' }],
+  }));
+}
+
+export function emptySlide(type) {
+  const base = { type, title: '' };
+  if (SLIDE_TYPES[type]?.data) base.dataStatus = type === 'mediaplan' ? 'forecast' : 'fact';
+  if (type === 'chart' || type === 'analytics') base.chart = { type: 'column', categories: [], series: [{ name: '', values: [] }] };
+  return base;
+}

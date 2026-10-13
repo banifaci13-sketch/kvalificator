@@ -1,0 +1,48 @@
+{
+  "id": "strategy",
+  "name": "Стратегия продвижения",
+  "description": "Аудит, точки роста, стратегия по направлениям, медиаплан и KPI.",
+  "variables": [
+    { "key": "client", "label": "Клиент", "from": "lead.company" },
+    { "key": "task", "label": "Задача", "from": "lead.task" },
+    { "key": "date", "label": "Дата", "from": "today" },
+    { "key": "manager", "label": "Менеджер", "from": "user.name" }
+  ],
+  "spec": {
+    "meta": { "title": "Стратегия: {{client}}" },
+    "slides": [
+      { "type": "cover", "title": "Стратегия продвижения {{client}}", "subtitle": "{{task}}", "client": "{{client}}", "date": "{{date}}", "author": "Soroka Marketing" },
+      { "type": "section", "number": 1, "title": "Где мы сейчас", "subtitle": "Исходные показатели и точки роста" },
+      {
+        "type": "analytics", "title": "Что показал аудит",
+        "chart": { "type": "bar", "categories": ["[заполнить: канал]"], "series": [{ "name": "Стоимость лида, ₽", "values": [0] }], "unit": "₽" },
+        "insights": [
+          { "title": "[заполнить: вывод]", "text": "[заполнить]" },
+          { "title": "[заполнить: вывод]", "text": "[заполнить]" },
+          { "title": "[заполнить: вывод]", "text": "[заполнить]" }
+        ],
+        "dataStatus": "fact", "source": "[заполнить]"
+      },
+      { "type": "section", "number": 2, "title": "Что предлагаем" },
+      {
+        "type": "strategy", "title": "Стратегия по направлениям",
+        "pillars": [
+          { "title": "[заполнить]", "text": "[заполнить]", "channels": [] },
+          { "title": "[заполнить]", "text": "[заполнить]", "channels": [] },
+          { "title": "[заполнить]", "text": "[заполнить]", "channels": [] }
+        ]
+      },
+      {
+        "type": "mediaplan", "title": "Медиаплан",
+        "rows": [{ "channel": "[заполнить: канал]", "budget": "[заполнить]" }],
+        "assumptions": "[заполнить]", "dataStatus": "forecast", "source": "Расчёт агентства"
+      },
+      {
+        "type": "kpi", "title": "Целевые показатели",
+        "kpis": [{ "value": "[заполнить]", "label": "[заполнить]" }, { "value": "[заполнить]", "label": "[заполнить]" }, { "value": "[заполнить]", "label": "[заполнить]" }],
+        "dataStatus": "forecast", "source": "Расчёт агентства"
+      },
+      { "type": "closing", "title": "Следующий шаг", "steps": ["Обсудить стратегию", "Согласовать бюджет", "Запуск"], "contacts": { "name": "{{manager}}", "role": "Soroka Marketing" } }
+    ]
+  }
+}

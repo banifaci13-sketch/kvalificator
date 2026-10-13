@@ -1,0 +1,42 @@
+{
+  "id": "report",
+  "name": "Ежемесячный отчёт",
+  "description": "Итоги месяца: показатели, динамика, выводы и план на следующий месяц.",
+  "variables": [
+    { "key": "client", "label": "Клиент", "from": "lead.company" },
+    { "key": "month", "label": "Месяц отчёта", "from": "" },
+    { "key": "date", "label": "Дата", "from": "today" },
+    { "key": "manager", "label": "Менеджер", "from": "user.name" }
+  ],
+  "spec": {
+    "meta": { "title": "Отчёт за {{month}}: {{client}}" },
+    "slides": [
+      { "type": "cover", "title": "Итоги за {{month}}", "subtitle": "{{client}}", "client": "{{client}}", "date": "{{date}}", "author": "Soroka Marketing" },
+      {
+        "type": "kpi", "title": "Главное за месяц",
+        "kpis": [
+          { "value": "[заполнить]", "label": "лидов", "delta": "[заполнить: к прошлому месяцу]" },
+          { "value": "[заполнить]", "label": "стоимость лида", "delta": "[заполнить: к прошлому месяцу]" },
+          { "value": "[заполнить]", "label": "расход", "delta": "[заполнить: к плану]" }
+        ],
+        "dataStatus": "fact", "source": "[заполнить: рекламные кабинеты, Метрика, CRM]", "period": "{{month}}"
+      },
+      {
+        "type": "chart", "title": "Лиды по неделям",
+        "chart": { "type": "column", "categories": ["Неделя 1", "Неделя 2", "Неделя 3", "Неделя 4"], "series": [{ "name": "Лиды", "values": [0, 0, 0, 0] }] },
+        "takeaway": "[заполнить: главный вывод одним предложением]",
+        "points": [],
+        "dataStatus": "fact", "source": "[заполнить]", "period": "{{month}}"
+      },
+      {
+        "type": "strategy", "title": "План на следующий месяц",
+        "pillars": [
+          { "title": "[заполнить]", "text": "[заполнить]" },
+          { "title": "[заполнить]", "text": "[заполнить]" },
+          { "title": "[заполнить]", "text": "[заполнить]" }
+        ]
+      },
+      { "type": "closing", "title": "Вопросы и обсуждение", "steps": [], "contacts": { "name": "{{manager}}", "role": "Soroka Marketing" } }
+    ]
+  }
+}

@@ -1,0 +1,210 @@
+// API раздела «Документы»: шаблоны, документы, превью, проверка, выгрузка, КП из лида.
+// Подключается внутри авторизованной части админки (req.user уже есть).
+
+import { createReadStream } from 'node:fs';
+import { DocError, leadValues } from '../docs/library.js';
+import { QaError, FORMATS } from '../docs/build.js';
+import { runQa } from '../docs/qa.js';
+import { renderDeckHtml } from '../docs/render-html.js';
+import { slideCatalog, emptySlide, CHART_TYPES } from '../docs/schema.js';
+
+const MIME = {
+  pdf: 'application/pdf',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  html: 'text/html; charset=utf-8',
+};
+
+const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
+const specSchema = { type: 'object', required: ['slides'], properties: { meta: { type: 'object' }, slides: { type: 'array', maxItems: 40 } } };
+
+export async function docsRoutes(api, { library, brand, db, scenarioSource }) {
+  api.setErrorHandler((err, req, reply) => {
+    if (err instanceof DocError) return reply.code(400).send({ error: err.message });
+    throw err;
+  });
+
+  api.get('/admin/api/slide-types', async () => ({
+    types: slideCatalog(),
+    chartTypes: CHART_TYPES,
+    empty: Object.fromEntries(slideCatalog().map((t) => [t.type, emptySlide(t.type)])),
+    brand: { label: brand.label, status: brand.status, logo: Boolean(brand.logo.onLight) },
+  }));
+
+  // ---------- шаблоны ----------
+
+  api.get('/admin/api/templates', async () => ({ templates: library.listTemplates() }));
+
+  api.get('/admin/api/templates/:id', async (req) => ({ template: library.getTemplate(req.params.id) }));
+
+  api.post(
+    '/admin/api/templates',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name'],
+          properties: {
+            name: { type: 'string', maxLength: 120 },
+            description: { type: 'string', maxLength: 500 },
+            fromDocument: { type: 'integer' },
+            fromTemplate: { type: 'string', maxLength: 40 },
+            spec: specSchema,
+          },
+        },
+      },
+    },
+    async (req) => {
+      const { name, description = '', fromDocument, fromTemplate, spec } = req.body;
+      let source = spec;
+      let variables = null;
+      if (fromDocument) source = library.getDocument(fromDocument).spec;
+      if (fromTemplate) {
+        const t = library.getTemplate(fromTemplate);
+        source = t.spec;
+        variables = t.variables;
+      }
+      if (!source) throw new DocError('Нужен документ или шаблон-основа');
+      return { template: library.saveTemplate({ name, description, spec: source, variables }, req.user.name) };
+    },
+  );
+
+  api.put(
+    '/admin/api/templates/:id',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { name: { type: 'string', maxLength: 120 }, description: { type: 'string', maxLength: 500 }, spec: specSchema },
+        },
+      },
+    },
+    async (req) => {
+      const current = library.getTemplate(req.params.id);
+      return {
+        template: library.saveTemplate(
+          { id: req.params.id, name: req.body.name ?? current.name, description: req.body.description ?? current.description, spec: req.body.spec ?? current.spec, variables: req.body.spec ? null : current.variables },
+          req.user.name,
+        ),
+      };
+    },
+  );
+
+  api.delete('/admin/api/templates/:id', async (req) => {
+    library.deleteTemplate(req.params.id);
+    return { ok: true };
+  });
+
+  // ---------- документы ----------
+
+  api.get('/admin/api/documents', async () => ({ documents: library.listDocuments() }));
+
+  api.post(
+    '/admin/api/documents',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            templateId: { type: 'string', maxLength: 40 },
+            title: { type: 'string', maxLength: 200 },
+            values: { type: 'object', additionalProperties: { type: 'string', maxLength: 2000 } },
+            leadId: { type: 'integer' },
+          },
+        },
+      },
+    },
+    async (req) => {
+      const { templateId, title, leadId } = req.body;
+      let values = req.body.values ?? {};
+      if (leadId) {
+        const lead = db.getLead(leadId);
+        if (!lead) throw new DocError('Лид не найден');
+        // из лида — то, что не задано вручную
+        values = { ...leadValues(lead, scenarioSource.get(), req.user), ...Object.fromEntries(Object.entries(values).filter(([, v]) => v)) };
+      } else {
+        values = { ...leadValues(null, scenarioSource.get(), req.user), ...Object.fromEntries(Object.entries(values).filter(([, v]) => v)) };
+      }
+      return { document: library.createDocument({ templateId, values, title, leadId }, req.user.name) };
+    },
+  );
+
+  api.get('/admin/api/documents/:id', { schema: { params: idParams } }, async (req) => ({
+    document: library.getDocument(req.params.id),
+    exports: library.listExports(req.params.id).map(({ manifest, ...e }) => ({ ...e, qaOk: manifest.qa.ok, forced: manifest.qa.forced })),
+  }));
+
+  api.put(
+    '/admin/api/documents/:id',
+    {
+      schema: {
+        params: idParams,
+        body: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', maxLength: 200 }, spec: specSchema } },
+      },
+      bodyLimit: 600 * 1024,
+    },
+    async (req) => ({ document: library.updateDocument(req.params.id, req.body, req.user.name) }),
+  );
+
+  api.delete('/admin/api/documents/:id', { schema: { params: idParams } }, async (req) => {
+    library.deleteDocument(req.params.id);
+    return { ok: true };
+  });
+
+  // Превью для редактора: свой CSP (стили документа встроены), без доступа к остальной админке
+  api.get('/admin/api/documents/:id/preview', { schema: { params: idParams } }, async (req, reply) => {
+    const doc = library.getDocument(req.params.id);
+    const html = doc.spec.slides.length
+      ? renderDeckHtml({ ...doc.spec, meta: { ...doc.spec.meta, title: doc.title } }, brand, { mode: 'screen' })
+      : '<!doctype html><meta charset="utf-8"><body style="font:16px sans-serif;color:#5F6B72;padding:40px">Добавьте первый слайд</body>';
+    return reply
+      .header('content-type', 'text/html; charset=utf-8')
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; frame-ancestors 'self'")
+      .header('x-frame-options', 'SAMEORIGIN')
+      .send(html);
+  });
+
+  api.post('/admin/api/documents/:id/qa', { schema: { params: idParams } }, async (req) => {
+    const doc = library.getDocument(req.params.id);
+    if (!doc.spec.slides.length) throw new DocError('В документе нет слайдов');
+    return { qa: await runQa(doc.spec, brand) };
+  });
+
+  api.post(
+    '/admin/api/documents/:id/export',
+    {
+      schema: {
+        params: idParams,
+        body: { type: 'object', required: ['format'], additionalProperties: false, properties: { format: { type: 'string', enum: FORMATS }, force: { type: 'boolean' } } },
+      },
+      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      // Выгрузка с ошибками проверки (черновик) — только администратору
+      const force = Boolean(req.body.force) && req.user.role === 'admin';
+      try {
+        const res = await library.exportDocument(req.params.id, req.body.format, { force }, req.user.name);
+        req.log.info({ doc: req.params.id, format: req.body.format, by: req.user.login, forced: res.manifest.qa.forced }, 'Выгрузка документа');
+        return { exportId: res.exportId, qa: res.qa };
+      } catch (err) {
+        if (err instanceof QaError) return reply.code(422).send({ error: err.message, qa: err.qa, canForce: req.user.role === 'admin' });
+        throw err;
+      }
+    },
+  );
+
+  api.get('/admin/api/exports/:id', { schema: { params: idParams } }, async (req, reply) => {
+    const e = library.getExport(req.params.id);
+    return reply
+      .header('content-type', MIME[e.format])
+      .header('content-disposition', `attachment; filename="${e.filename}"; filename*=UTF-8''${encodeURIComponent(`${e.title}.${e.format}`)}`)
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'")
+      .send(createReadStream(e.file));
+  });
+
+  // ---------- документы из лида ----------
+
+  api.get('/admin/api/leads/:id/documents', { schema: { params: idParams } }, async (req) => ({ documents: library.documentsForLead(req.params.id) }));
+}

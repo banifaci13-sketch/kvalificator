@@ -71,7 +71,46 @@ const MIGRATIONS = [
   // Роли сотрудников: первый заведённый сотрудник становится администратором
   `ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'manager';
    UPDATE admin_users SET role = 'admin' WHERE id = (SELECT MIN(id) FROM admin_users);`,
+
+  // Документы (презентации, КП, отчёты), пользовательские шаблоны и выгрузки
+  `CREATE TABLE doc_templates (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     name        TEXT NOT NULL,
+     description TEXT,
+     variables   TEXT NOT NULL DEFAULT '[]',
+     spec        TEXT NOT NULL,
+     created_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE documents (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     title       TEXT NOT NULL,
+     spec        TEXT NOT NULL,
+     template    TEXT,
+     lead_id     INTEGER REFERENCES leads(id),
+     created_by  TEXT,
+     updated_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX documents_lead ON documents (lead_id);
+   CREATE TABLE document_exports (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+     format      TEXT NOT NULL,
+     file        TEXT NOT NULL,
+     bytes       INTEGER NOT NULL,
+     sha256      TEXT NOT NULL,
+     manifest    TEXT NOT NULL,
+     created_by  TEXT,
+     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX document_exports_doc ON document_exports (document_id);`,
 ];
+
+/** Номер текущей версии схемы базы. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
 
 function migrate(db) {
   const { user_version: current } = db.prepare('PRAGMA user_version').get();

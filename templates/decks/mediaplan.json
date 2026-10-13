@@ -1,0 +1,37 @@
+{
+  "id": "mediaplan",
+  "name": "Медиаплан",
+  "description": "Распределение бюджета по каналам с прогнозом показов, кликов и лидов.",
+  "variables": [
+    { "key": "client", "label": "Клиент", "from": "lead.company" },
+    { "key": "period", "label": "Период", "from": "" },
+    { "key": "date", "label": "Дата", "from": "today" },
+    { "key": "manager", "label": "Менеджер", "from": "user.name" }
+  ],
+  "spec": {
+    "meta": { "title": "Медиаплан: {{client}}" },
+    "slides": [
+      { "type": "cover", "title": "Медиаплан для {{client}}", "subtitle": "{{period}}", "client": "{{client}}", "date": "{{date}}", "author": "Soroka Marketing" },
+      {
+        "type": "kpi", "title": "Прогноз на период",
+        "kpis": [
+          { "value": "[заполнить]", "label": "лидов", "delta": "" },
+          { "value": "[заполнить]", "label": "стоимость лида", "delta": "" },
+          { "value": "[заполнить]", "label": "бюджет", "delta": "" }
+        ],
+        "dataStatus": "forecast", "source": "Расчёт агентства", "period": "{{period}}"
+      },
+      {
+        "type": "mediaplan", "title": "Медиаплан по каналам",
+        "rows": [{ "channel": "[заполнить: канал]", "budget": "[заполнить]" }],
+        "assumptions": "[заполнить: нормативы CTR и конверсии, источник]",
+        "dataStatus": "forecast", "source": "Расчёт агентства", "period": "{{period}}"
+      },
+      {
+        "type": "closing", "title": "Следующий шаг",
+        "steps": ["Согласовать бюджет и каналы", "Запуск кампаний", "Первый отчёт через две недели"],
+        "contacts": { "name": "{{manager}}", "role": "Soroka Marketing" }
+      }
+    ]
+  }
+}

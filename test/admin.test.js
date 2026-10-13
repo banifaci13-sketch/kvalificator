@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb } from '../src/storage/db.js';
+import { openDb, SCHEMA_VERSION } from '../src/storage/db.js';
 import { createQualifier } from '../src/core/qualifier.js';
 import { buildServer } from '../src/http/server.js';
 import { loadConfig } from '../src/config.js';
@@ -215,7 +215,7 @@ test('миграция старой базы без потери данных', 
   const lead = db.getLead(1);
   assert.equal(lead.rating, 4);
   assert.equal(lead.is_test, 0);
-  assert.equal(db.raw.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(db.raw.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   db.close();
 });
 
@@ -288,7 +288,8 @@ test('после обновления первый сотрудник старо
   const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
   const fresh = openDb(path);
   // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
-  fresh.raw.exec(`ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
+  fresh.raw.exec(`DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
+    ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
     INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
   fresh.close();
 

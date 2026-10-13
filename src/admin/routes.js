@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { LEAD_STATUSES, leadsToCsv } from './reports.js';
 import { createYandexOAuth } from './yandex.js';
 import { AuthError, ROLES } from './auth.js';
+import { docsRoutes } from './docs-routes.js';
 
 const SESSION_COOKIE = 'kval_admin';
 const STATE_COOKIE = 'kval_oauth_state';
@@ -38,7 +39,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   const yandex =
     config.admin.yandexClientId && config.admin.yandexClientSecret && config.publicUrl
@@ -59,13 +60,16 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
 
   app.addHook('onSend', async (req, reply, payload) => {
     if (req.url.startsWith('/admin')) {
-      reply.header('x-frame-options', 'DENY');
       reply.header('x-content-type-options', 'nosniff');
       reply.header('referrer-policy', 'same-origin');
-      reply.header(
-        'content-security-policy',
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.yandex.ru",
-      );
+      // Превью и выгрузки документов задают свою политику (встроенные стили документа)
+      if (!reply.getHeader('content-security-policy')) {
+        reply.header('x-frame-options', 'DENY');
+        reply.header(
+          'content-security-policy',
+          "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.yandex.ru",
+        );
+      }
     }
     return payload;
   });
@@ -288,6 +292,8 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
         async (req) => ({ user: auth.updateUser(req.params.id, req.body) }),
       );
     });
+
+    if (library) await api.register(docsRoutes, { library, brand, db, scenarioSource });
 
     api.get('/admin/api/stats', { schema: { querystring: leadQuery } }, async (req) => reports.stats(toFilter(req.query)));
 
