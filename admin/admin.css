@@ -237,7 +237,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--soroka-accent)
 .filters .select { width: auto; min-width: 140px; }
 .filters .date { width: 150px; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
-.rating-filter { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-s); background: var(--surface-3); }
+.rating-filter { display: inline-flex; justify-self: start; align-self: start; width: max-content; max-width: 100%; gap: 2px; padding: 3px; border-radius: var(--radius-s); background: var(--surface-3); }
 .rating-filter button {
   min-width: 36px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; font-size: 14px;
 }
