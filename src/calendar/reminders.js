@@ -88,7 +88,7 @@ export function startReminders({ calendar, crm = null, send, log, publicUrl = nu
       }
       if (tasks.length) {
         lines.push('', '<b>Задачи со сроком</b>');
-        for (const x of tasks.slice(0, 15)) lines.push(`${x.due < day ? '🔴 просрочено' : '• сегодня'}: ${esc(x.title)}${x.client_name ? ` (${esc(x.client_name)})` : ''}`);
+        for (const x of tasks.slice(0, 15)) lines.push(`${x.due < day ? '🔴 просрочено' : x.due_time ? `• сегодня до ${x.due_time}` : '• сегодня'}: ${esc(x.title)}${x.client_name ? ` (${esc(x.client_name)})` : ''}`);
         if (tasks.length > 15) lines.push(`…и ещё ${tasks.length - 15}`);
       }
       try {

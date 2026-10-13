@@ -291,6 +291,9 @@ const MIGRATIONS = [
        AND col.position = CASE tasks.status WHEN 'doing' THEN 1 WHEN 'review' THEN 2 WHEN 'done' THEN 3 ELSE 0 END);
    UPDATE tasks SET status = 'todo' WHERE status != 'done';
    UPDATE tasks SET priority = 3 WHERE priority = 1;`,
+
+  // Время дедлайна задачи (по Москве, ЧЧ:ММ); без времени срок — до конца дня
+  `ALTER TABLE tasks ADD COLUMN due_time TEXT;`,
 ];
 
 /** Номер текущей версии схемы базы. */

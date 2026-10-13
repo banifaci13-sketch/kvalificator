@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, SCHEMA_VERSION } from '../src/storage/db.js';
+import { openDb } from '../src/storage/db.js';
 import { createQualifier } from '../src/core/qualifier.js';
 import { buildServer } from '../src/http/server.js';
 import { loadConfig } from '../src/config.js';
@@ -181,6 +181,25 @@ test('проекты: клиенты и «Общие задачи», доски-
   assert.equal((await anna({ url: '/admin/api/tasks?client=abc' })).statusCode, 400);
   assert.equal((await anna({ url: '/admin/api/projects/abc/boards' })).statusCode, 400);
 
+  // срок со временем: просрочено, как только время по Москве прошло
+  const late = (await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Созвон-отчёт', clientId: a.id, due: '2020-01-01', dueTime: '13:00' } })).json().task;
+  assert.equal(late.due_time, '13:00');
+  assert.equal((await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'x', dueTime: '13:00' } })).statusCode, 400, 'время без даты');
+  assert.equal((await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'x', due: '2030-01-01', dueTime: '25:00' } })).statusCode, 400);
+  const later = (await anna({ method: 'PATCH', url: `/admin/api/tasks/${late.id}`, payload: { due: '2099-12-31' } })).json().task;
+  assert.equal(later.due_time, '13:00', 'новая дата сохраняет время');
+  assert.equal(later.comments.at(-1).text, 'Срок: 31 декабря, 13:00');
+  const cleared = (await anna({ method: 'PATCH', url: `/admin/api/tasks/${late.id}`, payload: { due: null } })).json().task;
+  assert.deepEqual([cleared.due, cleared.due_time], [null, null], 'снятый срок снимает и время');
+  const msk = new Date(Date.now() + 3 * 3600e3);
+  const today = msk.toISOString().slice(0, 10);
+  const past = new Date(msk.getTime() - 3600e3).toISOString().slice(11, 16);
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Час назад', clientId: a.id, due: today, dueTime: past } });
+  await anna({ method: 'POST', url: '/admin/api/tasks', payload: { title: 'Сегодня без времени', clientId: a.id, due: today } });
+  const alpha = (await anna({ url: '/admin/api/projects' })).json().projects.find((p) => p.name === 'Альфа');
+  // «Аудит» (2020) + «Час назад»; задача на сегодня без времени ещё не просрочена
+  if (msk.getUTCHours() >= 1) assert.equal(alpha.overdue, 2);
+
   // единственную доску проекта не удалить
   const [only] = (await anna({ url: '/admin/api/projects/none/boards' })).json().boards;
   assert.match((await anna({ method: 'DELETE', url: `/admin/api/boards/${only.id}` })).json().error, /единственная/);
@@ -198,7 +217,7 @@ test('обновление базы: старые статусы задач ст
       updated_at TEXT NOT NULL DEFAULT (datetime('now')), done_at TEXT);
     INSERT INTO clients (name) VALUES ('Альфа');
     INSERT INTO tasks (client_id, title, status, priority) VALUES (1, 'А', 'doing', 1), (1, 'Б', 'review', 0), (NULL, 'В', 'todo', 0), (1, 'Г', 'done', 0);
-    PRAGMA user_version = ${SCHEMA_VERSION - 1};`);
+    PRAGMA user_version = 10;`);
   fresh.close();
 
   const db = openDb(path);

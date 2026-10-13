@@ -28,6 +28,9 @@ const LIMITS = { boards: 20, columns: 12 };
 // Выполненные задачи на доске — только недавние, чтобы колонки не разрастались
 const DONE_DAYS = 14;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Просрочено: срок с временем прошёл по Москве; без времени — срок до конца дня
+const OVERDUE = "(due || ' ' || COALESCE(due_time, '23:59')) < strftime('%Y-%m-%d %H:%M', 'now', '+3 hours')";
 
 const text = (v, max) => {
   const s = String(v ?? '').trim();
@@ -47,7 +50,7 @@ export function createCrm({ db }) {
     clients: db.prepare(
       `SELECT c.*, u.name AS manager_name,
               (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done') AS open_tasks,
-              (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done' AND t.due < date('now', '+3 hours')) AS overdue
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_id = c.id AND t.status != 'done' AND ${OVERDUE.replace(/due/g, 't.due')}) AS overdue
        FROM clients c LEFT JOIN admin_users u ON u.id = c.manager_id
        WHERE c.archived = ? ORDER BY c.name COLLATE NOCASE`,
     ),
@@ -81,9 +84,9 @@ export function createCrm({ db }) {
     ),
     // задачи
     task: db.prepare(`SELECT ${TASK_COLS} ${TASK_JOINS} WHERE t.id = ?`),
-    insertTask: db.prepare('INSERT INTO tasks (client_id, column_id, title, description, status, priority, assignee_id, due, created_by, created_by_id, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    insertTask: db.prepare('INSERT INTO tasks (client_id, column_id, title, description, status, priority, assignee_id, due, due_time, created_by, created_by_id, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     updateTask: db.prepare(
-      "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, done_at = ?, updated_at = datetime('now') WHERE id = ?",
+      "UPDATE tasks SET client_id = ?, column_id = ?, title = ?, description = ?, status = ?, priority = ?, assignee_id = ?, due = ?, due_time = ?, done_at = ?, updated_at = datetime('now') WHERE id = ?",
     ),
     deleteTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
     comments: db.prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY id'),
@@ -196,7 +199,7 @@ export function createCrm({ db }) {
     const stats = db
       .prepare(
         `SELECT client_id, COUNT(*) AS open,
-                SUM(CASE WHEN due < date('now', '+3 hours') THEN 1 ELSE 0 END) AS overdue,
+                SUM(CASE WHEN ${OVERDUE} THEN 1 ELSE 0 END) AS overdue,
                 SUM(CASE WHEN assignee_id = ? THEN 1 ELSE 0 END) AS mine
          FROM tasks WHERE status != 'done' GROUP BY client_id`,
       )
@@ -313,6 +316,8 @@ export function createCrm({ db }) {
     const title = text(v.title, 300);
     if (!title) throw new CrmError('Напишите, что нужно сделать');
     if (v.due != null && !DATE_RE.test(v.due)) throw new CrmError('Срок — дата в формате ГГГГ-ММ-ДД');
+    if (v.dueTime != null && !TIME_RE.test(v.dueTime)) throw new CrmError('Время срока — ЧЧ:ММ');
+    if (v.dueTime != null && v.due == null) throw new CrmError('Время срока задаётся вместе с датой');
     if (v.priority != null && !(v.priority in PRIORITIES)) throw new CrmError('Неизвестная важность');
     return {
       title,
@@ -320,6 +325,7 @@ export function createCrm({ db }) {
       priority: Number(v.priority ?? 0),
       assigneeId: checkUser(v.assigneeId),
       due: v.due ?? null,
+      dueTime: v.due == null ? null : v.dueTime ?? null,
     };
   }
 
@@ -329,7 +335,7 @@ export function createCrm({ db }) {
       const col = placeTask(v);
       const done = Boolean(col.is_done || v.done);
       const { lastInsertRowid } = q.insertTask.run(
-        col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, user.name, user.id, done ? now() : null,
+        col.client_id, col.id, t.title, t.description, done ? 'done' : 'todo', t.priority, t.assigneeId, t.due, t.dueTime, user.name, user.id, done ? now() : null,
       );
       return getTask(lastInsertRowid);
     });
@@ -343,6 +349,8 @@ export function createCrm({ db }) {
       priority: patch.priority !== undefined ? patch.priority : cur.priority,
       assigneeId: patch.assigneeId !== undefined ? patch.assigneeId : cur.assignee_id,
       due: patch.due !== undefined ? patch.due : cur.due,
+      // снятый срок снимает и время; новая дата без времени сохраняет прежнее время
+      dueTime: patch.dueTime !== undefined ? patch.dueTime : patch.due === null ? null : cur.due_time,
     });
     tx(() => {
       // перенос: в колонку, на доску или в другой проект
@@ -359,7 +367,7 @@ export function createCrm({ db }) {
       const wasDone = cur.status === 'done';
       const doneAt = done ? (wasDone ? cur.done_at : now()) : null;
 
-      q.updateTask.run(col.client_id, col.id, next.title, next.description, done ? 'done' : 'todo', next.priority, next.assigneeId, next.due, doneAt, cur.id);
+      q.updateTask.run(col.client_id, col.id, next.title, next.description, done ? 'done' : 'todo', next.priority, next.assigneeId, next.due, next.dueTime, doneAt, cur.id);
       // лента изменений: перенос, выполнение, исполнитель, срок
       if (moved) {
         const where = col.board_id !== from.board_id || col.client_id !== from.client_id ? `${col.board_name}: ${col.name}` : col.name;
@@ -370,7 +378,9 @@ export function createCrm({ db }) {
         const who = next.assigneeId ? q.user.get(next.assigneeId).name : null;
         q.addComment.run(cur.id, 'event', who ? `Исполнитель: ${who}` : 'Исполнитель снят', user.name);
       }
-      if (next.due !== cur.due) q.addComment.run(cur.id, 'event', next.due ? `Срок: ${fmtDate(next.due)}` : 'Срок снят', user.name);
+      if (next.due !== cur.due || next.dueTime !== cur.due_time) {
+        q.addComment.run(cur.id, 'event', next.due ? `Срок: ${fmtDate(next.due)}${next.dueTime ? `, ${next.dueTime}` : ''}` : 'Срок снят', user.name);
+      }
       if (next.priority !== cur.priority) q.addComment.run(cur.id, 'event', next.priority ? `Важность: ${PRIORITIES[next.priority]}` : 'Важность снята', user.name);
     });
     return getTask(id);
@@ -404,13 +414,13 @@ export function createCrm({ db }) {
     }
     return db
       .prepare(
-        `SELECT t.id, t.title, t.status, t.priority, t.due, t.client_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
+        `SELECT t.id, t.title, t.status, t.priority, t.due, t.due_time, t.client_id, t.column_id, t.assignee_id, t.updated_at, t.done_at,
                 c.name AS client_name, u.name AS assignee_name,
                 col.name AS column_name, col.color AS column_color, col.board_id AS board_id, b.name AS board_name,
                 (SELECT COUNT(*) FROM task_comments k WHERE k.task_id = t.id AND k.kind = 'comment') AS comments
          ${TASK_JOINS}
          WHERE ${where.join(' AND ')}
-         ORDER BY t.status = 'done', t.priority DESC, t.due IS NULL, t.due, t.id DESC LIMIT 500`,
+         ORDER BY t.status = 'done', t.priority DESC, t.due IS NULL, t.due, t.due_time IS NULL, t.due_time, t.id DESC LIMIT 500`,
       )
       .all(...params);
   }

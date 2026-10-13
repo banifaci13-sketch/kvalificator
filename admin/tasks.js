@@ -15,10 +15,21 @@ async function loadTeam() {
 const TZ = 'Europe/Moscow';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 const fmtDue = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+// Сейчас по Москве: ГГГГ-ММ-ДД ЧЧ:ММ — так же сравнивает сервер
+const nowMsk = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
 function dueState(t) {
   if (!t.due || t.status === 'done') return '';
   const d = today();
-  return t.due < d ? 'overdue' : t.due === d ? 'today' : '';
+  if (`${t.due} ${t.due_time ?? '23:59'}` < nowMsk()) return 'overdue';
+  return t.due === d ? 'today' : '';
+}
+/** Подпись срока, как в YouGile: «7 окт. к 13:00», «сегодня к 18:00», «просрочено, 7 окт.». */
+function dueText(t) {
+  const state = dueState(t);
+  const time = t.due_time ? ` к ${t.due_time}` : '';
+  if (state === 'overdue') return `просрочено, ${t.due === today() ? 'сегодня' : fmtDue(t.due)}${time}`;
+  if (state === 'today') return `сегодня${time}`;
+  return `${fmtDue(t.due)}${time}`;
 }
 const initials = (name) => String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
@@ -138,7 +149,21 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     h('option', { value: '' }, 'Не назначен'),
     people.map((u) => h('option', { value: u.id, selected: u.id === task.assignee_id }, u.id === ctx.me.id ? `${u.name} (я)` : u.name)),
   );
-  const due = h('input', { class: 'input', id: 't-due', type: 'date', value: task.due ?? '', onchange: (e) => patch({ due: e.target.value || null }) });
+  const due = h('input', {
+    class: 'input', id: 't-due', type: 'date', value: task.due ?? '',
+    onchange: async (e) => {
+      await patch({ due: e.target.value || null });
+      dueTime.value = task.due_time ?? '';
+    },
+  });
+  const dueTime = h('input', {
+    class: 'input', id: 't-due-time', type: 'time', value: task.due_time ?? '', 'aria-label': 'Время срока, по Москве',
+    onchange: async (e) => {
+      if (!task.id) return;
+      if (!due.value && e.target.value) due.value = today();
+      await patch({ due: due.value || null, dueTime: e.target.value || null });
+    },
+  });
   const importance = h(
     'select',
     { class: 'select', id: 't-priority', onchange: (e) => patch({ priority: Number(e.target.value) }) },
@@ -154,7 +179,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
     h('div', { class: 'field' }, h('label', { for: 't-project' }, 'Проект'), project),
     h('div', { class: 'field' }, h('label', { for: 't-column' }, 'Доска и колонка'), column),
     h('div', { class: 'field' }, h('label', { for: 't-assignee' }, 'Исполнитель'), assignee),
-    h('div', { class: 'field' }, h('label', { for: 't-due' }, 'Срок'), due),
+    h('div', { class: 'field' }, h('label', { for: 't-due' }, 'Срок и время (МСК)'), h('div', { class: 'due-pair' }, due, dueTime)),
     h('div', { class: 'field' }, h('label', { for: 't-priority' }, 'Важность'), importance),
     task.id ? h('div', { class: 'field task-flags' }, h('label', { class: 'check' }, done, 'Выполнена')) : null,
     h('div', { class: 'field full' }, h('label', { for: 't-desc' }, 'Описание'), description),
@@ -184,7 +209,7 @@ export async function openTask(id, { defaults = {}, onChange = () => {} } = {}) 
               method: 'POST',
               body: {
                 title: title.value, description: description.value || null, priority: Number(importance.value),
-                assigneeId: assignee.value ? Number(assignee.value) : null, due: due.value || null,
+                assigneeId: assignee.value ? Number(assignee.value) : null, due: due.value || (dueTime.value ? today() : null), dueTime: dueTime.value || null,
                 ...(column.value ? { columnId: Number(column.value) } : { clientId: project.value === 'none' ? null : Number(project.value) }),
               },
             });
@@ -344,20 +369,26 @@ function stickers(t, onChange) {
   const option = (label, active, onclick, extra = null) => h('button', { type: 'button', class: 'pop-item', 'aria-pressed': String(active), onclick }, extra, label);
 
   const state = dueState(t);
-  const dueLabel = t.due ? (state === 'overdue' ? `просрочено, ${fmtDue(t.due)}` : state === 'today' ? 'сегодня' : fmtDue(t.due)) : null;
-  const due = sticker(`s-due ${state}${t.due ? '' : ' empty'}`, t.due ? `Срок: ${fmtDue(t.due)}` : 'Добавить срок', [icon('due'), dueLabel], (close) => {
-    const input = h('input', { class: 'input', type: 'date', value: t.due ?? '', 'aria-label': 'Срок' });
-    input.addEventListener('change', () => input.value && save({ due: input.value }, close));
+  const due = sticker(`s-due ${state}${t.due ? '' : ' empty'}`, t.due ? `Срок: ${dueText(t)}` : 'Добавить срок', [icon('due'), t.due ? dueText(t) : null], (close) => {
+    const date = h('input', { class: 'input', type: 'date', value: t.due ?? '', 'aria-label': 'Дата' });
+    const time = h('input', { class: 'input', type: 'time', value: t.due_time ?? '', 'aria-label': 'Время, по Москве' });
+    const chip = (label, onclick) => h('button', { type: 'button', class: 'btn btn-s', onclick }, label);
     return [
       h('div', { class: 'pop-title' }, 'Срок'),
-      input,
+      h('div', { class: 'pop-due' }, date, time),
+      h('div', { class: 'pop-quick' }, [['Сегодня', 0], ['Завтра', 1], ['Через неделю', 7]].map(([l, n]) => chip(l, () => (date.value = addDays(n))))),
+      h('div', { class: 'pop-quick' }, ['10:00', '13:00', '18:00'].map((v) => chip(v, () => ((time.value = v), date.value || (date.value = today())))), chip('Без времени', () => (time.value = ''))),
       h(
         'div',
-        { class: 'pop-quick' },
-        [['Сегодня', 0], ['Завтра', 1], ['Через неделю', 7]].map(([l, n]) => h('button', { type: 'button', class: 'btn btn-s', onclick: () => save({ due: addDays(n) }, close) }, l)),
+        { class: 'pop-actions' },
+        h('button', {
+          type: 'button', class: 'btn btn-primary btn-s',
+          onclick: () => save({ due: date.value || (time.value ? today() : null), dueTime: time.value || null }, close),
+        }, 'Сохранить'),
+        t.due ? h('button', { type: 'button', class: 'linkish', onclick: () => save({ due: null }, close) }, 'Убрать срок') : null,
       ),
-      t.due ? option('Убрать срок', false, () => save({ due: null }, close)) : null,
-    ].filter(Boolean);
+      h('p', { class: 'pop-hint' }, 'Время — по Москве. Без времени срок — до конца дня.'),
+    ];
   });
 
   const level = Number(t.priority) || 0;
@@ -844,7 +875,7 @@ export async function renderMyTasks(params) {
                 h('button', { type: 'button', class: 'linkish task-link', onclick: () => openTask(t.id, { onChange: load }) }, t.title),
                 h('span', { class: `col-chip col-${t.column_color ?? 'gray'}` }, t.board_name, ' · ', t.column_name),
                 t.priority ? h('span', { class: `chip prio p${t.priority}` }, PRIORITY[t.priority]) : h('span'),
-                t.due ? h('span', { class: `chip due ${state}` }, state === 'overdue' ? `просрочено, ${fmtDue(t.due)}` : state === 'today' ? 'сегодня' : fmtDue(t.due)) : h('span'),
+                t.due ? h('span', { class: `chip due ${state}` }, dueText(t)) : h('span'),
               );
             }),
           ),
@@ -1077,7 +1108,7 @@ export async function renderClient(params) {
                     'li',
                     {},
                     h('button', { type: 'button', class: 'linkish task-link', onclick: () => openTask(t.id, { onChange: loadTasks }) }, t.title),
-                    h('span', { class: 'task-meta' }, t.assignee_name ?? 'не назначен', t.due ? h('span', { class: `due ${state}` }, fmtDue(t.due)) : null),
+                    h('span', { class: 'task-meta' }, t.assignee_name ?? 'не назначен', t.due ? h('span', { class: `due ${state}` }, dueText(t)) : null),
                   );
                 }),
               ),

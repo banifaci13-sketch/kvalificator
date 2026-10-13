@@ -35,6 +35,7 @@ const taskBody = {
     assigneeId: nullableId,
     clientId: nullableId,
     due: { type: ['string', 'null'], maxLength: 10 },
+    dueTime: { type: ['string', 'null'], maxLength: 5 },
   },
 };
 const projectParams = { type: 'object', properties: { key: { type: 'string', pattern: '^(\\d+|none)$' } } };
