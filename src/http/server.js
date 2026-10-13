@@ -43,7 +43,7 @@ const sessionParams = {
 };
 
 /** admin — зависимости админки ({ auth, reports, db, scenarioSource }); без них админка не подключается. */
-export async function buildServer({ config, qualifier, logger, admin }) {
+export async function buildServer({ config, qualifier, logger, admin, brand = null }) {
   const app = Fastify({
     ...(logger ? { loggerInstance: logger } : { logger: false }),
     trustProxy: config.trustProxy,
@@ -74,6 +74,18 @@ export async function buildServer({ config, qualifier, logger, admin }) {
   });
 
   app.get('/health', async () => ({ ok: true }));
+
+  // Утверждённый логотип для виджета и документов (файл проверен по sha256 при загрузке бренда)
+  app.get('/brand/logo/:variant', async (req, reply) => {
+    const asset = brand?.logo?.[req.params.variant];
+    if (!asset || !['onLight', 'onDark', 'mark'].includes(req.params.variant)) return reply.code(404).send({ error: 'Логотип не загружен' });
+    return reply
+      .header('content-type', asset.mime)
+      .header('cache-control', 'public, max-age=3600')
+      .header('access-control-allow-origin', '*')
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
+      .send(asset.data);
+  });
 
   const handoffLinks = (session) => ({
     telegram: config.telegram.botUsername

@@ -4,7 +4,9 @@
 export const PX_PER_INCH = 144;
 export const PT_PER_PX = 0.5;
 
-const HEADING_STYLES = new Set(['display', 'title', 'subtitle', 'kpi', 'wordmark']);
+const HEADING_STYLES = new Set(['display', 'title', 'subtitle', 'kpi', 'kpiSmall', 'wordmark']);
+// Крупные цифры — акцент, а не текст: в проверке иерархии их не сравниваем с заголовком
+export const FIGURE_STYLES = new Set(['kpi', 'kpiSmall', 'display', 'subtitle']);
 
 export function createLayout(brand) {
   const s = brand.slide;
@@ -19,7 +21,8 @@ export function createLayout(brand) {
     title: { size: t.title, weight: 800, lineHeight: 1.1, letterSpacing: -0.015 },
     subtitle: { size: t.subtitle, weight: 600, lineHeight: 1.2 },
     lead: { size: t.lead, weight: 400, lineHeight: 1.35 },
-    kpi: { size: t.kpi, weight: 800, lineHeight: 1, letterSpacing: -0.02 },
+    kpi: { size: t.kpi, weight: 800, lineHeight: 1.1, letterSpacing: -0.02 },
+    kpiSmall: { size: t.title, weight: 800, lineHeight: 1.1, letterSpacing: -0.015 },
     body: { size: t.body, weight: 400, lineHeight: 1.4 },
     bodyStrong: { size: t.body, weight: 700, lineHeight: 1.3 },
     small: { size: t.small, weight: 400, lineHeight: 1.4 },

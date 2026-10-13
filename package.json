@@ -17,7 +17,8 @@
     "admin": "node --disable-warning=ExperimentalWarning scripts/admin.js",
     "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
     "brand:sync": "node scripts/brand-sync.js",
-    "brand:check": "node scripts/brand-sync.js --check"
+    "brand:check": "node scripts/brand-sync.js --check",
+    "deck": "node --disable-warning=ExperimentalWarning scripts/deck.js"
   },
   "license": "UNLICENSED",
   "dependencies": {

@@ -10,6 +10,7 @@ import { buildServer } from './http/server.js';
 import { createTelegramBot, setupTelegramCommands } from './channels/telegram.js';
 import { createAuth } from './admin/auth.js';
 import { createReports } from './admin/reports.js';
+import { loadBrand } from './brand/index.js';
 
 const RETRY_INTERVAL_MS = 5 * 60_000;
 const TELEGRAM_UPDATES = ['message', 'callback_query'];
@@ -28,9 +29,12 @@ const auth = createAuth(db.raw);
 bootstrapAdmin();
 
 const telegramBot = config.telegram.botEnabled ? await initTelegramBot() : null;
+const brand = loadBrand();
+for (const p of brand.logo.problems) log.warn(`Логотип: ${p}`);
 const app = await buildServer({
   config,
   qualifier,
+  brand,
   logger: log,
   admin: { auth, reports: createReports(db.raw), db, scenarioSource },
 });

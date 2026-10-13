@@ -58,8 +58,8 @@ export function validateBrand(config, dir = BRAND_DIR) {
  * в конфиге — подменённый или пережатый файл не попадёт в документы.
  */
 function resolveLogo(logo, dir) {
-  const result = { status: logo?.status ?? 'missing', onLight: null, onDark: null, problems: [] };
-  for (const variant of ['onLight', 'onDark']) {
+  const result = { status: logo?.status ?? 'missing', onLight: null, onDark: null, mark: null, problems: [] };
+  for (const variant of ['onLight', 'onDark', 'mark']) {
     const file = logo?.[variant];
     if (!file) continue;
     const path = resolve(dir, 'assets/logo', file);

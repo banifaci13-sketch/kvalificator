@@ -41,8 +41,8 @@ function dataFooter(slide, ctx) {
   if (parts.length) out.push(text('source', { x: L.M, y: L.sourceY, w: L.CW - 260, h: 32 }, 'caption', parts.join('. '), { color: 'steel' }));
   if (slide.dataStatus) {
     const label = brand.documents.dataStatusLabels[slide.dataStatus] ?? slide.dataStatus;
-    out.push({ kind: 'rect', name: 'status-chip', x: L.W - L.M - 220, y: L.sourceY - 4, w: 220, h: 40, fill: 'mist', radius: 20 });
-    out.push(text('status', { x: L.W - L.M - 220, y: L.sourceY + 2, w: 220, h: 28 }, 'smallStrong', label, { align: 'center', color: 'ink' }));
+    out.push({ kind: 'rect', name: 'status-chip', x: L.W - L.M - 220, y: L.sourceY - 8, w: 220, h: 48, fill: 'mist', radius: 24 });
+    out.push(text('status', { x: L.W - L.M - 220, y: L.sourceY - 2, w: 220, h: 36 }, 'smallStrong', label, { align: 'center', color: 'ink' }));
   }
   return out;
 }
@@ -76,12 +76,12 @@ const BUILDERS = {
     const cols = L.cols(kpis.length);
     const y = 352;
     const out = [contentTitle(slide, L)];
-    if (slide.lead) out.push(text('lead', { x: L.M, y: 248, w: L.CW, h: 56 }, 'lead', slide.lead, { color: 'steel' }));
+    if (slide.lead) out.push(text('lead', { x: L.M, y: 256, w: L.CW, h: 56 }, 'lead', slide.lead, { color: 'steel' }));
     kpis.forEach((k, i) => {
       const { x, w } = cols[i];
       out.push({ kind: 'rect', name: `kpi-${i}-card`, x, y, w, h: 480, fill: 'mist', radius: 16 });
       out.push({ kind: 'rect', name: `kpi-${i}-mark`, x: x + 40, y: y + 48, w: 48, h: 8, fill: 'accent', radius: 4 });
-      out.push(text(`kpi-${i}-value`, { x: x + 40, y: y + 88, w: w - 80, h: 112 }, 'kpi', k.value));
+      out.push(text(`kpi-${i}-value`, { x: x + 40, y: y + 80, w: w - 80, h: 128 }, 'kpi', k.value));
       out.push(text(`kpi-${i}-label`, { x: x + 40, y: y + 216, w: w - 80, h: 120 }, 'body', k.label));
       if (k.delta) out.push(text(`kpi-${i}-delta`, { x: x + 40, y: y + 352, w: w - 80, h: 88 }, 'small', k.delta, { color: 'steel' }));
     });
@@ -128,18 +128,18 @@ const BUILDERS = {
     const results = slide.results.slice(0, 3);
     const out = [
       contentTitle(slide, L),
-      text('client', { x: L.M, y: 240, w: L.CW, h: 40 }, 'small', [slide.client, slide.industry].filter(Boolean).join(', '), { color: 'steel' }),
-      text('task-h', { x: left.x, y: 320, w: left.w, h: 40 }, 'smallStrong', 'Задача', { color: 'accentText' }),
-      text('task', { x: left.x, y: 368, w: left.w, h: 520 }, 'body', slide.task),
-      text('solution-h', { x: mid.x, y: 320, w: mid.w, h: 40 }, 'smallStrong', 'Что сделали', { color: 'accentText' }),
-      text('solution', { x: mid.x, y: 368, w: mid.w, h: 520 }, 'body', null, { bullets: [].concat(slide.solution).slice(0, 5) }),
-      { kind: 'rect', name: 'results-card', x: right.x, y: 320, w: right.w, h: 584, fill: 'mist', radius: 16 },
-      text('results-h', { x: right.x + 40, y: 352, w: right.w - 80, h: 40 }, 'smallStrong', 'Результат', { color: 'accentText' }),
+      text('client', { x: L.M, y: 256, w: L.CW, h: 40 }, 'small', [slide.client, slide.industry].filter(Boolean).join(', '), { color: 'steel' }),
+      text('task-h', { x: left.x, y: 328, w: left.w, h: 40 }, 'smallStrong', 'Задача', { color: 'accentText' }),
+      text('task', { x: left.x, y: 376, w: left.w, h: 512 }, 'body', slide.task),
+      text('solution-h', { x: mid.x, y: 328, w: mid.w, h: 40 }, 'smallStrong', 'Что сделали', { color: 'accentText' }),
+      text('solution', { x: mid.x, y: 376, w: mid.w, h: 512 }, 'body', null, { bullets: [].concat(slide.solution).slice(0, 5) }),
+      { kind: 'rect', name: 'results-card', x: right.x, y: 328, w: right.w, h: 576, fill: 'mist', radius: 16 },
+      text('results-h', { x: right.x + 40, y: 360, w: right.w - 80, h: 40 }, 'smallStrong', 'Результат', { color: 'accentText' }),
     ];
     results.forEach((r, i) => {
-      const y = 408 + i * 160;
-      out.push(text(`result-${i}-value`, { x: right.x + 40, y, w: right.w - 80, h: 80 }, 'title', r.value));
-      out.push(text(`result-${i}-label`, { x: right.x + 40, y: y + 80, w: right.w - 80, h: 64 }, 'small', r.label, { color: 'steel' }));
+      const y = 416 + i * 160;
+      out.push(text(`result-${i}-value`, { x: right.x + 40, y, w: right.w - 80, h: 88 }, 'kpiSmall', r.value));
+      out.push(text(`result-${i}-label`, { x: right.x + 40, y: y + 88, w: right.w - 80, h: 56 }, 'small', r.label, { color: 'steel' }));
     });
     return [...out, ...dataFooter({ ...slide, dataStatus: slide.dataStatus ?? 'fact' }, ctx)];
   },
@@ -150,11 +150,11 @@ const BUILDERS = {
     const cols = L.cols(pillars.length);
     const top = slide.lead ? 360 : 304;
     const out = [contentTitle(slide, L)];
-    if (slide.lead) out.push(text('lead', { x: L.M, y: 240, w: L.CW, h: 96 }, 'lead', slide.lead, { color: 'steel' }));
+    if (slide.lead) out.push(text('lead', { x: L.M, y: 256, w: L.CW, h: 80 }, 'lead', slide.lead, { color: 'steel' }));
     pillars.forEach((p, i) => {
       const { x, w } = cols[i];
       out.push({ kind: 'rect', name: `pillar-${i}-card`, x, y: top, w, h: 904 - top, fill: 'mist', radius: 16 });
-      out.push(text(`pillar-${i}-n`, { x: x + 32, y: top + 32, w: 120, h: 48 }, 'subtitle', String(i + 1).padStart(2, '0'), { color: 'accentText' }));
+      out.push(text(`pillar-${i}-n`, { x: x + 32, y: top + 32, w: 120, h: 56 }, 'subtitle', String(i + 1).padStart(2, '0'), { color: 'accentText' }));
       out.push(text(`pillar-${i}-title`, { x: x + 32, y: top + 96, w: w - 64, h: 96 }, 'bodyStrong', p.title));
       out.push(text(`pillar-${i}-text`, { x: x + 32, y: top + 200, w: w - 64, h: 904 - top - 200 - (p.channels?.length ? 104 : 32) }, 'small', p.text, { color: 'steel' }));
       if (p.channels?.length) {
@@ -212,23 +212,23 @@ const BUILDERS = {
     const sideW = L.W - L.M - sideX;
     return [
       contentTitle(slide, L),
-      slide.lead ? text('lead', { x: L.M, y: 232, w: L.CW, h: 48 }, 'body', slide.lead, { color: 'steel' }) : null,
+      slide.lead ? text('lead', { x: L.M, y: 256, w: L.CW, h: 48 }, 'body', slide.lead, { color: 'steel' }) : null,
       {
         kind: 'table',
         name: 'scope',
         x: L.M,
-        y: 304,
+        y: 320,
         w: tableW,
         colW: [760, 320],
         header: ['Работы', `Стоимость${slide.priceUnit ? `, ${slide.priceUnit}` : ''}`],
         align: ['left', 'right'],
         rows: items.map((i) => [i.description ? `${i.name}\n${i.description}` : i.name, typeof i.price === 'number' ? fmtMoney(i.price, cur) : i.price]),
         total: total != null ? ['Итого', fmtMoney(total, cur)] : null,
-        rowH: 72,
+        rowH: items.some((i) => i.description) ? 88 : 64,
       },
-      { kind: 'rect', name: 'terms-card', x: sideX, y: 304, w: sideW, h: 600, fill: 'mist', radius: 16 },
-      text('terms-h', { x: sideX + 40, y: 344, w: sideW - 80, h: 40 }, 'smallStrong', 'Условия', { color: 'accentText' }),
-      text('terms', { x: sideX + 40, y: 400, w: sideW - 80, h: 400 }, 'small', null, { bullets: (slide.terms ?? []).slice(0, 6) }),
+      { kind: 'rect', name: 'terms-card', x: sideX, y: 320, w: sideW, h: 584, fill: 'mist', radius: 16 },
+      text('terms-h', { x: sideX + 40, y: 352, w: sideW - 80, h: 40 }, 'smallStrong', 'Условия', { color: 'accentText' }),
+      text('terms', { x: sideX + 40, y: 408, w: sideW - 80, h: 392 }, 'small', null, { bullets: (slide.terms ?? []).slice(0, 6) }),
       slide.validUntil ? text('valid', { x: sideX + 40, y: 824, w: sideW - 80, h: 48 }, 'caption', `Предложение действует до ${slide.validUntil}`, { color: 'steel' }) : null,
       ...dataFooter(slide, ctx),
     ].filter(Boolean);

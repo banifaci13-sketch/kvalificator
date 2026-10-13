@@ -455,6 +455,19 @@
     if (t) { e.preventDefault(); open(); }
   });
 
+  // Оригинальный знак бренда, если он загружен на сервер; иначе остаётся иконка чата
+  (function loadMark() {
+    var img = new Image();
+    img.alt = '';
+    img.onload = function () {
+      var avatar = $('.avatar');
+      avatar.textContent = '';
+      avatar.classList.add('has-logo');
+      avatar.appendChild(img);
+    };
+    img.src = API + '/brand/logo/mark';
+  })();
+
   function mount() {
     document.body.appendChild(host);
     if (location.hash === '#kvalificator') open();
@@ -486,6 +499,8 @@
       '.head{display:flex;align-items:center;gap:12px;padding:16px;background:var(--kv-color);color:#fff}',
       '.avatar{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--kv-accent);color:var(--kv-on-accent)}',
       '.avatar svg{width:22px;height:22px}',
+      '.avatar.has-logo{background:#fff;overflow:hidden}',
+      '.avatar img{width:30px;height:30px;object-fit:contain}',
       '.head-text{flex:1;min-width:0}',
       'h2{margin:0;font-size:16px;font-weight:700}',
       '.sub{margin:2px 0 0;font-size:13px;opacity:.85}',
