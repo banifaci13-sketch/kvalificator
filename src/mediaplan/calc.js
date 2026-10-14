@@ -41,6 +41,8 @@ export function emptyPlan(kind = 'leads') {
 export function emptyRow(b = null) {
   return {
     channel: b?.channel ?? '',
+    // тип размещения или кампания внутри площадки: «Поиск», «РСЯ», «Кампания „Бренд“»
+    campaign: '',
     targeting: '',
     model: b?.model ?? 'cpc',
     budget: null,
@@ -133,6 +135,63 @@ export function calcScenario(scenario, plan) {
   // ДРР — доля рекламных расходов в выручке
   period.drr = div(total, period.revenue);
   return { rows, month, period };
+}
+
+// ---------- площадки и кампании ----------
+// Строки одной площадки (подряд) — группа: «Яндекс Директ» → «Поиск», «РСЯ», отдельные кампании.
+// В таблице у группы общая ячейка площадки и строка «Итого по площадке».
+
+const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/ё/g, 'е');
+/** Одна и та же площадка: без учёта регистра и пробелов по краям; пустая — ни с чем не совпадает. */
+export const sameChannel = (a, b) => Boolean(norm(a)) && norm(a) === norm(b);
+
+/** Группы подряд идущих строк одной площадки: [{ channel, from, to }] (to — включительно). */
+export function channelGroups(rows) {
+  const out = [];
+  for (let i = 0; i < rows.length; ) {
+    let j = i;
+    while (j + 1 < rows.length && sameChannel(rows[j + 1].channel, rows[i].channel)) j++;
+    out.push({ channel: String(rows[i].channel ?? '').trim(), from: i, to: j });
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Есть ли разбивка: хотя бы у одной площадки больше одной строки. */
+export const hasBreakdown = (rows) => channelGroups(rows).some((g) => g.channel && g.to > g.from);
+
+/** Итог по каждой площадке за месяц (строки одной площадки складываются, даже если стоят не подряд). */
+export function byChannel(scenario, plan) {
+  const map = new Map();
+  for (const r of scenario.rows) {
+    const key = norm(r.channel);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, { channel: String(r.channel).trim(), rows: [] });
+    map.get(key).rows.push(r);
+  }
+  return [...map.values()].map((g) => ({ channel: g.channel, count: g.rows.length, month: calcScenario({ rows: g.rows }, plan).month }));
+}
+
+/** Колонка «Тип размещения, кампания, таргетинг» в выгрузках: кампания первой строкой, ниже сегменты. */
+export const rowDetail = (r) => [String(r.campaign ?? '').trim(), String(r.targeting ?? '').trim()].filter(Boolean).join('\n');
+
+/** Подпись строки: «Яндекс Директ — РСЯ». */
+export const rowLabel = (r) => [String(r.channel ?? '').trim(), String(r.campaign ?? '').trim()].filter(Boolean).join(' — ');
+
+/** Подсказки для поля «Тип или кампания» по площадке. */
+const CAMPAIGN_HINTS = [
+  [/директ|yandex|яндекс(?!\s*(маркет|бизнес))/i, ['Поиск', 'РСЯ', 'Единая перфоманс-кампания', 'Мастер кампаний', 'Товарная кампания', 'Ретаргетинг', 'Брендовые запросы', 'Конкуренты']],
+  [/vk|вк|вконтакт/i, ['Лид-формы', 'Трафик на сайт', 'Сообщения в сообщество', 'Подписчики', 'Ретаргетинг', 'Каталог товаров']],
+  [/telegram|телеграм/i, ['Каналы по тематикам', 'Конкретные каналы', 'Боты', 'Ретаргетинг', 'Посевы']],
+  [/mytarget|майтаргет/i, ['Одноклассники', 'Мобильные приложения', 'Ретаргетинг']],
+  [/sber|сбер/i, ['Охват', 'Трафик', 'Ретаргетинг']],
+  [/ozon|озон|wildberries|вайлдберр|wb|маркет/i, ['Продвижение в поиске', 'Продвижение в каталоге', 'Трафареты', 'Баннеры', 'Брендовая полка', 'Внешний трафик']],
+  [/авито/i, ['Продвижение объявлений', 'Медийная реклама']],
+  [/google|гугл/i, ['Поиск', 'КМС', 'Performance Max', 'YouTube']],
+  [/2\s*гис|2gis/i, ['Приоритетное размещение', 'Брендирование карточки']],
+];
+export function campaignHints(channel) {
+  return CAMPAIGN_HINTS.find(([re]) => re.test(String(channel ?? '')))?.[1] ?? ['Поиск', 'Ретаргетинг', 'Брендовые запросы', 'Охватная кампания'];
 }
 
 export function calcPlan(plan) {

@@ -305,11 +305,18 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       const rows = (cmd.channels ?? []).map((c) => {
         const b = c.name ? benchmarkFor(c.name, benchmarks) : null;
         const row = emptyRow(b);
-        row.channel = b?.channel ?? c.name;
+        // «Яндекс Директ — РСЯ» → площадка «Яндекс Директ», тип размещения «РСЯ»: строки одной площадки идут группой
+        const [channel, campaign] = String(c.name ?? '').split(' — ');
+        row.channel = campaign ? channel : b?.channel ?? c.name;
+        if (campaign) row.campaign = campaign;
         if (c.budget != null) row.budget = cmd.budgetTotal ? Math.round(c.budget / months) : c.budget;
-        if (c.name) notes.push(b ? `«${row.channel}» — ставки и конверсия из нормативов` : `«${row.channel}» — в нормативах нет, ставки впишите сами`);
+        const label = [row.channel, row.campaign].filter(Boolean).join(' — ');
+        if (c.name) notes.push(b ? `«${label}» — ставки и конверсия из нормативов` : `«${label}» — в нормативах нет, ставки впишите сами`);
         return row;
       });
+      // кампании одной площадки — рядом, в порядке первого упоминания площадки
+      const order = [...new Set(rows.map((r) => r.channel))];
+      rows.sort((a, b) => order.indexOf(a.channel) - order.indexOf(b.channel));
       if (rows.length) spec.scenarios = [{ ...spec.scenarios[0], rows }];
       // клиента нет в списке — название как написали, но с заглавной буквы
       const typed = cmd.clientName ? cmd.clientName.charAt(0).toUpperCase() + cmd.clientName.slice(1) : '';
@@ -319,7 +326,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       const money = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
       const lines = [`Создал медиаплан «${plan.title}»${cmd.kind === 'ecom' ? ' для интернет-магазина (воронка корзина → продажа, бюджет с НДС)' : ''}.`];
       if (rows.length) {
-        lines.push(...rows.map((r) => `• ${r.channel || 'Канал'}${r.budget != null ? ` — ${money(r.budget)} в месяц` : ''}`));
+        lines.push(...rows.map((r) => `• ${[r.channel || 'Канал', r.campaign].filter(Boolean).join(' — ')}${r.budget != null ? ` — ${money(r.budget)} в месяц` : ''}`));
         if (cmd.budgetTotal) lines.push(`Бюджет на весь период разделил на ${n(months, 'месяц', 'месяца', 'месяцев')}.`);
         else if (rows.some((r) => r.budget != null)) lines.push('Бюджет считаю в месяц, без НДС — поправьте в плане, если иначе.');
         if (cmd.budgetSplit) lines.push('Общий бюджет разделил поровну между площадками.');

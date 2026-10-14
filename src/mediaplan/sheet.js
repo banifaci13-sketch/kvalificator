@@ -2,7 +2,7 @@
 // голубая шапка, сегменты таргетинга цветом, строка «Итого», блок «За период». Страница
 // самодостаточная: шрифты и логотип встроены, внешних запросов нет. Рисует встроенный Chromium.
 
-import { calcPlan } from './calc.js';
+import { calcPlan, channelGroups, hasBreakdown, byChannel, rowDetail } from './calc.js';
 import { scenarioColumns } from './xlsx.js';
 import { fontFaces } from '../docs/render-html.js';
 import { withPage } from '../docs/browser.js';
@@ -26,7 +26,7 @@ const frac = (v) => (typeof v === 'number' ? v / 100 : null);
 function cell(key, row, k, settings) {
   switch (key) {
     case 'channel': return esc(row.channel);
-    case 'targeting': return esc(String(row.targeting ?? '').trim()).replace(/\n/g, '<br>');
+    case 'targeting': return esc(rowDetail(row)).replace(/\n/g, '<br>');
     case 'model': return row.model === 'cpm' ? 'CPM' : 'CPC';
     case 'cpm': return row.model === 'cpm' ? fmt.money(row.cpm) : '–';
     case 'ctr': return fmt.pct(frac(row.ctr));
@@ -81,12 +81,9 @@ function scenarioHtml(plan, sc, res, { title, logo, author, dateStr }) {
   const cols = scenarioColumns(ecom, rows.some((r) => r.model === 'cpm'));
   // одна площадка на несколько строк — объединённая ячейка
   const span = rows.map(() => 1);
-  for (let i = 0; i < rows.length; ) {
-    let j = i;
-    while (j + 1 < rows.length && rows[j + 1].channel && rows[j + 1].channel === rows[i].channel) j++;
-    span[i] = j - i + 1;
-    for (let x = i + 1; x <= j; x++) span[x] = 0;
-    i = j + 1;
+  for (const g of channelGroups(rows)) {
+    span[g.from] = g.to - g.from + 1;
+    for (let x = g.from + 1; x <= g.to; x++) span[x] = 0;
   }
   const body = rows
     .map((row, i) =>
@@ -100,6 +97,12 @@ function scenarioHtml(plan, sc, res, { title, logo, author, dateStr }) {
     )
     .join('');
   const total = `<tr class="total"><td colspan="2">Итого в месяц</td>${cols.slice(2).map((c) => `<td>${totalCell(c.key, res.month)}</td>`).join('')}</tr>`;
+  // по площадкам — когда площадка разбита на кампании
+  const byCh = hasBreakdown(rows)
+    ? `<tr class="group-head"><td colspan="2">По площадкам, в месяц</td>${cols.slice(2).map(() => '<td></td>').join('')}</tr>${byChannel(sc, spec)
+        .map((g) => `<tr class="group"><td colspan="2">${esc(g.channel)}${g.count > 1 ? ` (${g.count})` : ''}</td>${cols.slice(2).map((c) => `<td>${['cart', 'sale', 'check', 'cr'].includes(c.key) ? '' : totalCell(c.key, g.month)}</td>`).join('')}</tr>`)
+        .join('')}`
+    : '';
   const P = res.period;
   const period = [
     ['Месяцев', fmt.num(P.months)],
@@ -116,7 +119,7 @@ function scenarioHtml(plan, sc, res, { title, logo, author, dateStr }) {
   const note = `Бюджеты в месяц ${settings.budgetWithVat ? 'с НДС' : 'без НДС'}; ставки CPC и CPM — без НДС; ${ecom ? 'CR1 и CR2 — от кликов' : 'конверсия — от кликов'}. Прогноз агентства от ${dateStr}${author ? `, подготовил ${esc(author)}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`;
   return `<section class="sheet">
   <header>${logo ? `<img class="logo" src="${logo}" alt="SOROKA — агентство интернет-маркетинга">` : '<div class="wordmark">SOROKA<small>агентство <b>интернет-маркетинга</b></small></div>'}<h1>${esc(title)}</h1></header>
-  <table class="plan"><thead><tr>${cols.map((c) => `<th>${esc(c.head)}</th>`).join('')}</tr></thead><tbody>${body}${total}</tbody></table>
+  <table class="plan"><thead><tr>${cols.map((c) => `<th>${esc(c.head)}</th>`).join('')}</tr></thead><tbody>${body}${total}${byCh}</tbody></table>
   <table class="period"><thead><tr><th>За период (${P.months} мес.)</th><th>Сумма</th></tr></thead><tbody>${period}</tbody></table>
   ${spec.assumptions ? `<p class="assume"><b>На чём основан прогноз.</b> ${esc(spec.assumptions)}</p>` : ''}
   <p class="note">${note}</p>
@@ -153,6 +156,8 @@ th { background: #00B0F0; font-weight: 700; font-size: 9.5px; line-height: 1.2; 
 .plan td.c-targeting { white-space: normal; min-width: 180px; max-width: 280px; }
 .plan td.c-channel { white-space: normal; max-width: 120px; }
 tr.total td { background: #00B0F0; font-weight: 700; }
+tr.group-head td { background: #DDEBF7; font-weight: 700; border-top: 2px solid #000; }
+tr.group td:first-child { text-align: left; font-weight: 700; }
 .period { margin-top: 14px; min-width: 380px; }
 .period td:first-child { text-align: left; }
 .period td:last-child { min-width: 140px; }

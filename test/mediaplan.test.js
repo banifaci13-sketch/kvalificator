@@ -217,7 +217,7 @@ test('интернет-магазин: слайды и Excel', async () => {
   assert.match(sheet, /CR1 \(в корзину\)/);
   // колонки — как в медиапланах агентства: площадка, таргетинг, клики, CPC, стоимость без и с НДС…
   const heads = [...sheet.matchAll(/<c r="([A-Z]+)2" s="\d+" t="inlineStr"><is><t xml:space="preserve">([^<]+)</g)].map((m) => m[2]);
-  assert.deepEqual(heads, ['Площадка', 'Таргетинг', 'Клики', 'CPC', 'Стоимость без НДС', 'Стоимость с НДС', 'CR1 (в корзину)', 'Кол-во корзин', 'CPA (цена доб. в корз.)', 'CR2 (конверсия в продажу)', 'Кол-во продаж', 'CPS (цена продажи)', 'Ср. чек', 'Выручка', 'ДРР']);
+  assert.deepEqual(heads, ['Площадка', 'Тип размещения, кампания, таргетинг', 'Клики', 'CPC', 'Стоимость без НДС', 'Стоимость с НДС', 'CR1 (в корзину)', 'Кол-во корзин', 'CPA (цена доб. в корз.)', 'CR2 (конверсия в продажу)', 'Кол-во продаж', 'CPS (цена продажи)', 'Ср. чек', 'Выручка', 'ДРР']);
   const drr = sheet.match(/<c r="O3" s="\d+"><f>IF\(N3&gt;0,F3\/N3,0\)<\/f><v>([\d.]+)<\/v>/);
   assert.ok(drr, 'ДРР по строке — формулой');
   assert.equal((Number(drr[1]) * 100).toFixed(2), '39.57', 'готовое значение видно и без пересчёта');
@@ -294,3 +294,47 @@ test('копия медиаплана: те же расчёты, своё наз
   assert.equal((await req({ method: 'DELETE', url: `/admin/api/mediaplans/${copy.id}` })).statusCode, 200);
   assert.equal((await req({ url: '/admin/api/mediaplans' })).json().mediaplans.length, 1);
 });
+
+test('площадка с разбивкой на кампании: группы, итоги по площадкам в Excel, PDF и на слайде', async () => {
+  const { channelGroups, byChannel, rowLabel } = await import('../src/mediaplan/calc.js');
+  const rows = [
+    { channel: 'Яндекс Директ', campaign: 'Поиск', model: 'cpc', budget: 100000, cpc: 50, cr: 5 },
+    { channel: 'Яндекс Директ', campaign: 'РСЯ', model: 'cpc', budget: 50000, cpc: 20, cr: 1 },
+    { channel: 'VK Реклама', model: 'cpc', budget: 30000, cpc: 30, cr: 2 },
+  ];
+  const spec = { ...emptyPlan(), months: 3, scenarios: [{ name: 'Основной', rows }] };
+  assert.deepEqual(channelGroups(rows).map((g) => [g.channel, g.from, g.to]), [['Яндекс Директ', 0, 1], ['VK Реклама', 2, 2]]);
+  const direct = byChannel(spec.scenarios[0], spec)[0];
+  assert.deepEqual([direct.channel, direct.count, direct.month.budget, direct.month.clicks, direct.month.leads], ['Яндекс Директ', 2, 150000, 4500, 125]);
+  assert.equal(rowLabel(rows[1]), 'Яндекс Директ — РСЯ');
+  validatePlan(spec);
+
+  // Excel: кампания в колонке «Тип размещения…», ячейка площадки объединена, итог по площадке — суммой строк группы
+  const xlsx = await mediaplanXlsx({ title: 'МП', client: 'Таллер', spec });
+  const sheet = await (await JSZip.loadAsync(xlsx)).file('xl/worksheets/sheet1.xml').async('string');
+  assert.match(sheet, /<mergeCell ref="A3:A4"\/>/);
+  assert.match(sheet, />РСЯ</);
+  assert.match(sheet, /По площадкам, в месяц/);
+  assert.match(sheet, /Яндекс Директ \(2\)/);
+  assert.match(sheet, /<f>SUM\(C3,C4\)<\/f><v>4500<\/v>/, 'клики площадки — сумма её строк');
+
+  // PDF и картинки: та же таблица с блоком «По площадкам»
+  const html = mediaplanSheetHtml({ title: 'МП', client: 'Таллер', spec });
+  assert.match(html, /rowspan="2"/);
+  assert.match(html, /По площадкам, в месяц/);
+
+  // слайд: до 8 строк — каждая кампания отдельно; больше — итоги по площадкам
+  const { library } = await setupLibrary();
+  const mp = createMediaplans({ db: library.db, library: library.lib });
+  const few = mp.slidesFor({ title: 'МП', client: 'Таллер', spec }, 0).find((s) => s.type === 'mediaplan');
+  assert.deepEqual(few.rows.map((r) => r.channel), ['Яндекс Директ — Поиск', 'Яндекс Директ — РСЯ', 'VK Реклама']);
+  const many = { ...spec, scenarios: [{ name: 'Основной', rows: [...Array.from({ length: 8 }, (_, i) => ({ channel: 'Яндекс Директ', campaign: `Кампания ${i + 1}`, model: 'cpc', budget: 10000, cpc: 20, cr: 2 })), rows[2]] }] };
+  const agg = mp.slidesFor({ title: 'МП', client: 'Таллер', spec: many }, 0).find((s) => s.type === 'mediaplan');
+  assert.deepEqual(agg.rows.map((r) => r.channel), ['Яндекс Директ (8 кампаний)', 'VK Реклама']);
+});
+
+async function setupLibrary() {
+  const db = openDb(':memory:');
+  const lib = createDocLibrary({ db: db.raw, brand, templatesDir: resolve('templates/decks'), dataDir: mkdtempSync(join(tmpdir(), 'mp-')) });
+  return { library: { db: db.raw, lib } };
+}

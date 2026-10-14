@@ -606,13 +606,13 @@ details.menu summary::-webkit-details-marker { display: none; }
 .mp-scenario-head { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 .mp-name { max-width: 320px; font-weight: 600; }
 .mp-table { border-collapse: collapse; width: 100%; min-width: 1120px; font-size: 14px; table-layout: fixed; }
-.mp-table col.c-channel { width: auto; }
+.mp-table col.c-channel { width: 220px; }
 .mp-table col.c-model { width: 92px; }
 .mp-table col.c-budget { width: 128px; }
 .mp-table col.c-rate { width: 104px; }
 .mp-table col.c-pct { width: 104px; }
 .mp-table col.c-out { width: 96px; }
-.mp-table col.c-act { width: 40px; }
+.mp-table col.c-act { width: 72px; }
 .mp-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: bottom; }
 .mp-table th.num { text-align: right; padding-right: 12px; }
 .mp-table th.calc { color: var(--text); background: var(--surface-2); }
@@ -1777,3 +1777,13 @@ div.notify-row { cursor: default; }
 /* брифы — отдельной группой в выборе шаблона и в «Шаблонах» */
 .tpl-group { grid-column: 1 / -1; margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
 .tpl-group-head { grid-column: 1 / -1; margin: 12px 0 0; font-size: 17px; }
+
+/* медиаплан: кампании внутри площадки и итог по площадке */
+.mp-campaign { margin-top: 4px; font-size: 13px; min-height: 34px; padding: 4px 8px; }
+.mp-table tr.mp-grouped > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.mp-table tr.mp-sub .mp-channel > .input:first-child { color: var(--muted); }
+.mp-table tr.mp-subtotal td { background: var(--surface-2); font-weight: 600; text-align: right; white-space: nowrap; padding: 8px 12px; font-variant-numeric: tabular-nums; }
+.mp-table tr.mp-subtotal td:first-child { text-align: left; box-shadow: inset 3px 0 0 var(--accent); }
+.mp-table tr.mp-subtotal .th-sub { display: inline; margin-left: 6px; font-weight: 400; }
+.mp-table td.mp-act { white-space: nowrap; }
+.mp-table td.mp-act .icon-btn:disabled { opacity: .35; cursor: default; }

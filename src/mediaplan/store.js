@@ -1,10 +1,11 @@
 // Медиапланы и нормативы агентства в базе; превращение медиаплана в слайды презентации.
 
-import { calcScenario, MODELS, KINDS } from './calc.js';
+import { calcScenario, byChannel, rowLabel, MODELS, KINDS } from './calc.js';
 import { fmtNumber, fmtMoney, fmtMoneyShort } from '../docs/templates.js';
 import { DocError, leadValues } from '../docs/library.js';
 
-export const LIMITS = { scenarios: 6, rows: 8, months: 36 };
+// строк — с запасом под разбивку площадок на кампании; на слайд больше 8 не помещается — там итоги по площадкам
+export const LIMITS = { scenarios: 6, rows: 30, months: 36, slideRows: 8 };
 const MODEL_IDS = MODELS.map(([id]) => id);
 
 export function createMediaplans({ db, library }) {
@@ -80,12 +81,10 @@ export function createMediaplans({ db, library }) {
     const { rows, period } = calcScenario(sc, plan.spec);
     const m = period.months;
     if (plan.spec.kind === 'ecom') return ecomSlides(plan, sc, rows, period);
-    const lines = sc.rows
-      .map((r, i) => ({ r, c: rows[i] }))
-      .filter(({ r, c }) => r.channel?.trim() && c.budget)
-      .map(({ r, c }) => {
+    const lines = slideLines(plan, sc, rows)
+      .map(({ label, c }) => {
         // в таблице лидов бюджеты без НДС — как и написано в допущениях
-        const row = { channel: r.channel.trim(), budget: Math.round(c.net * m) };
+        const row = { channel: label, budget: Math.round(c.net * m) };
         if (c.impressions != null) row.impressions = Math.round(c.impressions * m);
         if (c.clicks != null) row.clicks = Math.round(c.clicks * m);
         if (c.leads != null) row.leads = Math.round(c.leads * m);
@@ -108,17 +107,29 @@ export function createMediaplans({ db, library }) {
     ];
   }
 
+  /**
+   * Строки таблицы на слайде: каждая кампания отдельно («Яндекс Директ — РСЯ»), а если строк больше,
+   * чем помещается на слайд, — итоги по площадкам (подробности остаются в Excel и PDF).
+   */
+  function slideLines(plan, sc, rows) {
+    const each = sc.rows
+      .map((r, i) => ({ r, label: rowLabel(r), c: rows[i] }))
+      .filter(({ r, c }) => r.channel?.trim() && c.budget);
+    if (each.length <= LIMITS.slideRows) return each;
+    return byChannel(sc, plan.spec)
+      .filter((g) => g.month.budget)
+      .map((g) => ({ r: null, label: g.count > 1 ? `${g.channel} (${g.count} ${plural(g.count, 'кампания', 'кампании', 'кампаний')})` : g.channel, c: g.month }));
+  }
+
   /** Интернет-магазин: прогноз продаж, выручки и ДРР; таблица по площадкам с бюджетом с НДС. */
   function ecomSlides(plan, sc, rows, period) {
     const m = period.months;
     const round = (v) => (v == null ? undefined : Math.round(v));
-    const lines = sc.rows
-      .map((r, i) => ({ r, c: rows[i] }))
-      .filter(({ r, c }) => r.channel?.trim() && c.budget)
-      .map(({ r, c }) => {
-        const segments = String(r.targeting ?? '').split(/\n|;/).map((x) => x.trim()).filter(Boolean);
+    const lines = slideLines(plan, sc, rows)
+      .map(({ r, label, c }) => {
+        const segments = String(r?.targeting ?? '').split(/\n|;/).map((x) => x.trim()).filter(Boolean);
         const targeting = segments.join(', ');
-        const row = { channel: r.channel.trim(), budget: Math.round(c.gross * m) };
+        const row = { channel: label, budget: Math.round(c.gross * m) };
         if (targeting) row.targeting = targeting.length > 80 ? `${targeting.slice(0, 78)}…` : targeting;
         for (const [k, v] of [['clicks', c.clicks], ['carts', c.carts], ['sales', c.sales], ['revenue', c.revenue]]) {
           const x = round(v == null ? null : v * m);
@@ -227,7 +238,7 @@ export function validatePlan(spec) {
   checkNum(s.avgCheck, 'Средний чек');
   spec.scenarios.forEach((sc, i) => {
     if (!Array.isArray(sc.rows)) throw new DocError(`Сценарий ${i + 1}: нет списка каналов`);
-    if (sc.rows.length > LIMITS.rows) throw new DocError(`Сценарий «${sc.name}»: не больше ${LIMITS.rows} каналов — больше не поместится на слайд`);
+    if (sc.rows.length > LIMITS.rows) throw new DocError(`Сценарий «${sc.name}»: не больше ${LIMITS.rows} строк`);
     sc.rows.forEach((r) => {
       if (!MODEL_IDS.includes(r.model)) throw new DocError('Неизвестная модель закупки');
       checkNum(r.budget, 'Бюджет');
@@ -239,6 +250,7 @@ export function validatePlan(spec) {
       checkPct(r.sale, 'Конверсия в продажу');
       checkNum(r.check, 'Средний чек');
       if (r.targeting != null && (typeof r.targeting !== 'string' || r.targeting.length > 1000)) throw new DocError('Таргетинг — текст до 1000 символов');
+      if (r.campaign != null && (typeof r.campaign !== 'string' || r.campaign.length > 120)) throw new DocError('Тип размещения или кампания — до 120 символов');
     });
   });
   if (JSON.stringify(spec).length > 100_000) throw new DocError('Медиаплан слишком большой');

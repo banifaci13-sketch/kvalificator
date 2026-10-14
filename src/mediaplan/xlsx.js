@@ -6,7 +6,7 @@
 
 import JSZip from 'jszip';
 
-import { calcPlan } from './calc.js';
+import { calcPlan, sameChannel, channelGroups, hasBreakdown, byChannel, rowDetail } from './calc.js';
 
 // Оформление повторяет медиапланы агентства (пример — «МП Таллер СберЭдс»)
 const FONT = 'Calibri';
@@ -146,7 +146,7 @@ function createSheet(name) {
 export function scenarioColumns(ecom, anyCpm) {
   return [
     { key: 'channel', head: 'Площадка', w: 16 },
-    { key: 'targeting', head: 'Таргетинг', w: 40 },
+    { key: 'targeting', head: 'Тип размещения, кампания, таргетинг', w: 40 },
     ...(anyCpm ? [{ key: 'model', head: 'Модель', w: 8 }, { key: 'cpm', head: 'CPM, ₽', w: 10 }, { key: 'ctr', head: 'CTR', w: 8 }] : []),
     { key: 'clicks', head: 'Клики', w: 10 },
     { key: 'cpc', head: anyCpm ? 'CPC (для CPM — итоговая), ₽' : 'CPC', w: 11 },
@@ -326,10 +326,11 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
       const at = (key) => `${L[key]}${n}`;
       const set = (key, v, s) => sh.set(C[key], n, v, s);
       // высота строки — под перенос длинного таргетинга
-      const lines = Math.max(1, Math.ceil(String(row.targeting ?? '').length / (cols[C.targeting].w * 1.15)) + (String(row.targeting ?? '').match(/\n/g)?.length ?? 0));
+      const detail = rowDetail(row);
+      const lines = Math.max(1, Math.ceil(detail.length / (cols[C.targeting].w * 1.15)) + (detail.match(/\n/g)?.length ?? 0));
       sh.heights[n] = Math.max(20, lines * 13 + 6);
       set('channel', row.channel || '', S.textC);
-      set('targeting', String(row.targeting ?? '').trim(), S.tints[i % S.tints.length]);
+      set('targeting', detail, S.tints[i % S.tints.length]);
       if (anyCpm) {
         set('model', row.model === 'cpm' ? 'CPM' : 'CPC', S.textC);
         set('cpm', row.cpm ?? null, S.money);
@@ -369,14 +370,10 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
     });
     const last = first + rows.length - 1;
     // одна площадка на несколько строк — объединённая ячейка, как в таблицах агентства
-    for (let i = 0; i < rows.length; ) {
-      let j = i;
-      while (j + 1 < rows.length && rows[j + 1].channel && rows[j + 1].channel === rows[i].channel) j++;
-      if (j > i) {
-        sh.merge(C.channel, first + i, C.channel, first + j);
-        for (let x = i + 1; x <= j; x++) sh.set(C.channel, first + x, null, S.textC);
-      }
-      i = j + 1;
+    for (const g of channelGroups(rows)) {
+      if (g.to === g.from) continue;
+      sh.merge(C.channel, first + g.from, C.channel, first + g.to);
+      for (let x = g.from + 1; x <= g.to; x++) sh.set(C.channel, first + x, null, S.textC);
     }
     if (anyCpm) sh.validations.push({ sqref: `${L.model}${first}:${L.model}${last + 20}`, list: ['CPC', 'CPM'] });
 
@@ -446,9 +443,44 @@ export async function mediaplanXlsx(plan, { benchmarks = [], author = '', logo =
       // значение — на три колонки, чтобы большие суммы не превращались в ###
       sh.set(V + 1, row, null, total ? S.totBlank : style).set(V + 2, row, null, total ? S.totBlank : style).merge(V, row, V + 2, row);
     });
+    // по площадкам: если площадка разбита на кампании — итог по каждой, в тех же колонках, что таблица
+    let after = p + lines.length + 2;
+    if (hasBreakdown(rows)) {
+      const q = after;
+      sh.heights[q] = 20;
+      cols.forEach((_, i) => sh.set(i, q, null, S.head));
+      sh.set(0, q, 'По площадкам, в месяц', S.head).merge(0, q, 1, q);
+      byChannel(sc, spec).forEach((g, gi) => {
+        const r = q + 1 + gi;
+        const R = (key) => `${L[key]}${r}`;
+        // строки площадки (могут стоять не подряд) — диапазоны для суммы
+        const parts = rows.map((x, i) => (sameChannel(x.channel, g.channel) ? i : -1)).filter((i) => i >= 0);
+        const SUMG = (key) => `SUM(${parts.map((i) => `${L[key]}${first + i}`).join(',')})`;
+        const mm = g.month;
+        sh.heights[r] = 18;
+        cols.forEach((_, i) => sh.set(i, r, null, S.label));
+        sh.set(0, r, g.count > 1 ? `${g.channel} (${g.count})` : g.channel, S.labelBold).merge(0, r, 1, r);
+        sh.set(C.clicks, r, { f: SUMG('clicks'), v: mm.clicks ?? 0 }, S.num);
+        sh.set(C.net, r, { f: SUMG('net'), v: mm.net ?? 0 }, S.money);
+        sh.set(C.gross, r, { f: SUMG('gross'), v: mm.gross ?? 0 }, S.money);
+        sh.set(C.cpc, r, { f: `IF(${R('clicks')}>0,${R('net')}/${R('clicks')},0)`, v: mm.cpc ?? 0 }, S.money);
+        if (ecom) {
+          sh.set(C.carts, r, { f: SUMG('carts'), v: mm.carts ?? 0 }, S.num);
+          sh.set(C.sales, r, { f: SUMG('sales'), v: mm.sales ?? 0 }, S.num);
+          sh.set(C.revenue, r, { f: SUMG('revenue'), v: mm.revenue ?? 0 }, S.money);
+          sh.set(C.cpa, r, { f: `IF(${R('carts')}>0,${R('gross')}/${R('carts')},0)`, v: mm.cpa ?? 0 }, S.money);
+          sh.set(C.cps, r, { f: `IF(${R('sales')}>0,${R('gross')}/${R('sales')},0)`, v: mm.cps ?? 0 }, S.money0);
+          sh.set(C.drr, r, { f: `IF(${R('revenue')}>0,${R('gross')}/${R('revenue')},0)`, v: mm.drr ?? 0 }, S.pct);
+        } else {
+          sh.set(C.leads, r, { f: SUMG('leads'), v: mm.leads ?? 0 }, S.num);
+          sh.set(C.cpl, r, { f: `IF(${R('leads')}>0,${R('net')}/${R('leads')},0)`, v: mm.cpl ?? 0 }, S.money0);
+        }
+        after = r + 2;
+      });
+    }
     footnote(
       sh,
-      p + lines.length + 2,
+      after,
       `Бюджеты в месяц ${withVat ? 'с НДС' : 'без НДС'}; ставки CPC и CPM — без НДС; ${ecom ? 'CR1 и CR2 — от кликов' : 'конверсия — от кликов'}. Прогноз агентства от ${dateStr}${author ? `, подготовил ${author}` : ''}. Цифры — расчёт по нормативам, не обещание результата.`,
     );
     totals.push({

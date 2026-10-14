@@ -1,12 +1,13 @@
 // Раздел «Медиапланы»: список, редактор с живым пересчётом, сценарии, нормативы агентства.
 // Расчёт — тот же модуль, что на сервере (Excel и слайды считаются по тем же правилам).
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, rowActions, rerender, confirmDialog, suggestInput } from './admin.js';
 import { fill, parseNum, formDialog } from './docs.js';
-import { calcScenario, calcRow, emptyPlan, emptyRow, MODELS, KINDS } from '/admin/lib/mediaplan-calc.js';
+import { calcScenario, calcRow, emptyPlan, emptyRow, channelGroups, campaignHints, MODELS, KINDS } from '/admin/lib/mediaplan-calc.js';
 
 const SAVE_DELAY = 600;
-const MAX_ROWS = 8;
+// с запасом под разбивку площадок на кампании (на слайд уходят итоги по площадкам, если строк больше 8)
+const MAX_ROWS = 30;
 const MAX_SCENARIOS = 6;
 const nf0 = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
@@ -393,7 +394,20 @@ export async function renderPlan(params) {
     const { inputs, outputs } = columns();
     const calc = () => sc.rows.map((r) => calcRow(r, spec));
     const out = {};
-    const bodyRows = sc.rows.map((row, i) => {
+    // группы строк одной площадки: у группы итог, у строк внутри — отметка «кампания площадки»
+    const groups = channelGroups(sc.rows);
+    const groupOf = (i) => groups.find((g) => i >= g.from && i <= g.to);
+    const subtotals = [];
+    const addCampaign = (i) => {
+      const row = sc.rows[i];
+      const g = groupOf(i);
+      // новая кампания встаёт в конец своей площадки: ставки разные у поиска и РСЯ — вписываются заново
+      sc.rows.splice(g.to + 1, 0, { ...emptyRow(), channel: row.channel, model: row.model });
+      changed();
+      renderScenario();
+      scenarioBox.querySelectorAll('tbody tr.mp-row')[g.to + 1]?.querySelector('.mp-campaign')?.focus();
+    };
+    const rowEls = sc.rows.map((row, i) => {
       const name = row.channel || `${ecom ? 'площадка' : 'канал'} ${i + 1}`;
       // «Ставка» пишет в cpc или cpm — по модели закупки строки
       const rateProxy = {
@@ -416,13 +430,29 @@ export async function renderPlan(params) {
       syncModel();
       out[i] = Object.fromEntries(outputs.map((c) => [c.key, h('td', { class: 'num calc' })]));
       const b = benchmarks.find((x) => x.id === row.benchmark);
+      const g = groupOf(i);
+      const grouped = g.to > g.from;
+      const campaign = suggestInput(
+        h('input', {
+          class: 'input mp-campaign', value: row.campaign ?? '', maxlength: 120, 'aria-label': `Тип размещения или кампания, ${name}`,
+          placeholder: 'Тип или кампания: поиск, РСЯ…',
+          oninput: (e) => { row.campaign = e.target.value; changed(); },
+        }),
+        () => campaignHints(row.channel),
+      );
       return h(
         'tr',
-        {},
+        { class: `mp-row${grouped ? ' mp-grouped' : ''}${grouped && i > g.from ? ' mp-sub' : ''}` },
         h(
           'td',
           { class: 'mp-channel' },
-          h('input', { class: 'input', value: row.channel ?? '', maxlength: 120, 'aria-label': `${ecom ? 'Площадка' : 'Канал'} ${i + 1}`, placeholder: ecom ? 'Площадка' : 'Канал', oninput: (e) => { row.channel = e.target.value; changed(); } }),
+          h('input', {
+            class: 'input', value: row.channel ?? '', maxlength: 120, 'aria-label': `${ecom ? 'Площадка' : 'Канал'} ${i + 1}`, placeholder: ecom ? 'Площадка' : 'Канал',
+            oninput: (e) => { row.channel = e.target.value; changed(); },
+            // площадка поменялась — строки перегруппируются (итог по площадке)
+            onchange: () => renderScenario(),
+          }),
+          campaign,
           ecom
             ? h('textarea', {
                 class: 'textarea mp-targeting', rows: 2, maxlength: 1000, 'aria-label': `Таргетинг, ${name}`,
@@ -435,9 +465,27 @@ export async function renderPlan(params) {
         h('td', {}, h('select', { class: 'select', 'aria-label': `Модель закупки, ${name}`, onchange: (e) => { row.model = e.target.value; syncModel(); changed(); } }, MODELS.map(([v, l]) => h('option', { value: v, selected: v === row.model, title: l }, v.toUpperCase())))),
         inputs.map((c) => h('td', {}, fields[c.key])),
         outputs.map((c) => out[i][c.key]),
-        h('td', {}, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Удалить: ${name}`, title: 'Удалить строку', onclick: () => { sc.rows.splice(i, 1); changed(); renderScenario(); } }, '×')),
+        h(
+          'td',
+          { class: 'mp-act' },
+          h('button', {
+            type: 'button', class: 'icon-btn', disabled: sc.rows.length >= MAX_ROWS || !row.channel?.trim(),
+            'aria-label': `Добавить кампанию: ${name}`, title: row.channel?.trim() ? `Ещё кампания или тип размещения в «${row.channel.trim()}»` : 'Сначала впишите площадку',
+            onclick: () => addCampaign(i),
+          }, '+'),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Удалить: ${name}`, title: 'Удалить строку', onclick: () => { sc.rows.splice(i, 1); changed(); renderScenario(); } }, '×'),
+        ),
       );
     });
+    // строки и итоги площадок: итог встаёт под последней строкой группы
+    const bodyRows = [];
+    for (const g of groups) {
+      bodyRows.push(...rowEls.slice(g.from, g.to + 1));
+      if (g.to === g.from || !g.channel) continue;
+      const cells = { budget: h('td', { class: 'num' }), ...Object.fromEntries(outputs.map((c) => [c.key, h('td', { class: 'num' })])) };
+      subtotals.push({ g, cells });
+      bodyRows.push(h('tr', { class: 'mp-subtotal' }, h('td', { colspan: 2 }, `Итого ${g.channel}`, h('span', { class: 'th-sub' }, `${g.to - g.from + 1} ${plural(g.to - g.from + 1, 'кампания', 'кампании', 'кампаний')}`)), cells.budget, h('td', { colspan: inputs.length - 1 }), outputs.map((c) => cells[c.key]), h('td')));
+    }
     const totalBudget = h('td', { class: 'num' });
     const totalCells = Object.fromEntries(outputs.map((c) => [c.key, h('td', { class: 'num' })]));
     updateRows = () => {
@@ -446,6 +494,11 @@ export async function renderPlan(params) {
         if (!out[i]) return;
         for (const c of outputs) out[i][c.key].textContent = c.fmt(r[c.key]);
       });
+      for (const { g, cells } of subtotals) {
+        const m = calcScenario({ rows: sc.rows.slice(g.from, g.to + 1) }, spec).month;
+        cells.budget.textContent = rub(m.budget);
+        for (const c of outputs) cells[c.key].textContent = c.fmt(m[c.key]);
+      }
       const { month } = calcScenario(sc, spec);
       totalBudget.textContent = rub(month.budget);
       for (const c of outputs) totalCells[c.key].textContent = c.fmt(month[c.key]);
@@ -517,7 +570,7 @@ export async function renderPlan(params) {
             h(
               'tr',
               {},
-              h('th', { scope: 'col' }, ecom ? 'Площадка' : 'Канал', ecom ? h('span', { class: 'th-sub' }, 'и таргетинг') : null),
+              h('th', { scope: 'col' }, ecom ? 'Площадка' : 'Канал', h('span', { class: 'th-sub' }, ecom ? 'кампания и таргетинг' : 'тип размещения или кампания')),
               h('th', { scope: 'col' }, 'Закупка', h('span', { class: 'th-sub' }, 'клики или показы')),
               inputs.map((c) => th(c, 'num')),
               outputs.map((c) => th(c, 'calc num')),
@@ -533,7 +586,7 @@ export async function renderPlan(params) {
         { class: 'mp-add' },
         h('button', { type: 'button', class: 'btn btn-s', disabled: sc.rows.length >= MAX_ROWS, onclick: () => { sc.rows.push(emptyRow()); changed(); renderScenario(); scenarioBox.querySelector('tbody tr:last-child input')?.focus(); } }, ecom ? '+ площадка' : '+ канал'),
         fromBench,
-        sc.rows.length >= MAX_ROWS ? h('span', { class: 'hint' }, `Не больше ${MAX_ROWS} строк — больше не поместится на слайд`) : null,
+        sc.rows.length >= MAX_ROWS ? h('span', { class: 'hint' }, `Не больше ${MAX_ROWS} строк`) : h('span', { class: 'hint' }, '«+» у строки — ещё кампания этой площадки: поиск, РСЯ, ретаргетинг…'),
       ),
     );
     updateRows();
