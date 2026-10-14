@@ -18,6 +18,7 @@
     "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
     "brand:sync": "node scripts/brand-sync.js",
     "brand:check": "node scripts/brand-sync.js --check",
+    "bench": "node --disable-warning=ExperimentalWarning scripts/bench.js",
     "deck": "node --disable-warning=ExperimentalWarning scripts/deck.js"
   },
   "license": "UNLICENSED",
