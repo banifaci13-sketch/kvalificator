@@ -311,7 +311,9 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
         return row;
       });
       if (rows.length) spec.scenarios = [{ ...spec.scenarios[0], rows }];
-      const client = cmd.client?.name ?? cmd.clientName ?? '';
+      // клиента нет в списке — название как написали, но с заглавной буквы
+      const typed = cmd.clientName ? cmd.clientName.charAt(0).toUpperCase() + cmd.clientName.slice(1) : '';
+      const client = cmd.client?.name ?? typed;
       const title = cmd.title || `Медиаплан${client ? ` — ${client}` : ''} на ${n(months, 'месяц', 'месяца', 'месяцев')}`;
       const plan = mediaplans.create({ title, client, spec }, user.name);
       const money = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
@@ -324,9 +326,12 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
         lines.push(...notes.map((x) => `${x}.`));
       } else lines.push('Каналы добавьте из нормативов — расчёт и Excel соберутся сами.');
       if (cmd.fee != null) lines.push(`Комиссия агентства — ${cmd.fee}%.`);
+      const unknown = !cmd.client && typed;
+      if (unknown) lines.push(`Клиента «${typed}» в списке клиентов нет — вписал название как текст.`);
       return {
         reply: lines.join('\n'),
         actions: [{ type: 'plan', id: plan.id, title: plan.title, href: `#/plan?id=${plan.id}` }],
+        options: unknown ? [{ label: `Завести клиента «${typed}»`, command: `добавь клиента ${typed}` }] : undefined,
         navigate: `#/plan?id=${plan.id}`,
       };
     },

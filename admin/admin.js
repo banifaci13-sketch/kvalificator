@@ -6,6 +6,7 @@ import { renderPlans, renderPlan, renderBenchmarks } from './mediaplans.js';
 import { renderProjects, renderTaskBoard, renderMyTasks, renderClients, renderClient, leadClient } from './tasks.js';
 import { renderCalendar, notificationsPanel } from './calendar.js';
 import { renderIntegrations } from './integrations.js';
+import { renderSystem } from './system.js';
 import { assistantEntry } from './assistant.js';
 import { renderKb } from './kb.js';
 import { renderHome, bellButton } from './home.js';
@@ -200,6 +201,7 @@ const routes = {
   client: renderClient,
   calendar: renderCalendar,
   integrations: renderIntegrations,
+  system: renderSystem,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -224,6 +226,7 @@ const SECTION_TABS = {
   staff: [
     ['staff', 'Сотрудники'],
     ['integrations', 'Подключения'],
+    ['system', 'Состояние'],
   ],
   account: [
     ['account', 'Учётная запись'],

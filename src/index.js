@@ -24,13 +24,17 @@ import { createVideo } from './calendar/video.js';
 import { startReminders, telegramSender } from './calendar/reminders.js';
 import { createAi } from './ai/client.js';
 import { closeBrowser } from './docs/browser.js';
+import { createMonitor } from './ops/monitor.js';
 import { dirname, resolve } from 'node:path';
 
 const RETRY_INTERVAL_MS = 5 * 60_000;
 const TELEGRAM_UPDATES = ['message', 'callback_query'];
 
 const config = loadConfig();
-const log = pino({ level: config.logLevel });
+// монитор для «Состояния системы»: фоновые задачи и последние ошибки из журнала
+const monitor = createMonitor();
+const log = pino({ level: config.logLevel, hooks: { logMethod: monitor.logHook } });
+monitor.useLog(log);
 const db = openDb(config.dbPath);
 const rules = JSON.parse(await readFile(config.scoringFile, 'utf8'));
 const notifier = createNotifier(config);
@@ -75,6 +79,7 @@ const app = await buildServer({
     calendar,
     video: createVideo(config),
     ai: createAi(config.ai),
+    monitor,
   },
 });
 
@@ -86,25 +91,16 @@ if (telegramBot && config.telegram.webhookUrl) {
   );
 }
 
-const retryTimer = setInterval(() => qualifier.retryUndelivered().catch((err) => log.error({ err })), RETRY_INTERVAL_MS);
+// Фоновые задачи отмечаются в мониторе: когда работали и чем закончились (ошибка — и в журнал)
+const leadsJob = monitor.job('leads', 'Досылка заявок менеджерам', RETRY_INTERVAL_MS);
+const moneyJob = monitor.job('money', 'Счета за ведение и напоминания об оплате', 3600e3);
+const retryTimer = setInterval(() => leadsJob(() => qualifier.retryUndelivered()), RETRY_INTERVAL_MS);
 // раз в час: счета за ведение на новый месяц и напоминания об оплате
-const moneyTimer = setInterval(() => {
-  try {
-    money.remind();
-  } catch (err) {
-    log.error({ err }, 'Напоминания об оплате');
-  }
-}, 3600e3);
-setTimeout(() => {
-  try {
-    money.remind();
-  } catch (err) {
-    log.error({ err }, 'Напоминания об оплате');
-  }
-}, 30e3);
+const moneyTimer = setInterval(() => moneyJob(() => money.remind()), 3600e3);
+setTimeout(() => moneyJob(() => money.remind()), 30e3);
 // Напоминания о встречах и утренний план — в личный Telegram сотрудников (нужен токен бота)
 const reminders = config.telegram.token
-  ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl })
+  ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl, track: monitor.job('reminders', 'Напоминания о встречах и план дня в Telegram', 60_000) })
   : null;
 
 await app.listen({ port: config.port, host: config.host });

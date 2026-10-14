@@ -43,7 +43,7 @@ export function reminderText({ meeting: m, left }, publicUrl) {
   ].filter(Boolean).join('\n');
 }
 
-export function startReminders({ calendar, crm = null, send, log, publicUrl = null, intervalMs = 60_000, now = () => new Date() }) {
+export function startReminders({ calendar, crm = null, send, log, publicUrl = null, intervalMs = 60_000, now = () => new Date(), track = null }) {
   let running = false;
 
   async function tick() {
@@ -99,7 +99,8 @@ export function startReminders({ calendar, crm = null, send, log, publicUrl = nu
     }
   }
 
-  const timer = setInterval(tick, intervalMs);
+  // track — отметка в мониторе («Состояние системы»): когда работало и чем закончилось
+  const timer = setInterval(() => (track ? track(tick) : tick()), intervalMs);
   timer.unref?.();
   return { tick, stop: () => clearInterval(timer) };
 }

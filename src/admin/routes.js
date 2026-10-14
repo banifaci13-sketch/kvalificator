@@ -22,6 +22,8 @@ import { createNotifications } from '../notify/store.js';
 import { createNews } from '../news/store.js';
 import { newsRoutes } from './news-routes.js';
 import { createChat } from '../chat/store.js';
+import { createMonitor } from '../ops/monitor.js';
+import { createSystemStatus } from '../ops/status.js';
 import { chatRoutes } from './chat-routes.js';
 import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
@@ -60,7 +62,7 @@ function toFilter(query) {
   };
 }
 
-export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media, files = null, money = null }) {
+export async function adminRoutes(app, { config, auth, reports, db, scenarioSource, library, brand, mediaplans, crm, calendar, video, ai, media, files = null, money = null, monitor = null }) {
   const secure = config.publicUrl?.startsWith('https://') ?? false;
   // уведомления в кабинете: задачи шлют их сами, встречам — через маршруты календаря
   const notify = createNotifications({ db: db.raw });
@@ -68,6 +70,13 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
   const news = createNews({ db: db.raw, files });
   const kb = createKb({ db: db.raw });
   const chat = createChat({ db: db.raw, files });
+  // «Состояние системы» (администратор): бэкапы, фоновые задачи, ошибки — без секретов и персональных данных
+  const system = createSystemStatus({
+    db: db.raw,
+    dbPath: config.dbPath,
+    monitor: monitor ?? createMonitor(),
+    leadRecipients: Boolean((config.telegram?.token && config.telegram?.managerChatId) || config.webhook?.url),
+  });
   chat.useNotify(notify);
   news.useNotify(notify);
   const yandex =
@@ -367,6 +376,8 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       const idParams = { type: 'object', properties: { id: { type: 'integer' } } };
 
       staff.get('/admin/api/users', async () => ({ users: auth.listUsers(), roles: ROLES }));
+
+      staff.get('/admin/api/system', async () => system.get());
 
       // Что подключено на сервере: ключи не показываем, только «есть / нет»
       staff.get('/admin/api/integrations', async () => {

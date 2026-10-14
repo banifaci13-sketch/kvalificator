@@ -14,8 +14,38 @@ const tokens = (s) =>
     .split(/[^a-zа-я0-9]+/i)
     .filter((t) => t && !STOP.has(t));
 
+// Русское и латинское написание одного названия: «леокид» = Leokid, «таллеру» = Taller, «юнистрим» = Unistream.
+// Сравниваем «скелет» из согласных после транслитерации: гласные и удвоения в транскрипциях гуляют.
+const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+const CYR = /[а-я]/;
+export function skeleton(word) {
+  return String(word)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[а-я]/g, (ch) => TRANSLIT[ch] ?? '')
+    .replace(/ph/g, 'f')
+    .replace(/ck/g, 'k')
+    .replace(/q/g, 'k')
+    .replace(/x/g, 'ks')
+    .replace(/w/g, 'v')
+    .replace(/c(?!h)/g, 'k')
+    .replace(/j/g, 'dzh')
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/[aeiouy]/g, '')
+    .replace(/(.)\1+/g, '$1');
+}
+/** Слово фразы и слово названия в разной письменности, но звучат одинаково (с учётом падежного окончания). */
+export function crossMatch(word, name) {
+  if (CYR.test(word) === CYR.test(name)) return false;
+  const a = skeleton(word);
+  const b = skeleton(name);
+  if (b.length < 3) return a === b && a.length > 0 && word.length >= 3;
+  return a === b || (a.startsWith(b) && a.length - b.length <= 1);
+}
+
 /** Общее начало слов: «ромашкой» и «ромашка» совпадают по основе. */
 function stemMatch(a, b) {
+  if (crossMatch(a, b)) return true;
   const n = Math.min(a.length, b.length);
   // короткие слова («дом» — «дома»): одно начинается с другого и отличается окончанием
   if (n < 4) return a === b || (n === 3 && (a.startsWith(b) || b.startsWith(a)) && Math.abs(a.length - b.length) <= 2);
@@ -59,6 +89,12 @@ export function findClient(text, clients) {
     if (hits === name.length && (!best || name.length > best.n)) best = { client: c, n: name.length };
   }
   if (best) return best.client;
+  // «леокид» для «Leo Kid»: название из нескольких слов, а во фразе — слитно и другими буквами
+  const joined = clients.filter((c) => {
+    const name = tokens(c.name).filter((t) => !LEGAL.has(t));
+    return name.length > 1 && words.some((w) => crossMatch(w, name.join('')));
+  });
+  if (joined.length === 1) return joined[0];
   // «Медлайн» вместо «Клиника Медлайн»: хватает одного характерного слова, если оно только у одного клиента
   const partial = clients.filter((c) => tokens(c.name).filter((t) => t.length >= 4 && !LEGAL.has(t) && !GENERIC.has(t)).some((n) => words.some((w) => w.length >= 4 && stemMatch(w, n))));
   return partial.length === 1 ? partial[0] : null;

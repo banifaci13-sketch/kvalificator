@@ -1,24 +1,24 @@
-// Резервная копия базы: npm run backup [-- --keep 14]
-// Копия делается без остановки сервера (VACUUM INTO), старые копии удаляются.
+// Резервная копия: npm run backup [-- --keep 14] [--no-check]
+// База копируется без остановки сервера (VACUUM INTO), файлы (вложения, медиатека, выгрузки) — в зеркало,
+// где копируются только новые. Потом сразу проверка: из копии можно восстановиться (см. src/ops/backup.js).
 
-import { mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
 import { loadConfig } from '../src/config.js';
-import { openDb } from '../src/storage/db.js';
+import { createBackup, checkBackup } from '../src/ops/backup.js';
 
 const keepArg = process.argv.indexOf('--keep');
 const keep = keepArg > -1 ? Number(process.argv[keepArg + 1]) : 14;
 const { dbPath } = loadConfig();
-const dir = join(dirname(dbPath), 'backups');
-mkdirSync(dir, { recursive: true });
+const mb = (b) => `${(b / 1048576).toFixed(1)} МБ`;
 
-const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
-const target = join(dir, `kvalificator-${stamp}.db`);
-const db = openDb(dbPath);
-db.raw.prepare('VACUUM INTO ?').run(target);
-db.close();
-console.log(`Копия сохранена: ${target}`);
+const b = await createBackup({ dbPath, keep });
+console.log(`Копия базы: ${b.path} (${mb(b.db.bytes)}, схема v${b.db.userVersion}, целостность: ${b.db.integrity})`);
+console.log(`Файлы: всего ${b.files.total} (${mb(b.files.totalBytes)}), скопировано новых ${b.files.copied} (${mb(b.files.copiedBytes)})`);
+if (b.removed) console.log(`Удалено старых копий базы: ${b.removed}`);
 
-const old = readdirSync(dir).filter((f) => /^kvalificator-.*\.db$/.test(f)).sort().slice(0, -keep);
-for (const f of old) unlinkSync(join(dir, f));
-if (old.length) console.log(`Удалено старых копий: ${old.length}`);
+if (!process.argv.includes('--no-check')) {
+  const c = await checkBackup({ dbPath });
+  for (const w of c.warnings) console.log(`! ${w}`);
+  for (const e of c.errors) console.log(`✗ ${e}`);
+  console.log(c.ok ? `✓ Проверка восстановления пройдена за ${c.durationMs} мс` : '✗ Проверка восстановления НЕ пройдена');
+  if (!c.ok) process.exitCode = 1;
+}

@@ -16,6 +16,7 @@
     "check": "node --disable-warning=ExperimentalWarning scripts/check.js",
     "admin": "node --disable-warning=ExperimentalWarning scripts/admin.js",
     "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
+    "restore-check": "node --disable-warning=ExperimentalWarning scripts/restore-check.js",
     "brand:sync": "node scripts/brand-sync.js",
     "brand:check": "node scripts/brand-sync.js --check",
     "bench": "node --disable-warning=ExperimentalWarning scripts/bench.js",

@@ -231,3 +231,19 @@ test('деньги из фразы', () => {
   assert.equal(parse('кто должен?').intent, 'money_summary');
   assert.equal(parse('пришла оплата от Медлайн 120 тыс').amount, 120000);
 });
+
+test('клиент по-русски и по-английски: «леокид» = Leokid, падежи, название из двух слов', () => {
+  const run = (phrase, name) => {
+    const clients = [{ id: 1, name }, { id: 2, name: 'Ромашка' }, { id: 3, name: 'Таллер' }];
+    return (parsePhrase(phrase, { clients }) ?? parseCommand(phrase, { clients, team: [] }))?.client?.name ?? null;
+  };
+  assert.equal(run('сделать МП для клиента леокид', 'Leokid'), 'Leokid');
+  assert.equal(run('сделать МП для клиента леокид', 'Leo Kid'), 'Leo Kid');
+  assert.equal(run('сделай МП для leokid', 'Леокид'), 'Леокид');
+  assert.equal(run('поставь задачу отчёт для Леокида на пятницу', 'Leokid'), 'Leokid');
+  assert.equal(run('создай КП для юнистрима', 'Unistream'), 'Unistream');
+  assert.equal(run('что по медлайну', 'Medline'), 'Medline');
+  // разные названия не склеиваются
+  assert.equal(run('что по медлайну', 'Medialab'), null);
+  assert.equal(run('сделай МП для ромашки', 'Romantic'), 'Ромашка');
+});

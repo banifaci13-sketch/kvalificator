@@ -1210,8 +1210,10 @@ details.menu summary::-webkit-details-marker { display: none; }
 .assist-text b { font-size: 14px; }
 .assist-text span { font-size: 12px; color: var(--side-text); }
 .sidebar .nav { flex: 0 1 auto; }
-.sidebar.compact .assist-text { display: none; }
-.sidebar.compact .assist-entry { justify-content: center; padding: 8px 0; }
+@media (min-width: 961px) and (max-width: 1679px) {
+  .sidebar.compact .assist-text { display: none; }
+  .sidebar.compact .assist-entry { justify-content: center; padding: 8px 0; }
+}
 @media (min-width: 961px) {
   :root[data-sidebar="icons"] .assist-text { display: none; }
   :root[data-sidebar="icons"] .assist-entry { justify-content: center; padding: 8px 0; }
@@ -1222,7 +1224,9 @@ details.menu summary::-webkit-details-marker { display: none; }
   animation: assist-in .16s ease-out;
 }
 @keyframes assist-in { from { transform: translateX(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
-:root[data-sidebar="icons"] .assist-panel, .app:has(> .sidebar.compact) ~ .assist-panel { left: 68px; }
+:root[data-sidebar="icons"] .assist-panel { left: 68px; }
+/* в редакторах меню сворачивается только на экранах до 1680 px — на широких оно полное, и панель встаёт за ним */
+@media (min-width: 961px) and (max-width: 1679px) { .app:has(> .sidebar.compact) ~ .assist-panel { left: 68px; } }
 .assist-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 12px 18px; border-bottom: 1px solid var(--line); }
 .assist-title { flex: 1; display: grid; line-height: 1.25; }
 .assist-title b { font-family: var(--soroka-font-heading); font-size: 16px; }
@@ -1322,7 +1326,8 @@ details.menu summary::-webkit-details-marker { display: none; }
 .nav-gear { justify-self: start; display: grid; place-items: center; width: 30px; height: 30px; margin: 6px 0 0 8px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--side-text); opacity: .7; cursor: pointer; }
 .nav-gear:hover, .nav-gear:focus-visible { opacity: 1; color: var(--side-active); background: var(--side-hover); }
 .nav-gear .icon { width: 17px; height: 17px; }
-.sidebar.compact .nav-gear, :root[data-sidebar="icons"] .nav-gear { justify-self: center; margin-left: 0; }
+:root[data-sidebar="icons"] .nav-gear { justify-self: center; margin-left: 0; }
+@media (min-width: 961px) and (max-width: 1679px) { .sidebar.compact .nav-gear { justify-self: center; margin-left: 0; } }
 .nav-edit { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 2px; min-width: min(420px, 80vw); }
 .nav-edit li { display: grid; grid-template-columns: 28px 1fr auto auto auto; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius-s); background: var(--surface-2); }
 .nav-edit li.is-hidden .nav-edit-label, .nav-edit li.is-hidden .nav-edit-icon { opacity: .4; }
@@ -1412,7 +1417,8 @@ tr:not(:hover) .row-btn:not(:focus-visible) { opacity: .55; }
 /* ---------- «Новости» ---------- */
 .news { display: grid; gap: 16px; max-width: 760px; }
 .nav-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: 11.5px; font-weight: 700; line-height: 20px; text-align: center; }
-.sidebar.compact .nav-badge, :root[data-sidebar="icons"] .nav-badge { position: absolute; top: 3px; right: 6px; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; }
+:root[data-sidebar="icons"] .nav-badge { position: absolute; top: 3px; right: 6px; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; }
+@media (min-width: 961px) and (max-width: 1679px) { .sidebar.compact .nav-badge { position: absolute; top: 3px; right: 6px; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; } }
 .news-compose { display: grid; gap: 10px; transition: box-shadow .15s; }
 .news-compose.drag { box-shadow: 0 0 0 2px var(--accent); }
 .news-compose-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: start; }
@@ -1757,3 +1763,13 @@ div.notify-row { cursor: default; }
   .chat-back { display: inline-grid; }
   .chat-msg { max-width: 92%; }
 }
+
+/* ---------- состояние системы ---------- */
+.sys-card.bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.sys-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; margin: 0; font-size: 14px; }
+.sys-rows dt { color: var(--muted); }
+.sys-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sys-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 14px; }
+.sys-list li { display: grid; gap: 2px; }
+.sys-list .error { margin: 0; font-size: 13px; }
+.sys-card .error { margin: 0; }
