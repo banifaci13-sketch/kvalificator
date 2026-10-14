@@ -60,6 +60,16 @@ const DOC_KINDS = [
   ['mediaplan', 'Медиаплан (слайды)', 'презентаци\\S* медиаплан\\S*|слайд\\S* медиаплан\\S*'],
 ];
 
+// бриф по теме: «сделай бриф по контексту для Таллера», «бриф на сайт», «бриф SMM»
+const BRIEF_TOPICS = [
+  ['brief-context', 'Бриф: контекстная реклама', /контекст|директ|поиск\S*\s+реклам|рся/i],
+  ['brief-target', 'Бриф: таргетированная реклама', /таргет|vk|вк\b|вконтакт|телеграм|telegram|mytarget|майтаргет/i],
+  ['brief-seo', 'Бриф: SEO-продвижение', /\bseo\b|\bсео\b|поисков\S*\s+продвиж/i],
+  ['brief-site', 'Бриф: сайт или лендинг', /сайт|лендинг|landing/i],
+  ['brief-smm', 'Бриф: SMM и контент', /\bsmm\b|\bсмм\b|соцсет|социальн|контент/i],
+  ['brief-marketplace', 'Бриф: маркетплейсы', /маркетплейс|ozon|озон|wildberries|вайлдберриз|\bwb\b|\bвб\b|маркет\b/i],
+];
+
 const CREATE = '(?:добавь|добавить|создай|создать|заведи|завести|внеси|внести|оформи|сделай|сделать|подготовь|подготовить|собери|нов(?:ый|ая|ое|ую))';
 
 /** «по клиенту Таллер», «для Ромашки», «Таллеру» — клиент из хвоста фразы. */
@@ -242,6 +252,13 @@ export function parsePhrase(message, { clients = [], team = [], now = new Date()
   if ((m = /^(?:открой|найди|покажи)\s+(?:последний\s+)?медиаплан\S*\s*(.*)$/i.exec(text))) return { intent: 'mediaplan_open', query: strip(m[1].replace(/^(?:для|по)\s+/i, '')) };
 
   // ---------- документы ----------
+  if ((m = new RegExp(`^${CREATE}\\s+(?:нов\\S+\\s+)?бриф\\S*(?:\\s+(.*))?$`, 'i').exec(text))) {
+    const rest = m[1] ?? '';
+    const [id, name] = BRIEF_TOPICS.find(([, , re]) => re.test(rest)) ?? ['brief-complex', 'Бриф: первичный (комплексный маркетинг)'];
+    const client = clientIn(rest, clients);
+    const named = /(?:для|клиенту|клиента)\s+(?:клиента\s+)?«?([^»,:]+?)»?\s*$/i.exec(rest.trim());
+    return { intent: 'document_create', template: id, templateName: name, client, clientName: client?.name ?? (named ? strip(named[1]) : null) };
+  }
   for (const [id, name, re] of DOC_KINDS) {
     const r = new RegExp(`^${CREATE}\\s+(?:нов\\S+\\s+)?(?:${re})(?:\\s+(.*))?$`, 'i').exec(text);
     if (r) {

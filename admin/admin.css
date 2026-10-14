@@ -1773,3 +1773,7 @@ div.notify-row { cursor: default; }
 .sys-list li { display: grid; gap: 2px; }
 .sys-list .error { margin: 0; font-size: 13px; }
 .sys-card .error { margin: 0; }
+
+/* брифы — отдельной группой в выборе шаблона и в «Шаблонах» */
+.tpl-group { grid-column: 1 / -1; margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
+.tpl-group-head { grid-column: 1 / -1; margin: 12px 0 0; font-size: 17px; }

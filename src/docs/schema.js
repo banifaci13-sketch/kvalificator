@@ -173,6 +173,20 @@ export const SLIDE_FIELDS = {
     { key: 'terms', label: 'Условия', type: 'lines', max: 6 },
     { key: 'validUntil', label: 'Действует до', type: 'text' },
   ],
+  brief: [
+    TITLE,
+    { key: 'lead', label: 'Пояснение', type: 'text', hint: 'Например: «Ответы помогут точнее посчитать бюджет»' },
+    layout('brief'),
+    {
+      key: 'questions', label: 'Вопросы', type: 'repeater', max: 4, item: 'Вопрос',
+      fields: [
+        { key: 'question', label: 'Вопрос', type: 'text', max: 90 },
+        { key: 'hint', label: 'Подсказка', type: 'text', max: 110, hint: 'Пример ответа или что важно указать' },
+        { key: 'answer', label: 'Ответ клиента', type: 'textarea', hint: 'Пусто — на слайде останется поле для ответа' },
+      ],
+    },
+    { key: 'start', label: 'Нумерация с', type: 'number', hint: 'Если вопросы продолжаются с прошлого слайда' },
+  ],
   closing: [
     TITLE,
     { key: 'steps', label: 'Следующие шаги', type: 'lines', max: 4 },

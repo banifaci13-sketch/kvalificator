@@ -44,13 +44,16 @@ export function createDocLibrary({ db, brand, templatesDir, dataDir, media = nul
     if (!existsSync(templatesDir)) return [];
     return readdirSync(templatesDir)
       .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(readFileSync(resolve(templatesDir, f), 'utf8')));
+      .map((f) => JSON.parse(readFileSync(resolve(templatesDir, f), 'utf8')))
+      // брифы — отдельной группой после основных шаблонов
+      .sort((a, b) => (a.group === 'brief') - (b.group === 'brief'));
   }
 
   const summarize = (t) => ({
     id: t.id,
     name: t.name,
     description: t.description ?? '',
+    group: t.group ?? null,
     builtin: Boolean(t.builtin),
     variables: t.variables,
     slides: t.spec.slides.length,

@@ -218,6 +218,8 @@ const SCHEMES = {
   'image:full': [['p', 0, 0, 100, 100], ['d', 0, 68, 100, 32], ['l', 6, 74, 60, 8]],
   'gallery:grid': [['t', 6, 8, 50, 8], ['p', 6, 24, 27, 30], ['p', 37, 24, 27, 30], ['p', 68, 24, 27, 30], ['p', 6, 58, 27, 30], ['p', 37, 58, 27, 30], ['p', 68, 58, 27, 30]],
   'gallery:feature': [['t', 6, 8, 50, 8], ['p', 6, 24, 52, 64], ['p', 62, 24, 32, 30], ['p', 62, 58, 32, 30]],
+  'brief:grid': [['t', 6, 8, 50, 8], ['b', 6, 24, 43, 32], ['b', 51, 24, 43, 32], ['b', 6, 60, 43, 32], ['b', 51, 60, 43, 32]],
+  'brief:rows': [['t', 6, 8, 50, 8], ['b', 6, 24, 30, 20], ['p', 40, 24, 54, 20], ['b', 6, 48, 30, 20], ['p', 40, 48, 54, 20], ['b', 6, 72, 30, 20], ['p', 40, 72, 54, 20]],
 };
 function layoutScheme(type, value) {
   const dark = (type === 'cover') || value === 'full';
@@ -324,15 +326,21 @@ function createPanel(templates, preselect, onCancel) {
   let chosen = choices.find((c) => c.id === preselect) ?? choices.find((c) => c.id === 'builtin:kp') ?? choices[0];
   let leads = null;
 
-  const radios = choices.map((t) =>
+  const radio = (t) =>
     h(
       'label',
       { class: 'tpl-choice' },
       h('input', { type: 'radio', name: 'tpl', value: t.id, checked: t === chosen, onchange: () => { chosen = t; fillFields(); } }),
       h('span', { class: 'tpl-name' }, t.name, t.builtin === false ? h('span', { class: 'tag' }, 'свой') : null, t.ai ? h('span', { class: 'tag tag-ai' }, 'ИИ') : null),
       h('span', { class: 'tpl-desc' }, t.description || `${t.slides} ${plural(t.slides, 'слайд', 'слайда', 'слайдов')}`),
-    ),
-  );
+    );
+  // брифы клиенту — отдельной группой под основными шаблонами
+  const briefs = choices.filter((t) => t.group === 'brief');
+  const radios = [
+    ...choices.filter((t) => t.group !== 'brief').map(radio),
+    briefs.length ? h('p', { class: 'tpl-group' }, 'Брифы для клиента — анкета с полями для ответов: заполнить на созвоне или отправить в PDF и PowerPoint') : null,
+    ...briefs.map(radio),
+  ];
 
   async function fillFields() {
     if (chosen.ai) return fillAiFields();
@@ -1296,7 +1304,9 @@ export async function renderTemplates() {
   };
 
   fill(grid, 
-    ...templates.map((t) =>
+    ...templates.flatMap((t, i) => [
+      // заголовок группы перед первым брифом
+      t.group === 'brief' && templates[i - 1]?.group !== 'brief' ? h('h2', { class: 'tpl-group-head' }, 'Брифы для клиента') : null,
       h(
         'article',
         { class: 'panel tpl' },
@@ -1331,7 +1341,7 @@ export async function renderTemplates() {
               }, 'Удалить'),
         ),
       ),
-    ),
+    ]),
   );
 }
 

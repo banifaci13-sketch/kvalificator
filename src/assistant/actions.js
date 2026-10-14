@@ -355,7 +355,11 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       const values = { client, manager: user.name, date: new Date(now.getTime() + MSK).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }), month };
       const title = `${cmd.templateName}${client ? ` — ${client}` : ''}${cmd.template === 'report' ? ` за ${month}` : ''}`;
       const doc = library.createDocument({ templateId: cmd.template ? `builtin:${cmd.template}` : null, values, title }, user.name);
-      const tip = cmd.template ? ' Поля «[заполнить]» — заготовки: цифры туда вписываете вы.' : '';
+      const tip = cmd.template?.startsWith('brief')
+        ? ' Поля для ответов пустые: заполните их на созвоне с клиентом или скачайте PDF или PowerPoint и отправьте ему.'
+        : cmd.template
+          ? ' Поля «[заполнить]» — заготовки: цифры туда вписываете вы.'
+          : '';
       return {
         reply: `Создал «${doc.title}» по шаблону.${tip}${cmd.brief ? ' Если нужен черновик текста по брифу — откройте «Документы» → «Собрать с ИИ».' : ''}`,
         actions: [{ type: 'doc', id: doc.id, title: doc.title, href: `#/doc?id=${doc.id}` }],

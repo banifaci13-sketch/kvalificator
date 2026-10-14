@@ -14,6 +14,7 @@ export const SLIDE_TYPES = {
   image: { label: 'Фото или креатив', theme: 'light', required: ['title'] },
   gallery: { label: 'Креативы', theme: 'light', required: ['title', 'items'] },
   proposal: { label: 'Коммерческое предложение', theme: 'light', required: ['title', 'items'] },
+  brief: { label: 'Вопросы брифа', theme: 'light', required: ['title', 'questions'] },
   closing: { label: 'Следующий шаг и контакты', theme: 'dark', required: ['title'] },
 };
 
@@ -51,7 +52,10 @@ export const LAYOUTS = {
   strategy: [['columns', 'Колонки'], ['rows', 'Строки']],
   image: [['right', 'Фото справа'], ['left', 'Фото слева'], ['wide', 'Фото во всю ширину'], ['full', 'Фото на весь слайд']],
   gallery: [['grid', 'Сетка'], ['feature', 'Одно крупное']],
+  brief: [['grid', 'Карточки 2 × 2'], ['rows', 'Строки: больше места для ответа']],
 };
+/** Сколько вопросов брифа помещается на слайд в каждой раскладке. */
+export const BRIEF_PER_SLIDE = { grid: 4, rows: 3 };
 const layoutOf = (slide) => {
   const list = LAYOUTS[slide.type];
   return list?.some(([v]) => v === slide.layout) ? slide.layout : list?.[0][0];
@@ -386,6 +390,47 @@ const BUILDERS = {
       slide.validUntil ? text('valid', { x: sideX + 40, y: 824, w: sideW - 80, h: 48 }, 'caption', `Предложение действует до ${slide.validUntil}`, { color: 'steel' }) : null,
       ...dataFooter(slide, ctx),
     ].filter(Boolean);
+  },
+
+  // Бриф: вопрос, подсказка и поле ответа. Пустое поле остаётся белым — его заполняют на созвоне,
+  // в PowerPoint или от руки в PDF; заполненный ответ печатается внутри поля.
+  brief(slide, ctx) {
+    const { L } = ctx;
+    const layout = layoutOf(slide);
+    const qs = (slide.questions ?? []).slice(0, BRIEF_PER_SLIDE[layout]);
+    const top = slide.lead ? 320 : 288;
+    const out = [contentTitle(slide, L)];
+    if (slide.lead) out.push(text('lead', { x: L.M, y: 248, w: L.CW, h: 48 }, 'body', slide.lead, { color: 'steel' }));
+    const num = (i) => `${slide.start ? Number(slide.start) + i : i + 1}.`;
+    if (layout === 'rows') {
+      const gap = 24;
+      const h = Math.floor((L.contentBottom - top - gap * 2) / 3);
+      const qW = 640;
+      qs.forEach((q, i) => {
+        const y = top + i * (h + gap);
+        const ax = L.M + qW + 64;
+        out.push({ kind: 'rect', name: `q-${i}-card`, x: L.M, y, w: L.CW, h, fill: 'mist', radius: 16 });
+        out.push(text(`q-${i}-text`, { x: L.M + 32, y: y + 24, w: qW, h: 76 }, 'bodyStrong', `${num(i)} ${q.question ?? ''}`));
+        if (q.hint) out.push(text(`q-${i}-hint`, { x: L.M + 32, y: y + 108, w: qW, h: 56 }, 'caption', q.hint, { color: 'steel' }));
+        out.push({ kind: 'rect', name: `q-${i}-field`, x: ax, y: y + 20, w: L.W - L.M - ax - 20, h: h - 40, fill: 'paper', radius: 8 });
+        if (q.answer) out.push(text(`q-${i}-answer`, { x: ax + 24, y: y + 32, w: L.W - L.M - ax - 68, h: h - 64 }, 'small', q.answer));
+      });
+      return out;
+    }
+    const cols = L.cols(2);
+    const gap = 32;
+    const h = Math.floor((L.contentBottom - top - gap) / 2);
+    qs.forEach((q, i) => {
+      const { x, w } = cols[i % 2];
+      const y = top + Math.floor(i / 2) * (h + gap);
+      out.push({ kind: 'rect', name: `q-${i}-card`, x, y, w, h, fill: 'mist', radius: 16 });
+      out.push(text(`q-${i}-text`, { x: x + 32, y: y + 24, w: w - 64, h: 76 }, 'bodyStrong', `${num(i)} ${q.question ?? ''}`));
+      if (q.hint) out.push(text(`q-${i}-hint`, { x: x + 32, y: y + 104, w: w - 64, h: 56 }, 'caption', q.hint, { color: 'steel' }));
+      const fy = y + (q.hint ? 168 : 112);
+      out.push({ kind: 'rect', name: `q-${i}-field`, x: x + 20, y: fy, w: w - 40, h: y + h - 20 - fy, fill: 'paper', radius: 8 });
+      if (q.answer) out.push(text(`q-${i}-answer`, { x: x + 40, y: fy + 12, w: w - 80, h: y + h - 44 - fy }, 'small', q.answer));
+    });
+    return out;
   },
 
   // Фото или креатив с текстом: раскладка задаёт, где фото

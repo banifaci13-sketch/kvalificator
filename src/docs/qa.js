@@ -3,7 +3,7 @@
 //  2) Вёрстка (в Chromium): текст помещается (с запасом под шрифты PowerPoint), поля, минимальный
 //     кегль, контраст, иерархия, наложения, изображения, логотип.
 
-import { SLIDE_TYPES } from './templates.js';
+import { SLIDE_TYPES, BRIEF_PER_SLIDE } from './templates.js';
 import { renderDeckHtml, layoutDeck } from './render-html.js';
 import { withPage } from './browser.js';
 import { FIGURE_STYLES } from './layout.js';
@@ -47,6 +47,13 @@ export function checkContent(deck, brand) {
     if (s.chart) checkChart(s.chart, (m) => errors.push(at(i, m)));
     if ((s.type === 'mediaplan' || s.type === 'ecomplan') && s.dataStatus === 'fact') warnings.push(at(i, 'медиаплан помечен как «Факт» — обычно это прогноз'));
     if (s.type === 'kpi' && s.kpis?.length > 4) warnings.push(at(i, 'больше 4 KPI — лишние не поместятся'));
+    if (s.type === 'brief') {
+      (s.questions ?? []).forEach((q, k) => {
+        if (!String(q.question ?? '').trim()) errors.push(at(i, `вопрос ${k + 1}: нет текста вопроса`));
+      });
+      const fit = BRIEF_PER_SLIDE[s.layout] ?? BRIEF_PER_SLIDE.grid;
+      if ((s.questions ?? []).length > fit) warnings.push(at(i, `в этой раскладке помещается ${fit} вопроса — остальные перенесите на новый слайд`));
+    }
   });
   return { errors, warnings };
 }

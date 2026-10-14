@@ -74,3 +74,35 @@ test('демо-презентация проходит проверку вёрс
   const qa = await runQa(demo, brand);
   assert.deepEqual(qa.errors, []);
 });
+
+test('бриф: вопросы с полями для ответа, нумерация, раскладки; пустой вопрос — ошибка', async () => {
+  const { readdirSync } = await import('node:fs');
+  const { fillVariables } = await import('../src/docs/library.js');
+  const dir = new URL('../templates/decks/', import.meta.url);
+  const briefs = readdirSync(dir).filter((f) => f.startsWith('brief-'));
+  assert.equal(briefs.length, 7);
+  for (const f of briefs) {
+    const t = JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
+    assert.equal(t.group, 'brief', f);
+    const spec = fillVariables(t.spec, { client: 'Таллер', date: '14 октября 2026', manager: 'Анна', manager_contacts: '+7 900 000-00-00' });
+    assert.deepEqual(checkContent(spec, brand).errors, [], f);
+  }
+  const html = renderDeckHtml({ slides: [{ type: 'brief', title: 'Цели', layout: 'rows', start: 5, questions: [{ question: 'Бюджет в месяц', hint: 'С НДС или без', answer: '300 000 ₽' }, { question: 'Сроки', answer: '' }] }] }, brand);
+  assert.match(html, /5\. Бюджет в месяц/);
+  assert.match(html, /6\. Сроки/);
+  assert.match(html, /300 000 ₽/);
+  const bad = checkContent({ slides: [{ type: 'brief', title: 'Т', layout: 'rows', questions: [{ question: '' }, { question: 'a' }, { question: 'b' }, { question: 'c' }] }] }, brand);
+  assert.match(bad.errors.join(' '), /вопрос 1: нет текста вопроса/);
+  assert.match(bad.warnings.join(' '), /помещается 3 вопроса/);
+  const pptx = await renderDeckPptx({ slides: [{ type: 'brief', title: 'Т', questions: [{ question: 'Кто ваш клиент?', hint: 'Пол, возраст' }] }] }, brand);
+  assert.ok(pptx.length > 10_000);
+});
+
+test('бриф проходит проверку вёрстки', { skip: !hasChromium && 'нет Chromium' }, async () => {
+  const t = JSON.parse(readFileSync(new URL('../templates/decks/brief-context.json', import.meta.url), 'utf8'));
+  const { fillVariables } = await import('../src/docs/library.js');
+  const spec = fillVariables(t.spec, { client: 'Таллер', date: '14 октября 2026', manager: 'Анна', manager_contacts: '+7 900 000-00-00' });
+  spec.slides[2].questions[0].answer = 'Владельцы малого бизнеса 30–50 лет, решение принимает собственник; B2B';
+  const { qa } = await buildDeck(spec, brand, { formats: ['pdf'] });
+  assert.ok(qa);
+});

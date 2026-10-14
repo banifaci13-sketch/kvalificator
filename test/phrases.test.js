@@ -247,3 +247,15 @@ test('клиент по-русски и по-английски: «леокид�
   assert.equal(run('что по медлайну', 'Medialab'), null);
   assert.equal(run('сделай МП для ромашки', 'Romantic'), 'Ромашка');
 });
+
+test('бриф по теме из фразы', () => {
+  const run = (phrase) => parsePhrase(phrase, { clients });
+  assert.deepEqual([run('сделай бриф по контексту для Таллера').template, run('сделай бриф по контексту для Таллера').client?.name], ['brief-context', 'Таллер']);
+  assert.equal(run('подготовь бриф на сайт').template, 'brief-site');
+  assert.equal(run('создай бриф SMM для Ромашки').template, 'brief-smm');
+  assert.equal(run('новый бриф по таргету ВК').template, 'brief-target');
+  assert.equal(run('сделай бриф по SEO').template, 'brief-seo');
+  assert.equal(run('бриф по маркетплейсам для Медлайн')?.template, undefined, 'без глагола — не команда');
+  assert.equal(run('сделай бриф по маркетплейсам для Медлайн').template, 'brief-marketplace');
+  assert.equal(run('создай бриф для Таллера').template, 'brief-complex');
+});
