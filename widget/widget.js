@@ -98,6 +98,7 @@
       '<header class="head">' +
         '<div class="avatar" aria-hidden="true">' + iconChat() + '</div>' +
         '<div class="head-text"><h2 id="kv-title"></h2><p class="sub"></p></div>' +
+        '<button class="restart" type="button" aria-label="Начать заново" title="Начать заново">' + iconRestart() + '</button>' +
         '<button class="close" type="button" aria-label="Закрыть">' + iconClose() + '</button>' +
       '</header>' +
       '<div class="progress" role="progressbar" aria-label="Прогресс" aria-valuemin="0" aria-valuemax="100"><span></span></div>' +
@@ -465,7 +466,46 @@
     log.textContent = '';
     clearControls();
     state = { transcript: [] };
+    dialogMode = false;
+    progress.hidden = false;
+    goal('kval_restart');
     startNew();
+  }
+
+  // Кнопка в шапке: начать разговор заново посреди диалога. Пока бот «печатает», не реагирует —
+  // иначе старый ответ дорисуется в новую ленту. Если уже что-то ответили, сначала переспрашиваем.
+  function askRestart() {
+    if (busy || !controls.childNodes.length || controls.querySelector('.confirm')) return;
+    var answered = state.transcript.some(function (m) { return m.from === 'user'; });
+    if (!answered || state.done) return restart();
+    var prev = Array.prototype.slice.call(controls.childNodes);
+    clearControls();
+    var box = document.createElement('div');
+    box.className = 'confirm';
+    var p = document.createElement('p');
+    p.textContent = 'Начать разговор заново? Ответы выше не сохранятся.';
+    var yes = document.createElement('button');
+    yes.type = 'button';
+    yes.className = 'primary';
+    yes.textContent = 'Начать заново';
+    yes.addEventListener('click', restart);
+    var no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'skip';
+    no.textContent = 'Продолжить разговор';
+    no.addEventListener('click', function () {
+      clearControls();
+      prev.forEach(function (n) { controls.appendChild(n); });
+      scrollEnd();
+      var f = controls.querySelector('input, textarea, button');
+      if (f) f.focus({ preventScroll: true });
+    });
+    box.appendChild(p);
+    box.appendChild(yes);
+    box.appendChild(no);
+    controls.appendChild(box);
+    scrollEnd();
+    yes.focus({ preventScroll: true });
   }
 
   // ---------- открытие / закрытие ----------
@@ -494,6 +534,7 @@
 
   launcher.addEventListener('click', open);
   $('.close').addEventListener('click', close);
+  $('.restart').addEventListener('click', askRestart);
   panel.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 
   document.addEventListener('click', function (e) {
@@ -535,7 +576,7 @@
       'background:var(--kv-color);color:#fff;font-weight:600;box-shadow:0 10px 30px rgba(10,30,60,.28);transition:transform .2s ease,box-shadow .2s ease}',
       '.launcher[hidden]{display:none}',
       '.launcher:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(10,30,60,.34)}',
-      '.launcher:focus-visible,.option:focus-visible,.primary:focus-visible,.send:focus-visible,.skip:focus-visible,.close:focus-visible{outline:3px solid var(--kv-accent);outline-offset:2px}',
+      '.launcher:focus-visible,.option:focus-visible,.primary:focus-visible,.send:focus-visible,.skip:focus-visible,.close:focus-visible,.restart:focus-visible{outline:3px solid var(--kv-accent);outline-offset:2px}',
       '.launcher-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--kv-accent);color:var(--kv-on-accent)}',
       '.launcher-icon svg{width:22px;height:22px}',
       '.panel{position:fixed;bottom:20px;' + side + ':20px;width:380px;height:min(640px,calc(100vh - 40px));display:flex;flex-direction:column;',
@@ -550,9 +591,12 @@
       '.head-text{flex:1;min-width:0}',
       'h2{margin:0;font-size:16px;font-weight:700}',
       '.sub{margin:2px 0 0;font-size:13px;opacity:.85}',
-      '.close{flex:none;display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:#fff}',
-      '.close:hover{background:rgba(255,255,255,.14)}',
-      '.close svg{width:20px;height:20px}',
+      '.close,.restart{flex:none;display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:#fff}',
+      '.close:hover,.restart:hover{background:rgba(255,255,255,.14)}',
+      '.close svg{width:20px;height:20px}.restart svg{width:18px;height:18px}',
+      '.restart+.close{margin-left:-8px}',
+      '.confirm{display:flex;flex-direction:column;gap:6px}',
+      '.confirm p{margin:0 0 2px;font-size:13px;color:var(--kv-muted);text-align:center}',
       '.progress{height:3px;background:var(--kv-line)}',
       '.progress span{display:block;height:100%;width:0;background:var(--kv-accent);transition:width .3s ease}',
       '.log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}',
@@ -592,6 +636,9 @@
   }
   function iconClose() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  }
+  function iconRestart() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>';
   }
   function iconSend() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
