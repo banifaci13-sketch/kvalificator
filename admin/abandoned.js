@@ -6,7 +6,11 @@ import { h, api, app, shell, navigate, ctx, fmtDateTime, plural, answerText } fr
 import { fill } from './docs.js';
 
 const CHANNELS = { web: 'Сайт', telegram: 'Telegram', max: 'MAX' };
-const STEP = { name: 'на имени', task: 'на описании задачи', clarify: 'на уточнении', criteria: 'на выборе исполнителя', consent: 'на согласии', contact: 'на контакте' };
+const STEP = {
+  name: 'на имени', task: 'на описании задачи', criteria: 'на выборе исполнителя', consent: 'на согласии', contact: 'на контакте',
+  clarify_company: 'на вопросе о компании', clarify_services: 'на вопросе об услугах', clarify_budget: 'на вопросе о бюджете',
+  clarify_start: 'на вопросе о сроках', clarify_agency_experience: 'на вопросе о прошлых подрядчиках', clarify_dissatisfaction: 'на вопросе, почему меняют подрядчика', clarify_site: 'на вопросе о сайте',
+};
 
 export async function renderAbandoned() {
   if (ctx.me.role !== 'admin') return navigate('leads');
