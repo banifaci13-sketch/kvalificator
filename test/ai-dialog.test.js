@@ -203,8 +203,11 @@ test('брошенные диалоги: список для администр�
   const s = await start({ page: 'https://site.ru/price' });
   await say(s, { value: 'Пётр' });
   await say(s, { value: 'Нужен сайт под ключ, бюджет 200к' });
-  db.raw.prepare("UPDATE sessions SET updated_at = datetime('now', '-2 hours')").run();
   const ab = createAbandoned({ db: db.raw, days: 10 });
+  // закрыл окно и думает — ещё не ушёл; 5 минут без ответа — брошенный
+  db.raw.prepare("UPDATE sessions SET updated_at = datetime('now', '-4 minutes')").run();
+  assert.equal(ab.list().length, 0, '4 минуты — ещё не брошенный');
+  db.raw.prepare("UPDATE sessions SET updated_at = datetime('now', '-6 minutes')").run();
   const [d] = ab.list();
   assert.deepEqual([d.found.name, d.found.budget, d.step, d.page], ['Пётр', '100_300k', 'clarify_company', 'https://site.ru/price']);
   assert.equal(d.dialog.filter((m) => m.from === 'user').length, 2);

@@ -2,12 +2,12 @@
 // Даты в базе — UTC; в интерфейсе и группировке по дням — московское время.
 
 import { ratingLetter } from '../core/scoring.js';
+// незавершённый опрос считаем брошенным после ABANDON_AFTER без ответа — так же, как в списке «Брошенные»
+import { ABANDON_AFTER } from '../core/abandoned.js';
 
 const MSK = '+3 hours';
 const MSK_BACK = '-3 hours';
 const PAGE_SIZE = 50;
-// Незавершённый опрос считаем брошенным, если в нём ничего не происходило полчаса
-const ABANDON_AFTER = '-30 minutes';
 
 export const LEAD_STATUSES = {
   new: 'Новый',
