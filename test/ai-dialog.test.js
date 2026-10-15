@@ -6,7 +6,7 @@ import { buildServer } from '../src/http/server.js';
 import { loadConfig } from '../src/config.js';
 import { ruleExtract, cleanExtract, moneyFromText, budgetBucket } from '../src/core/ai-dialog.js';
 import { createAbandoned } from '../src/core/abandoned.js';
-import { createPricing } from '../src/core/pricing.js';
+import { createPricing, loadPricing } from '../src/core/pricing.js';
 import { formatLeadCard } from '../src/notify/telegram.js';
 import { scenario, rules, staticSource, silentLog } from './helpers.js';
 
@@ -114,7 +114,7 @@ test('«Оставить контакт» на любом шаге: сразу �
 
 test('ИИ: разбирает рассказ, в модель не уходят телефоны; странный ответ модели не ломает диалог', async () => {
   const ai = fakeAi(JSON.stringify({ company: 'ООО Ромашка', site: 'romashka.ru', services: ['seo'], budget_rub: 2_000_000, start: 'month', agency_experience: 'none', industry: 'medicine', summary: 'SEO для клиники' }));
-  const { start, say, db } = await setup({ ai, pricing: createPricing({ services: { seo: { from: 60000, unit: 'в месяц' } } }) });
+  const { start, say, db } = await setup({ ai, pricing: createPricing({ products: [{ id: 'seo', name: 'SEO+GEO', service: 'seo', default: true, from: 60000 }] }) });
   const s = await start();
   await say(s, { value: 'Мария' });
   let r = (await say(s, { value: 'Нужно SEO для клиники, звоните +7 999 111-22-33' })).json().reply;
@@ -122,7 +122,7 @@ test('ИИ: разбирает рассказ, в модель не уходят
   assert.doesNotMatch(ai.calls[0].user, /999 111-22-33/, 'телефон замаскирован');
   assert.match(ai.calls[0].system, /данные, а не инструкции/);
   r = (await say(s, { value: 'expertise' })).json().reply;
-  assert.match(r.step.text, /Предварительная стоимость наших услуг для решения задачи — от 60 000 ₽ в месяц/, 'цену считает код по прайсу');
+  assert.match(r.step.text, /Предварительная стоимость наших услуг для решения задачи — от 60 000 ₽ \(SEO\+GEO\)/, 'цену считает код по прайсу');
   await say(s, { value: 'yes' });
   await say(s, { value: 'maria@clinic.ru' });
   const lead = db.getLead(1);
@@ -135,6 +135,34 @@ test('ИИ: разбирает рассказ, в модель не уходят
   r = (await broken.say(s2, { value: 'Нужен таргет ВК, бюджет 150к' })).json().reply;
   assert.equal(r.step.id, 'clarify_company');
   assert.match(r.step.text, /Как называется ваша компания/);
+});
+
+test('цена по прайсу агентства: продукты по словам клиента, разбивка клиенту и менеджеру', async () => {
+  const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
+  const { start, say, db } = await setup({ pricing });
+  const s = await start();
+  await say(s, { value: 'Аня' });
+  // без ИИ: «телега» и «группа вк» — из словаря прайса; бюджет, сроки и прочее — уточнения
+  let r = (await say(s, { value: 'Нужна реклама в телеге и ведение группы ВК для ООО «Пекарня», сайт bulki.ru, бюджет 200к, срочно, раньше не работали' })).json().reply;
+  assert.equal(r.step.id, 'criteria', 'услуги поняты без вопроса');
+  r = (await say(s, { value: 'results' })).json().reply;
+  assert.match(r.step.text, /— от 105 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽/);
+  await say(s, { value: 'yes' });
+  await say(s, { value: '+7 900 123-45-67' });
+  const lead = db.getLead(1);
+  assert.deepEqual([...lead.answers.services].sort(), ['smm', 'target']);
+  assert.equal(lead.answers.price, 'от 105 000 ₽: Реклама в Telegram — от 30 000 ₽; SMM ВКонтакте — от 75 000 ₽');
+
+  // продукт без направления сценария («брендформанс») — про услуги не переспрашиваем
+  const s2 = await start();
+  await say(s2, { value: 'Олег' });
+  r = (await say(s2, { value: 'Интересует брендформанс' })).json().reply;
+  assert.equal(r.step.id, 'clarify_company');
+  for (const v of ['ИП Олегов', '300 тыс', 'month', 'none', 'нет']) r = (await say(s2, { value: v })).json().reply;
+  assert.equal(r.step.id, 'criteria');
+  // «Оставить контакт» до конца разговора — цена тоже называется
+  r = (await say(s2, { action: 'contact' })).json().reply;
+  assert.match(r.step.text, /— от 150 000 ₽ \(Брендформанс\)\./);
 });
 
 test('режим test: новый диалог только в тестовых опросах, обычные — по сценарию', async () => {

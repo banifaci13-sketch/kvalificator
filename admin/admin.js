@@ -1221,7 +1221,7 @@ function fillLead(body, title, lead, events) {
   );
 
   // диалог с ИИ: суть задачи и список услуг — первыми, затем ответы по полям сценария
-  const EXTRA = { summary: 'Суть задачи', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)' };
+  const EXTRA = { summary: 'Суть задачи', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
   const extra = Object.entries(EXTRA)
     .filter(([k]) => lead.answers[k] != null)
     .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : String(lead.answers[k]))]);

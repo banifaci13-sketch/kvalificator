@@ -87,6 +87,6 @@ function formatAnswer(step, value) {
 }
 
 // подписи ответов диалога с ИИ, которых нет среди вопросов сценария
-const EXTRA = { services: 'Услуги', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)' };
+const EXTRA = { services: 'Услуги', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
 
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

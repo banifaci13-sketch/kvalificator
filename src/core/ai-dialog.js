@@ -205,7 +205,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         return {
           id: 'consent', type: 'consent',
           text: [
-            state.price ? `Предварительная стоимость наших услуг для решения задачи — ${state.price}.` : null,
+            priceText(state.price),
             state.early
               ? 'Оставьте, пожалуйста, контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.'
               : 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.',
@@ -217,6 +217,25 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       default:
         return null;
     }
+  }
+
+  // «— от 105 000 ₽:» и по строке на продукт прайса; один продукт — в скобках
+  function priceText(price) {
+    if (!price?.total) return null;
+    const lead = 'Предварительная стоимость наших услуг для решения задачи';
+    if (price.items.length === 1) return `${lead} — ${price.total} (${price.items[0].replace(/ — .*$/, '')}).`;
+    return `${lead} — ${price.total}:\n${price.items.map((i) => `• ${i}`).join('\n')}`;
+  }
+
+  /** Цена по прайсу: направления — из разговора, конкретные продукты — по словам клиента. */
+  function setPrice(state) {
+    const a = state.answers;
+    const words = state.transcript.filter((m) => m.from === 'user').map((m) => m.text).join('\n');
+    const est = pricing?.estimate?.(a.services ?? (a.service ? [a.service] : []), words) ?? null;
+    state.price = est ? { total: est.total, items: est.items } : null;
+    // менеджеру — с разбивкой, чтобы видеть, из чего сложилась цифра, названная клиенту
+    if (est) a.price = `${est.total}: ${est.items.join('; ')}`;
+    else delete a.price;
   }
 
   function render(state) {
@@ -267,7 +286,17 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         log.warn?.({ err: err.message }, 'Квалификатор: ИИ не разобрал ответ — работаю по правилам');
       }
     }
-    return { ...byRules, ...byAi, services: byAi.services ?? byRules.services };
+    // словарь прайса знает больше вариантов написания («телега», «лендос», «вб») — добавляем найденное им
+    const named = named_(source);
+    const services = [...new Set([...(byAi.services ?? byRules.services ?? []), ...named.services])];
+    const out = { ...byRules, ...byAi, services: services.length ? services : undefined };
+    if (named.products.length) out.products = named.products;
+    return out;
+  }
+
+  // направления и продукты прайса, названные клиентом (без прайса — пусто)
+  function named_(text) {
+    return pricing?.detect?.(text) ?? { services: [], products: [] };
   }
 
   /** Найденное — в ответы сценария (по ним считается оценка и строится карточка). */
@@ -287,7 +316,8 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     if (ex.summary) a.summary = ex.summary;
   }
 
-  const isMissing = (state, k) => (k === 'services' ? !state.extracted.services?.length : state.extracted[k] == null);
+  // услуги известны, если понятно направление или клиент назвал продукт из прайса («брендформанс»)
+  const isMissing = (state, k) => (k === 'services' ? !state.extracted.services?.length && !state.extracted.products?.length : state.extracted[k] == null);
 
   /** Что спросить после рассказа: недостающее по порядку важности. */
   function missing(state) {
@@ -320,8 +350,10 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         if (!no) ex.site = (SITE_RE.exec(raw)?.[0] ?? raw).replace(/[.,;]+$/, '').trim().slice(0, 200);
         break;
       case 'services': {
-        const found = opt ? [opt.value] : ruleExtract(raw).services;
-        if (found?.length) ex.services = found;
+        const named = opt ? null : named_(raw);
+        const found = opt ? [opt.value] : [...new Set([...(ruleExtract(raw).services ?? []), ...named.services])];
+        if (found.length) ex.services = found;
+        if (named?.products.length) ex.products = named.products;
         break;
       }
       case 'budget': {
@@ -375,6 +407,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       if (!['consent', 'contact'].includes(state.phase)) {
         state.early = true;
         state.phase = 'consent';
+        setPrice(state);
       }
       return advance(state);
     }
@@ -427,7 +460,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         heard(state, label);
         if (c.value) state.answers.criteria = c.value;
         if (c.text) state.answers.criteria_text = c.text;
-        state.price = pricing?.estimate?.(state.answers.services ?? (state.answers.service ? [state.answers.service] : []), state.answers) ?? null;
+        setPrice(state);
         state.phase = 'consent';
         break;
       }
