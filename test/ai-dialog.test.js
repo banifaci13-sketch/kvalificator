@@ -113,11 +113,14 @@ test('«Оставить контакт» на любом шаге: сразу �
 });
 
 test('ИИ: разбирает рассказ, в модель не уходят телефоны; странный ответ модели не ломает диалог', async () => {
-  const ai = fakeAi(JSON.stringify({ company: 'ООО Ромашка', site: 'romashka.ru', services: ['seo'], budget_rub: 2_000_000, start: 'month', agency_experience: 'none', industry: 'medicine', summary: 'SEO для клиники' }));
+  const ai = fakeAi(JSON.stringify({
+    company: 'ООО Ромашка', site: 'romashka.ru', services: ['seo'], budget_rub: 2_000_000, start: 'month', agency_experience: 'none', industry: 'medicine', summary: 'SEO для клиники',
+    evidence: { services: 'Нужно SEO', budget_rub: '2 млн в месяц', start: 'стартуем в этом месяце', agency_experience: 'с агентствами раньше не работали', industry: 'для клиники' },
+  }));
   const { start, say, db } = await setup({ ai, pricing: createPricing({ products: [{ id: 'seo', name: 'SEO+GEO', service: 'seo', default: true, from: 60000 }] }) });
   const s = await start();
   await say(s, { value: 'Мария' });
-  let r = (await say(s, { value: 'Нужно SEO для клиники, звоните +7 999 111-22-33' })).json().reply;
+  let r = (await say(s, { value: 'Мы ООО Ромашка, сайт romashka.ru. Нужно SEO для клиники, бюджет 2 млн в месяц, стартуем в этом месяце, с агентствами раньше не работали. Звоните +7 999 111-22-33' })).json().reply;
   assert.equal(r.step.id, 'criteria', 'всё понятно — без уточнения');
   assert.doesNotMatch(ai.calls[0].user, /999 111-22-33/, 'телефон замаскирован');
   assert.match(ai.calls[0].system, /данные, а не инструкции/);
@@ -163,6 +166,27 @@ test('цена по прайсу агентства: продукты по сл�
   // «Оставить контакт» до конца разговора — цена тоже называется
   r = (await say(s2, { action: 'contact' })).json().reply;
   assert.match(r.step.text, /— от 150 000 ₽ \(Брендформанс\)\./);
+});
+
+test('ИИ без цитаты из текста клиента не заполняет поле — вопрос задаётся', async () => {
+  // клиент сказал только про рекламу, а модель «додумала» сроки, опыт и сферу
+  const ai = fakeAi(JSON.stringify({
+    services: ['context'], start: 'month', agency_experience: 'none', industry: 'medicine', budget_rub: 150000,
+    evidence: { services: 'нужна реклама в директе', start: 'скоро', agency_experience: 'не работали' },
+  }));
+  const { start, say } = await setup({ ai });
+  const s = await start();
+  await say(s, { value: 'Ира' });
+  let r = (await say(s, { value: 'Нужна реклама в директе для салона' })).json().reply;
+  const asked = [r.step.id];
+  for (const v of ['ООО Салон', '150 тыс', 'month', 'none', 'нет']) {
+    r = (await say(s, { value: v })).json().reply;
+    asked.push(r.step.id);
+  }
+  assert.deepEqual(asked, ['clarify_company', 'clarify_budget', 'clarify_start', 'clarify_agency_experience', 'clarify_site', 'criteria'],
+    'услуги подтверждены цитатой — не спрашиваем; сроки, опыт и бюджет без цитаты — спрашиваем');
+  assert.deepEqual(cleanExtract({ industry: 'medicine', evidence: { industry: 'для клиники' } }, scenario, 'Сайт для клиники'), { industry: 'medicine' });
+  assert.deepEqual(cleanExtract({ industry: 'medicine' }, scenario, 'Сайт для клиники'), {}, 'без цитаты — нет');
 });
 
 test('режим test: новый диалог только в тестовых опросах, обычные — по сценарию', async () => {
