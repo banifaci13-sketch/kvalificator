@@ -14,7 +14,7 @@ export class SessionError extends Error {}
  * aiMode — новый диалог с ИИ вместо сценария: 'off' — как раньше; 'test' — только тестовые опросы
  * (ссылка из админки); 'on' — для всех. Начатый диалог доводится тем же движком, каким начат.
  */
-export function createQualifier({ db, scenarioSource, rules, notifier, log = console, ai = null, aiMode = 'off', pricing = null }) {
+export function createQualifier({ db, scenarioSource, rules, notifier, log = console, ai = null, aiMode = 'off', pricing = null, summarizer = null }) {
   const leadHooks = [];
   let engineFor = null;
   let engine = null;
@@ -99,7 +99,7 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
     const withDialog = state.mode === 'ai' ? { ...session, meta: { ...session.meta, mode: 'ai', dialog: state.transcript } } : session;
     const lead = db.completeSession(withDialog, state, result);
     log.info({ leadId: lead.id, rating: lead.rating, channel: lead.channel }, 'Новый лид');
-    void deliver(lead);
+    void summarizeAndDeliver(lead);
     // подписчики на новые заявки (например, задача «Связаться» по горячей заявке); их ошибки не мешают клиенту
     for (const fn of leadHooks) {
       try {
@@ -113,6 +113,24 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
     const hint = scenario.budgetHints?.[state.answers.service];
     if (lead.rating === 2 && hint) reply.hint = hint;
     return reply;
+  }
+
+  // сводка ИИ — до отправки менеджерам: так она попадает и в карточку Telegram, и в CRM;
+  // без ИИ или при сбое заявка уходит без сводки (не позже чем через ~25 секунд)
+  async function summarizeAndDeliver(lead) {
+    let next = lead;
+    if (summarizer?.enabled) {
+      try {
+        const summary = await summarizer.summarize(lead, scenarioSource.get());
+        if (summary) {
+          db.setLeadSummary(lead.id, summary);
+          next = db.getLead(lead.id);
+        }
+      } catch (err) {
+        log.warn?.({ err, leadId: lead.id }, 'Сводка ИИ по заявке не получилась');
+      }
+    }
+    await deliver(next);
   }
 
   const delivering = new Set();

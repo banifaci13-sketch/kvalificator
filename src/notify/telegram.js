@@ -1,6 +1,7 @@
 // Карточка нового лида в Telegram-чат менеджеров (через Bot API).
 
 import { ratingLetter } from '../core/scoring.js';
+import { POTENTIAL } from '../core/lead-summary.js';
 
 const STARS = ['', '★☆☆☆☆', '★★☆☆☆', '★★★☆☆', '★★★★☆', '★★★★★'];
 const CHANNELS = { web: 'виджет на сайте', telegram: 'Telegram', max: 'MAX' };
@@ -40,7 +41,19 @@ export function formatLeadCard(lead, scenario) {
     '',
   ];
 
-  const rows = [];
+  // сводка ИИ — первой: кто клиент, потенциал, что предложить
+  const ai = lead.ai_summary;
+  const summary = ai
+    ? [
+        `🤖 <b>Сводка ИИ</b> · потенциал: <b>${esc(POTENTIAL[ai.potential] ?? ai.potential)}</b>`,
+        ai.about ? esc(ai.about) : null,
+        ai.why ? `<i>${esc(ai.why)}</i>` : null,
+        ai.comment ? `💬 ${esc(ai.comment)}` : null,
+        '',
+      ].filter((l) => l !== null)
+    : [];
+
+  const rows = [...summary];
   for (const step of scenario.steps) {
     if (step.type === 'consent' || !(step.id in lead.answers)) continue;
     rows.push(`<b>${esc(step.label ?? step.id)}:</b> ${esc(formatAnswer(step, lead.answers[step.id]))}`);

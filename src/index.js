@@ -27,6 +27,7 @@ import { closeBrowser } from './docs/browser.js';
 import { createMonitor } from './ops/monitor.js';
 import { createAbandoned } from './core/abandoned.js';
 import { loadPricing } from './core/pricing.js';
+import { createLeadSummary } from './core/lead-summary.js';
 import { dirname, resolve } from 'node:path';
 
 const RETRY_INTERVAL_MS = 5 * 60_000;
@@ -44,7 +45,7 @@ const scenarioSource = await createScenarioSource({ file: config.scenarioFile, c
 const ai = createAi(config.ai);
 // прайс для «от … ₽» в диалоге квалификатора (если файла нет — цена не называется)
 const pricing = loadPricing(resolve(config.root, 'config/pricing.json'), log);
-const qualifier = createQualifier({ db, scenarioSource, rules, notifier, log, ai, aiMode: config.qualifierAi, pricing });
+const qualifier = createQualifier({ db, scenarioSource, rules, notifier, log, ai, aiMode: config.qualifierAi, pricing, summarizer: createLeadSummary({ ai, log }) });
 
 if (!notifier) log.warn('Получатели лидов не настроены (TELEGRAM_* или LEAD_WEBHOOK_URL) — лиды только сохраняются в базу');
 

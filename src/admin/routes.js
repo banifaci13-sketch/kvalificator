@@ -30,6 +30,7 @@ import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
 import { createSearch } from '../assistant/search.js';
 import { meetingsIcs } from '../calendar/store.js';
+import { createLeadSummary } from '../core/lead-summary.js';
 
 const SESSION_COOKIE = 'kval_admin';
 // Вход и смена пароля считаются по IP: иначе поддельная cookie давала бы новый счётчик на каждую попытку
@@ -231,6 +232,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       },
       testChat: Boolean(config.telegram.testChatId),
       avatars: auth.avatars(),
+      aiSummary: Boolean(ai?.enabled),
     }));
 
     api.get('/admin/api/leads', { schema: { querystring: leadQuery } }, async (req) => ({
@@ -246,6 +248,21 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       const lead = db.getLead(req.params.id);
       if (!lead) return reply.code(404).send({ error: 'Лид не найден' });
       return { lead, events: db.leadEvents(lead.id) };
+    });
+
+    // сводка ИИ по заявке: составить заново (по тем же данным заявки)
+    const summarizer = createLeadSummary({ ai, log: app.log });
+    api.post('/admin/api/leads/:id/summary', {
+      schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    }, async (req, reply) => {
+      const lead = db.getLead(req.params.id);
+      if (!lead) return reply.code(404).send({ error: 'Лид не найден' });
+      if (!summarizer.enabled) return reply.code(409).send({ error: 'ИИ не подключён — сводку составить нельзя' });
+      const summary = await summarizer.summarize(lead, scenarioSource.get());
+      if (!summary) return reply.code(502).send({ error: 'ИИ не ответил — попробуйте ещё раз' });
+      db.setLeadSummary(lead.id, summary);
+      return { lead: db.getLead(lead.id), events: db.leadEvents(lead.id) };
     });
 
     api.patch(

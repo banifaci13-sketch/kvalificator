@@ -207,14 +207,12 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         return {
           id: 'clarify', type: 'text',
           text: `${name}спасибо! Чтобы точнее понять задачу, уточните, пожалуйста:\n${state.ask.map((k, i) => `${i + 1}) ${ASK[k]}`).join(';\n')}.`,
-          placeholder: 'Можно одним сообщением, по пунктам или как удобно',
         };
       case 'criteria':
         // только свой ответ, без кнопок: вариант сценария для оценки угадываем по словам
         return {
           id: 'criteria', type: 'text',
           text: `${state.clarified ? 'Спасибо! ' : ''}Что для вас главное в выборе исполнителя?`,
-          placeholder: 'Например: результат по заявкам, опыт в нашей сфере, прозрачная отчётность',
         };
       case 'consent':
         return {

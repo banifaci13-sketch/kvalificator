@@ -275,7 +275,7 @@ window.addEventListener('hashchange', () => {
 async function boot() {
   try {
     const me = await api('/admin/api/me');
-    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat, avatars: me.avatars ?? {} });
+    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat, avatars: me.avatars ?? {}, aiSummary: Boolean(me.aiSummary) });
     if (me.user.prefs) window.sorokaTheme?.apply(me.user.prefs);
     // без адреса раздела — стартовый раздел из личных настроек
     if (!location.hash.replace(/^#\/?/, '') && me.user.prefs?.start) return navigate(me.user.prefs.start);
@@ -1176,6 +1176,45 @@ async function openLead(id, pushRoute = false) {
   }
 }
 
+const POTENTIAL = { high: 'высокий', medium: 'средний', low: 'низкий' };
+/** Сводка ИИ по заявке: кто клиент, потенциал, комментарий менеджеру; «Обновить» — составить заново. */
+function leadSummary(lead, onUpdate) {
+  const s = lead.ai_summary;
+  if (!s && !ctx.aiSummary) return null;
+  const btn = h('button', {
+    type: 'button', class: 'btn btn-s',
+    onclick: async () => {
+      btn.disabled = true;
+      btn.textContent = 'Составляю…';
+      try {
+        onUpdate(await api(`/admin/api/leads/${lead.id}/summary`, { method: 'POST' }));
+        toast('Сводка обновлена');
+      } catch (err) {
+        toast(err.message);
+        btn.disabled = false;
+        btn.textContent = s ? 'Обновить' : 'Составить сводку';
+      }
+    },
+  }, s ? 'Обновить' : 'Составить сводку');
+  return h(
+    'section',
+    { class: 'ai-summary', 'aria-label': 'Сводка ИИ' },
+    h('div', { class: 'ai-summary-head' },
+      h('h3', {}, 'Сводка ИИ'),
+      s ? h('span', { class: `potential p-${s.potential}` }, `Потенциал: ${POTENTIAL[s.potential] ?? s.potential}`) : null,
+      h('span', { class: 'spacer' }),
+      ctx.aiSummary ? btn : null),
+    s
+      ? [
+          s.about ? h('p', {}, s.about) : null,
+          s.why ? h('p', { class: 'muted' }, s.why) : null,
+          s.comment ? h('p', { class: 'ai-comment' }, s.comment) : null,
+          h('p', { class: 'hint' }, 'Составлено ИИ по ответам клиента — проверьте перед звонком.'),
+        ].filter(Boolean)
+      : h('p', { class: 'muted' }, 'Сводки пока нет.'),
+  );
+}
+
 function fillLead(body, title, lead, events) {
   title.replaceChildren(`Лид #${lead.id}`, ...(lead.is_test ? [' ', h('span', { class: 'badge-test' }, 'тест')] : []));
 
@@ -1254,6 +1293,7 @@ function fillLead(body, title, lead, events) {
       h('div', {}, h('ul', {}, lead.reasons.map((r) => h('li', {}, r)))),
     ),
     lead.tags.length ? h('div', {}, lead.tags.map((t) => h('span', { class: 'tag' }, t))) : null,
+    leadSummary(lead, (res) => fillLead(body, title, res.lead, res.events)),
     form,
     leadClient(lead),
     leadDocuments(lead),

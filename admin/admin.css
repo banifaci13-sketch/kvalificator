@@ -1806,3 +1806,14 @@ div.notify-row { cursor: default; }
 .ab-page { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 .ab-item details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 .ab-item details .lead-dialog { margin-top: 8px; }
+
+/* сводка ИИ в карточке лида */
+.ai-summary { display: grid; gap: 6px; padding: 12px 14px; border-radius: var(--radius-s); background: var(--surface-2); border: 1px solid var(--line); }
+.ai-summary p { margin: 0; }
+.ai-summary-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ai-summary-head h3 { margin: 0; }
+.ai-summary-head .spacer { flex: 1; }
+.ai-summary .potential { font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface-3); }
+.ai-summary .potential.p-high { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.ai-summary .potential.p-low { color: var(--muted); }
+.ai-summary .ai-comment { border-left: 3px solid var(--accent); padding-left: 10px; }

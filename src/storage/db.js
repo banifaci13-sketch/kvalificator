@@ -519,6 +519,9 @@ const MIGRATIONS = [
    );
    ALTER TABLE meetings ADD COLUMN series_id INTEGER REFERENCES meeting_series(id) ON DELETE SET NULL;
    CREATE INDEX meetings_series ON meetings (series_id, starts_at);`,
+
+  // Сводка ИИ по заявке: кто клиент, потенциал, комментарий менеджеру (JSON)
+  `ALTER TABLE leads ADD COLUMN ai_summary TEXT;`,
 ];
 
 /** Номер текущей версии схемы базы. */
@@ -575,6 +578,7 @@ export function openDb(path) {
     listEvents: db.prepare('SELECT * FROM lead_events WHERE lead_id = ? ORDER BY id'),
     getLead: db.prepare('SELECT * FROM leads WHERE id = ?'),
     setDelivered: db.prepare('UPDATE leads SET delivered = ?, notified = ? WHERE id = ?'),
+    setSummary: db.prepare('UPDATE leads SET ai_summary = ? WHERE id = ?'),
     unnotified: db.prepare(
       `SELECT * FROM leads WHERE notified = 0 AND created_at <= datetime('now', '-' || ? || ' seconds')
        ORDER BY id LIMIT 20`,
@@ -594,6 +598,7 @@ export function openDb(path) {
       answers: JSON.parse(row.answers),
       meta: JSON.parse(row.meta),
       delivered: JSON.parse(row.delivered),
+      ai_summary: row.ai_summary ? JSON.parse(row.ai_summary) : null,
     };
 
   return {
@@ -641,6 +646,8 @@ export function openDb(path) {
     },
     getLead: (id) => parseLead(q.getLead.get(id)),
     setDelivered: (id, delivered, complete) => q.setDelivered.run(JSON.stringify(delivered), complete ? 1 : 0, id),
+    /** Сводка ИИ по заявке (или null — убрать). */
+    setLeadSummary: (id, summary) => q.setSummary.run(summary ? JSON.stringify(summary) : null, id),
     /** Лиды, не дошедшие до всех получателей. Свежие пропускаем — их ещё отправляет основной поток. */
     unnotifiedLeads: (minAgeSeconds = 60) => q.unnotified.all(minAgeSeconds).map(parseLead),
     /** true, если лид был свободен и теперь закреплён за assignee. */
