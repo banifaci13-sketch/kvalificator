@@ -103,7 +103,7 @@ test('выгрузка CSV для Excel: BOM, «;», защита от форм�
   const res = await app.inject({ url: '/admin/api/leads.csv', headers });
   assert.equal(res.statusCode, 200);
   assert.match(res.headers['content-disposition'], /leads-\d{4}-\d{2}-\d{2}\.csv/);
-  assert.ok(res.body.startsWith('﻿№;Дата (МСК);Рейтинг'));
+  assert.ok(res.body.startsWith('﻿№;Дата (МСК);Уровень'));
   assert.match(res.body, /"'=HYPERLINK\(""http:\/\/evil""\)"/);
 });
 

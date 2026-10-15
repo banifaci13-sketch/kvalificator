@@ -3,24 +3,35 @@
 
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createEngine, AnswerError } from './engine.js';
+import { createAiDialog } from './ai-dialog.js';
 import { scoreLead, outroKey } from './scoring.js';
 
 export { AnswerError };
 
 export class SessionError extends Error {}
 
-export function createQualifier({ db, scenarioSource, rules, notifier, log = console }) {
+/**
+ * aiMode — новый диалог с ИИ вместо сценария: 'off' — как раньше; 'test' — только тестовые опросы
+ * (ссылка из админки); 'on' — для всех. Начатый диалог доводится тем же движком, каким начат.
+ */
+export function createQualifier({ db, scenarioSource, rules, notifier, log = console, ai = null, aiMode = 'off', pricing = null }) {
   const leadHooks = [];
   let engineFor = null;
   let engine = null;
-  const getEngine = () => {
+  let dialog = null;
+  const refresh = () => {
     const scenario = scenarioSource.get();
     if (engineFor !== scenario) {
       engine = createEngine(scenario);
+      dialog = createAiDialog({ scenario, ai, log, pricing });
       engineFor = scenario;
     }
-    return engine;
   };
+  const getEngine = (state = null) => {
+    refresh();
+    return state?.mode === 'ai' ? dialog : engine;
+  };
+  const useAi = (meta) => aiMode === 'on' || (aiMode === 'test' && Boolean(meta?.test));
 
   // Ответы одной сессии обрабатываем строго по очереди (двойной клик, повтор запроса)
   const locks = new Map();
@@ -37,7 +48,8 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
   }
 
   function startSession({ channel, channelUserId = null, meta = {} }) {
-    const { state, reply } = getEngine().start();
+    refresh();
+    const { state, reply } = (useAi(meta) ? dialog : engine).start();
     const session = db.createSession({
       id: randomUUID(),
       token: randomBytes(24).toString('base64url'),
@@ -47,12 +59,14 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
       state,
       meta,
     });
-    return { session, reply: withIntro(reply) };
+    // в диалоге с ИИ приветствие — сам первый вопрос, отдельного вступления нет
+    return { session, reply: state.mode === 'ai' ? reply : withIntro(reply) };
   }
 
   function getSession(id, token) {
     const session = db.getSession(id);
-    if (!session || (token !== undefined && !safeEqual(session.token, token))) {
+    // брошенный диалог старше срока хранения стёрт — начинаем заново
+    if (!session || session.state?.purged || (token !== undefined && !safeEqual(session.token, token))) {
       throw new SessionError('Сессия не найдена');
     }
     return session;
@@ -60,7 +74,7 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
 
   function resume(session) {
     if (session.status === 'done') return { type: 'done', text: scenarioSource.get().outro.warm };
-    return getEngine().current(session.state);
+    return getEngine(session.state).current(session.state);
   }
 
   async function answer(sessionId, input) {
@@ -69,7 +83,7 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
       if (!session) throw new SessionError('Сессия не найдена');
       if (session.status === 'done') throw new AnswerError('Опрос уже завершён');
 
-      const { state, reply } = getEngine().answer(session.state, input);
+      const { state, reply } = await getEngine(session.state).answer(session.state, input);
       if (reply.type !== 'done') {
         db.saveState(session.id, state);
         return reply;
@@ -81,7 +95,9 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
   function finish(session, state) {
     const scenario = scenarioSource.get();
     const result = scoreLead(state.answers, rules, scenario);
-    const lead = db.completeSession(session, state, result);
+    // диалог целиком — в карточку и CRM: менеджер видит, как клиент сформулировал задачу
+    const withDialog = state.mode === 'ai' ? { ...session, meta: { ...session.meta, mode: 'ai', dialog: state.transcript } } : session;
+    const lead = db.completeSession(withDialog, state, result);
     log.info({ leadId: lead.id, rating: lead.rating, channel: lead.channel }, 'Новый лид');
     void deliver(lead);
     // подписчики на новые заявки (например, задача «Связаться» по горячей заявке); их ошибки не мешают клиенту

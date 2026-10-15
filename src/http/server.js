@@ -33,6 +33,8 @@ const answerSchema = {
     stepId: { type: 'string', maxLength: 64 },
     value: { type: 'string', maxLength: 2000 },
     skip: { type: 'boolean' },
+    // «Оставить контакт» на любом шаге диалога с ИИ
+    action: { type: 'string', enum: ['contact'] },
   },
 };
 

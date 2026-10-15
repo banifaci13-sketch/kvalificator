@@ -7,6 +7,7 @@ import { renderProjects, renderTaskBoard, renderMyTasks, renderClients, renderCl
 import { renderCalendar, notificationsPanel } from './calendar.js';
 import { renderIntegrations } from './integrations.js';
 import { renderSystem } from './system.js';
+import { renderAbandoned } from './abandoned.js';
 import { assistantEntry } from './assistant.js';
 import { renderKb } from './kb.js';
 import { renderHome, bellButton } from './home.js';
@@ -18,8 +19,11 @@ import { renderChat, refreshChatBadge } from './chat.js';
 const app = document.getElementById('app');
 const TZ = 'Europe/Moscow';
 const CHANNELS = { web: 'Сайт', telegram: 'Telegram', max: 'MAX' };
+// уровень квалификации буквой: критерии те же, что у прежнего рейтинга 5…1
+const LETTER = { 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' };
+const letter = (r) => LETTER[r] ?? '—';
 const EVENT_TEXT = {
-  created: (e) => `Лид создан, рейтинг ${e.data.rating}`,
+  created: (e) => `Лид создан, уровень ${letter(e.data.rating)}`,
   status: (e, ctx) => `Статус: ${ctx.statuses[e.data.from] ?? e.data.from ?? '—'} → ${ctx.statuses[e.data.to] ?? e.data.to}`,
   assignee: (e) => (e.data.to ? `Ответственный: ${e.data.to}` : 'Ответственный снят'),
   comment: (e) => (e.data.text ? `Комментарий: ${e.data.text}` : 'Комментарий удалён'),
@@ -171,10 +175,10 @@ function answerText(id, value) {
 function meter(rating, large = false) {
   return h(
     'span',
-    { class: `meter${large ? ' meter-lg' : ''}`, dataset: { r: String(rating) }, title: `Рейтинг ${rating} из 5` },
+    { class: `meter${large ? ' meter-lg' : ''}`, dataset: { r: String(rating) }, title: `Уровень ${letter(rating)} (A — лучший, E — спам)` },
     h('span', { class: 'meter-bars', 'aria-hidden': 'true' }, [1, 2, 3, 4, 5].map((i) => h('i', { class: i <= rating ? 'on' : '' }))),
-    h('b', {}, rating),
-    h('span', { class: 'sr-only' }, ' из 5'),
+    h('b', {}, letter(rating)),
+    h('span', { class: 'sr-only' }, ' — уровень квалификации'),
   );
 }
 
@@ -202,6 +206,7 @@ const routes = {
   calendar: renderCalendar,
   integrations: renderIntegrations,
   system: renderSystem,
+  abandoned: renderAbandoned,
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
@@ -218,6 +223,7 @@ const SECTION_TABS = {
     ['board', 'Воронка'],
     ['stats', 'Сводка'],
     ['test', 'Тест'],
+    ['abandoned', 'Брошенные'],
   ],
   plans: [
     ['plans', 'Медиапланы'],
@@ -708,7 +714,9 @@ function navDialog() {
 function shell(active, content) {
   const section =
     PAGE_SECTION[active] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === active)) ?? active;
-  const tabs = SECTION_TABS[section] && !PAGE_SECTION[active] ? SECTION_TABS[section] : null;
+  // вкладки только для администратора (брошенные диалоги — переписка без согласия)
+  const ADMIN_TABS = new Set(['abandoned']);
+  const tabs = SECTION_TABS[section] && !PAGE_SECTION[active] ? SECTION_TABS[section].filter(([id]) => ctx.me.role === 'admin' || !ADMIN_TABS.has(id)) : null;
   const nav = navItems().filter((it) => !it.hidden).map((it) => [it.id, it.label]);
   return [
     h(
@@ -884,20 +892,20 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
   const ratings = new Set(f.rating ? f.rating.split(',') : []);
   const ratingButtons = h(
     'div',
-    { class: 'rating-filter', role: 'group', 'aria-label': 'Рейтинг' },
+    { class: 'rating-filter', role: 'group', 'aria-label': 'Уровень' },
     ['5', '4', '3', '2', '1'].map((r) =>
       h(
         'button',
         {
           type: 'button',
           'aria-pressed': String(ratings.has(r)),
-          title: `Рейтинг ${r}`,
+          title: `Уровень ${letter(r)}`,
           onclick: () => {
             ratings.has(r) ? ratings.delete(r) : ratings.add(r);
             update({ rating: [...ratings].sort().reverse().join(',') });
           },
         },
-        r,
+        letter(r),
       ),
     ),
   );
@@ -973,7 +981,7 @@ async function renderLeads(params) {
           h(
             'thead',
             {},
-            h('tr', {}, ['№', 'Когда', 'Рейтинг', 'Компания и задача', 'Услуга', 'Бюджет', 'Канал', 'Статус', 'Ответственный'].map((t) => h('th', { scope: 'col' }, t))),
+            h('tr', {}, ['№', 'Когда', 'Уровень', 'Компания и задача', 'Услуга', 'Бюджет', 'Канал', 'Статус', 'Ответственный'].map((t) => h('th', { scope: 'col' }, t))),
           ),
           tbody,
         ),
@@ -1212,9 +1220,20 @@ function fillLead(body, title, lead, events) {
     h('div', { class: 'work-actions' }, save, takeMine, saved),
   );
 
-  const answers = ctx.scenario.steps
-    .filter((st) => st.type !== 'consent' && st.id in lead.answers)
-    .map((st) => [h('dt', {}, st.label ?? st.id), h('dd', {}, answerText(st.id, lead.answers[st.id]))]);
+  // диалог с ИИ: суть задачи и список услуг — первыми, затем ответы по полям сценария
+  const EXTRA = { summary: 'Суть задачи', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)' };
+  const extra = Object.entries(EXTRA)
+    .filter(([k]) => lead.answers[k] != null)
+    .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : String(lead.answers[k]))]);
+  const answers = [
+    ...extra,
+    ...ctx.scenario.steps
+      .filter((st) => st.type !== 'consent' && st.id in lead.answers)
+      .map((st) => [h('dt', {}, st.label ?? st.id), h('dd', {}, answerText(st.id, lead.answers[st.id]))]),
+  ];
+  const dialog = lead.meta?.dialog?.length
+    ? h('section', {}, h('h3', {}, 'Диалог с клиентом'), h('div', { class: 'lead-dialog' }, lead.meta.dialog.map((m) => h('p', { class: `ld-${m.from === 'user' ? 'user' : 'bot'}` }, m.text))))
+    : null;
 
   const meta = lead.meta ?? {};
   const source = [
@@ -1226,7 +1245,8 @@ function fillLead(body, title, lead, events) {
     ['Создан', fmtDateTime(lead.created_at)],
   ].filter(Boolean);
 
-  body.replaceChildren(
+  // пустые блоки (нет тегов, нет диалога) не выводим: replaceChildren превратил бы null в текст
+  body.replaceChildren(...[
     h(
       'section',
       { class: 'score', 'aria-label': 'Оценка' },
@@ -1238,6 +1258,7 @@ function fillLead(body, title, lead, events) {
     leadClient(lead),
     leadDocuments(lead),
     h('section', {}, h('h3', {}, 'Ответы'), h('dl', { class: 'answers' }, answers)),
+    dialog,
     h('section', {}, h('h3', {}, 'Источник'), h('dl', { class: 'answers' }, source.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]))),
     h(
       'section',
@@ -1249,7 +1270,7 @@ function fillLead(body, title, lead, events) {
         [...events].reverse().map((e) => h('li', {}, h('time', {}, fmtDateTime(e.at)), h('span', {}, `${(EVENT_TEXT[e.type] ?? (() => e.type))(e, ctx)} · ${e.actor}`))),
       ),
     ),
-  );
+  ].filter(Boolean));
 }
 
 // ---------- сводка ----------
@@ -1271,7 +1292,7 @@ async function renderStats(params) {
   const { started, completed, dropped } = st.funnel;
   const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
 
-  const byRating = [5, 4, 3, 2, 1].map((r) => ({ label: `Рейтинг ${r}`, value: st.byDay.filter((x) => x.rating === r).reduce((n, x) => n + x.n, 0), cls: `r${r}` }));
+  const byRating = [5, 4, 3, 2, 1].map((r) => ({ label: `Уровень ${letter(r)}`, value: st.byDay.filter((x) => x.rating === r).reduce((n, x) => n + x.n, 0), cls: `r${r}` }));
   const byStatus = Object.entries(ctx.statuses).map(([k, label]) => ({ label, value: st.byStatus.find((x) => x.status === k)?.n ?? 0 }));
   const dropOff = st.funnel.dropOff.map((d) => ({ label: stepOf(d.step)?.label ?? d.step ?? 'Не начали', value: d.n }));
 
@@ -1280,16 +1301,16 @@ async function renderStats(params) {
       'div',
       { class: 'kpis' },
       kpi(total, plural(total, 'лид за период', 'лида за период', 'лидов за период')),
-      kpi(pct(hot, total), `горячих (рейтинг 4–5): ${hot}`),
+      kpi(pct(hot, total), `горячих (уровни A–B): ${hot}`),
       kpi(pct(completed, started), `дошли до конца опроса: ${completed} из ${started}`),
       kpi(dropped, `${plural(dropped, 'ушёл', 'ушли', 'ушли')} посреди опроса`),
     ),
     h(
       'div',
       { class: 'charts' },
-      h('section', { class: 'panel wide' }, h('h2', {}, 'Лиды по дням'), h('p', { class: 'sub' }, 'Столбец разбит по рейтингу; наведите на день, чтобы увидеть цифры'), dailyChart(st.byDay, f)),
+      h('section', { class: 'panel wide' }, h('h2', {}, 'Лиды по дням'), h('p', { class: 'sub' }, 'Столбец разбит по уровням A–E; наведите на день, чтобы увидеть цифры'), dailyChart(st.byDay, f)),
       h('section', { class: 'panel' }, h('h2', {}, 'Где уходят из опроса'), h('p', { class: 'sub' }, 'Последний вопрос, на котором остановились. Кандидаты на упрощение'), dropOff.length ? hbars(dropOff) : h('p', { class: 'muted' }, 'Пока никто не бросил опрос')),
-      h('section', { class: 'panel' }, h('h2', {}, 'Рейтинг'), h('p', { class: 'sub' }, 'Сколько лидов каждого рейтинга'), hbars(byRating)),
+      h('section', { class: 'panel' }, h('h2', {}, 'Уровни'), h('p', { class: 'sub' }, 'Сколько лидов каждого уровня'), hbars(byRating)),
       h('section', { class: 'panel' }, h('h2', {}, 'Статусы'), h('p', { class: 'sub' }, 'Где сейчас лиды за период'), hbars(byStatus)),
     ),
   );
@@ -1354,12 +1375,12 @@ function dailyChart(rows, f) {
       acc += n;
     });
     if (i % labelEvery === 0) svg.append(s('text', { class: 'axis-x', x: x + barW / 2, y: H - 6, 'text-anchor': 'middle', fill: 'currentColor', 'font-size': 11, opacity: 0.7 }, fmtDay(d.day)));
-    g.addEventListener('mousemove', (e) => showTip(e, fmtDay(d.day), [['Всего', d.total], ...[5, 4, 3, 2, 1].filter((r) => d.byR[r - 1]).map((r) => [`Рейтинг ${r}`, d.byR[r - 1]])]));
+    g.addEventListener('mousemove', (e) => showTip(e, fmtDay(d.day), [['Всего', d.total], ...[5, 4, 3, 2, 1].filter((r) => d.byR[r - 1]).map((r) => [`Уровень ${letter(r)}`, d.byR[r - 1]])]));
     g.addEventListener('mouseleave', hideTip);
     svg.append(g);
   });
 
-  const legend = h('div', { class: 'legend', 'aria-hidden': 'true' }, [5, 4, 3, 2, 1].map((r) => h('span', {}, h('i', { class: `r${r}` }), `Рейтинг ${r}`)));
+  const legend = h('div', { class: 'legend', 'aria-hidden': 'true' }, [5, 4, 3, 2, 1].map((r) => h('span', {}, h('i', { class: `r${r}` }), `Уровень ${letter(r)}`)));
   const table = h(
     'details',
     { class: 'table-view' },
@@ -1924,6 +1945,6 @@ function logo() {
   return img;
 }
 
-export { h, api, app, shell, toast, confirmDialog, suggestInput, countdown, taskDeadline, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, renderRoute as rerender };
+export { h, api, app, shell, toast, confirmDialog, suggestInput, countdown, taskDeadline, navigate, fmtDateTime, plural, ctx, icon, userAvatar, initials, rowActions, answerText, renderRoute as rerender };
 
 boot();

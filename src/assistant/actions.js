@@ -8,6 +8,7 @@ import { emptyPlan, emptyRow } from '../mediaplan/calc.js';
 import { outline } from './kb.js';
 import { parseFollowup } from './followup.js';
 import { LEAD_STATUSES } from '../admin/reports.js';
+import { ratingLetter } from '../core/scoring.js';
 
 const MSK = 3 * 3600e3;
 const todayMsk = (now = new Date()) => new Date(now.getTime() + MSK).toISOString().slice(0, 10);
@@ -387,7 +388,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     lead_open(user, cmd) {
       const lead = leads?.getLead(cmd.id);
       if (!lead) return { reply: `Заявки №${cmd.id} нет.` };
-      return { reply: `Открываю заявку ${leadLabel(lead)}: рейтинг ${lead.rating} из 5, статус «${LEAD_STATUSES[lead.status] ?? lead.status}»${lead.assignee ? `, ведёт ${lead.assignee}` : ''}.`, navigate: `#/leads?lead=${lead.id}` };
+      return { reply: `Открываю заявку ${leadLabel(lead)}: уровень ${ratingLetter(lead.rating)}, статус «${LEAD_STATUSES[lead.status] ?? lead.status}»${lead.assignee ? `, ведёт ${lead.assignee}` : ''}.`, navigate: `#/leads?lead=${lead.id}` };
     },
     lead_status(user, cmd) {
       if (!leads) return { reply: 'Заявки недоступны.' };
@@ -410,7 +411,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       if (!list.length) return { reply: `${what}: нет.`, actions: [{ type: 'link', title: 'Квалификатор', href: '#/leads' }] };
       list.sort((a, b) => b.rating - a.rating || b.id - a.id);
       return {
-        reply: [`${what}: ${list.length}.`, ...list.slice(0, 10).map((l) => `• ${leadLabel(l)} — рейтинг ${l.rating}, «${LEAD_STATUSES[l.status] ?? l.status}»${l.assignee ? `, ${l.assignee}` : ''}`)].join('\n'),
+        reply: [`${what}: ${list.length}.`, ...list.slice(0, 10).map((l) => `• ${leadLabel(l)} — уровень ${ratingLetter(l.rating)}, «${LEAD_STATUSES[l.status] ?? l.status}»${l.assignee ? `, ${l.assignee}` : ''}`)].join('\n'),
         actions: list.slice(0, 6).map((l) => ({ type: 'lead', id: l.id, title: `Заявка ${leadLabel(l)}`, href: `#/leads?lead=${l.id}` })),
         options: list.some((l) => l.status === 'new') ? [{ label: `Взять №${list.find((l) => l.status === 'new').id}`, command: `возьми заявку ${list.find((l) => l.status === 'new').id}` }] : [],
       };
@@ -427,7 +428,7 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
       const label = { today: 'сегодня', yesterday: 'вчера', week: 'за 7 дней', month: 'за 30 дней', quarter: 'за 90 дней' }[period];
       const lines = [`Заявок ${label}: ${list.length}${prev != null ? ` (до этого — ${prev})` : ''}.`];
       if (list.length) {
-        lines.push(`Горячих (рейтинг 4–5): ${list.filter((l) => l.rating >= 4).length}.`);
+        lines.push(`Горячих (уровни A–B): ${list.filter((l) => l.rating >= 4).length}.`);
         lines.push(`По статусам: ${by((l) => LEAD_STATUSES[l.status] ?? l.status).map(([k, v]) => `${k} — ${v}`).join(', ')}.`);
       }
       return { reply: lines.join('\n'), actions: [{ type: 'link', title: 'Сводка по заявкам', href: '#/stats' }] };

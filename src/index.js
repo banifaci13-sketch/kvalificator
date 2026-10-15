@@ -25,6 +25,8 @@ import { startReminders, telegramSender } from './calendar/reminders.js';
 import { createAi } from './ai/client.js';
 import { closeBrowser } from './docs/browser.js';
 import { createMonitor } from './ops/monitor.js';
+import { createAbandoned } from './core/abandoned.js';
+import { loadPricing } from './core/pricing.js';
 import { dirname, resolve } from 'node:path';
 
 const RETRY_INTERVAL_MS = 5 * 60_000;
@@ -39,7 +41,10 @@ const db = openDb(config.dbPath);
 const rules = JSON.parse(await readFile(config.scoringFile, 'utf8'));
 const notifier = createNotifier(config);
 const scenarioSource = await createScenarioSource({ file: config.scenarioFile, csvUrl: config.scenarioCsvUrl, log });
-const qualifier = createQualifier({ db, scenarioSource, rules, notifier, log });
+const ai = createAi(config.ai);
+// прайс для «от … ₽» в диалоге квалификатора (если файла нет — цена не называется)
+const pricing = loadPricing(resolve(config.root, 'config/pricing.json'), log);
+const qualifier = createQualifier({ db, scenarioSource, rules, notifier, log, ai, aiMode: config.qualifierAi, pricing });
 
 if (!notifier) log.warn('Получатели лидов не настроены (TELEGRAM_* или LEAD_WEBHOOK_URL) — лиды только сохраняются в базу');
 
@@ -78,7 +83,7 @@ const app = await buildServer({
     crm,
     calendar,
     video: createVideo(config),
-    ai: createAi(config.ai),
+    ai,
     monitor,
   },
 });
@@ -98,6 +103,11 @@ const retryTimer = setInterval(() => leadsJob(() => qualifier.retryUndelivered()
 // раз в час: счета за ведение на новый месяц и напоминания об оплате
 const moneyTimer = setInterval(() => moneyJob(() => money.remind()), 3600e3);
 setTimeout(() => moneyJob(() => money.remind()), 30e3);
+// раз в час: брошенные диалоги старше срока хранения — стираем переписку и ответы
+const abandoned = createAbandoned({ db: db.raw, days: config.abandonedDays });
+const purgeJob = monitor.job('purge', `Удаление брошенных диалогов старше ${config.abandonedDays} дн.`, 3600e3);
+const purgeTimer = setInterval(() => purgeJob(() => abandoned.purge()), 3600e3);
+setTimeout(() => purgeJob(() => abandoned.purge()), 60e3);
 // Напоминания о встречах и утренний план — в личный Telegram сотрудников (нужен токен бота)
 const reminders = config.telegram.token
   ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl, track: monitor.job('reminders', 'Напоминания о встречах и план дня в Telegram', 60_000) })
@@ -110,6 +120,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
     clearInterval(retryTimer);
     clearInterval(moneyTimer);
+    clearInterval(purgeTimer);
     reminders?.stop();
     scenarioSource.stop();
     if (telegramBot?.isRunning()) await telegramBot.stop();

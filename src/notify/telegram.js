@@ -1,5 +1,7 @@
 // Карточка нового лида в Telegram-чат менеджеров (через Bot API).
 
+import { ratingLetter } from '../core/scoring.js';
+
 const STARS = ['', '★☆☆☆☆', '★★☆☆☆', '★★★☆☆', '★★★★☆', '★★★★★'];
 const CHANNELS = { web: 'виджет на сайте', telegram: 'Telegram', max: 'MAX' };
 // Лимит Telegram — 4096 символов; длинные ответы режем по отдельности, чтобы не сломать HTML-разметку
@@ -33,7 +35,7 @@ export function createTelegramNotifier({ token, chatId, withTakeButton = false, 
 
 export function formatLeadCard(lead, scenario) {
   const head = [
-    `<b>${STARS[lead.rating]} Лид #${lead.id} — рейтинг ${lead.rating}</b>`,
+    `<b>${STARS[lead.rating]} Лид #${lead.id} — уровень ${ratingLetter(lead.rating)}</b>`,
     lead.tags.length ? lead.tags.map((t) => `#${t.replace(/[^\p{L}\p{N}]+/gu, '_')}`).join(' ') : null,
     '',
   ];
@@ -43,11 +45,16 @@ export function formatLeadCard(lead, scenario) {
     if (step.type === 'consent' || !(step.id in lead.answers)) continue;
     rows.push(`<b>${esc(step.label ?? step.id)}:</b> ${esc(formatAnswer(step, lead.answers[step.id]))}`);
   }
-  // Ответы на вопросы, которых уже нет в сценарии, не теряем
+  // Ответы, которых нет в сценарии: из диалога с ИИ (суть задачи, уточнение, список услуг) и устаревшие
   const known = new Set(scenario.steps.map((s) => s.id));
+  const serviceStep = scenario.steps.find((s) => s.id === 'service');
   for (const [id, value] of Object.entries(lead.answers)) {
-    if (!known.has(id)) rows.push(`<b>${esc(id)}:</b> ${esc(formatAnswer({}, value))}`);
+    if (known.has(id)) continue;
+    const label = EXTRA[id] ?? id;
+    const text = id === 'services' && Array.isArray(value) ? value.map((v) => serviceStep?.options?.find((o) => o.value === v)?.label ?? v).join(', ') : formatAnswer({}, value);
+    rows.push(`<b>${esc(label)}:</b> ${esc(text)}`);
   }
+  if (lead.meta?.dialog?.length) rows.push(`<i>Диалог с клиентом — ${lead.meta.dialog.length} сообщений, целиком в карточке заявки в кабинете</i>`);
 
   const meta = lead.meta ?? {};
   const tg = meta.telegram;
@@ -63,7 +70,7 @@ export function formatLeadCard(lead, scenario) {
 
   const tail = [
     '',
-    `<b>Почему ${lead.rating}:</b> ${esc(lead.reasons.join('; ') || 'нет сигналов')} (баллы: ${lead.score})`,
+    `<b>Почему ${ratingLetter(lead.rating)}:</b> ${esc(lead.reasons.join('; ') || 'нет сигналов')} (баллы: ${lead.score})`,
     '',
     ...source.map(esc),
   ];
@@ -78,5 +85,8 @@ function formatAnswer(step, value) {
       : step.options?.find((o) => o.value === value)?.label ?? String(value);
   return text.length > ANSWER_LIMIT ? text.slice(0, ANSWER_LIMIT) + '…' : text;
 }
+
+// подписи ответов диалога с ИИ, которых нет среди вопросов сценария
+const EXTRA = { services: 'Услуги', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)' };
 
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

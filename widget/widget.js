@@ -127,6 +127,7 @@
   var state = load() || { transcript: [] };
   var busy = false;
   var started = false;
+  var dialogMode = false;
   var privacyUrl = null;
 
   function remember(from, text) {
@@ -162,6 +163,8 @@
   }
 
   function setProgress(p) {
+    // диалог с ИИ без фиксированного числа вопросов — полосы прогресса нет
+    progress.hidden = p === null && !state.done && dialogMode;
     var pct = p ? Math.round(((p.index - 1) / p.total) * 100) : 100;
     progress.firstChild.style.width = pct + '%';
     progress.setAttribute('aria-valuenow', String(pct));
@@ -192,13 +195,18 @@
     clearControls();
     if (reply.type === 'done') return renderDone(reply);
     var step = reply.step;
+    dialogMode = reply.progress === null;
     setProgress(reply.progress);
     var show = opts2 && opts2.silent ? Promise.resolve() : say(step.text).then(function () { remember('bot', step.text); });
     return show.then(function () {
-      if (step.type === 'choice') renderOptions(step);
-      else if (step.type === 'consent') renderConsent(step);
+      if (step.type === 'choice') {
+        renderOptions(step);
+        // можно выбрать вариант или ответить своими словами
+        if (step.allowText) renderInput(step);
+      } else if (step.type === 'consent') renderConsent(step);
       else renderInput(step);
       if (!step.required) renderSkip(step);
+      if (reply.canLeaveContact) renderLeaveContact();
       scrollEnd();
     });
   }
@@ -259,7 +267,7 @@
     } else {
       field.rows = 2;
     }
-    field.maxLength = 1000;
+    field.maxLength = 2000;
     field.placeholder = step.placeholder || 'Ваш ответ';
     field.setAttribute('aria-label', step.text);
     var btn = document.createElement('button');
@@ -287,6 +295,26 @@
     });
     controls.appendChild(form);
     field.focus({ preventScroll: true });
+  }
+
+  // «Оставить контакт» — на любом шаге диалога, не дожидаясь конца разговора
+  function renderLeaveContact() {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'skip';
+    b.textContent = 'Оставить контакт и закончить';
+    b.addEventListener('click', function () {
+      if (busy) return;
+      goal('kval_leave_contact');
+      leaveContact();
+    });
+    controls.appendChild(b);
+  }
+
+  function leaveContact() {
+    bubble('user', 'Оставить контакт');
+    remember('user', 'Оставить контакт');
+    request({ action: 'contact' }, leaveContact);
   }
 
   function renderSkip(step) {
@@ -325,8 +353,23 @@
     remember('user', label);
     goal('kval_step_' + step.id);
     var body = skip ? { stepId: step.id, skip: true } : { stepId: step.id, value: String(value) };
+    request(body, function () { send(step, value, label, skip); });
+  }
+
+  function request(body, retry) {
+    busy = true;
+    clearControls();
+    // ответ с разбором ИИ занимает пару секунд — показываем, что собеседник «печатает»
+    var typing = null;
+    var typingTimer = setTimeout(function () {
+      typing = bubble('bot', '', 'typing');
+      typing.innerHTML = '<i></i><i></i><i></i>';
+      typing.setAttribute('aria-hidden', 'true');
+    }, 350);
+    var stopTyping = function () { clearTimeout(typingTimer); if (typing) typing.remove(); };
     api('POST', '/api/sessions/' + state.sessionId + '/answer', body, state.token)
       .then(function (r) {
+        stopTyping();
         busy = false;
         if (r.status === 200) {
           if (r.data.reply.type === 'done') goal('kval_lead');
@@ -340,8 +383,9 @@
         throw new Error('HTTP ' + r.status);
       })
       .catch(function () {
+        stopTyping();
         busy = false;
-        showNetworkError(function () { send(step, value, label, skip); });
+        showNetworkError(retry);
       });
   }
 
@@ -376,6 +420,8 @@
         save(state);
         goal('kval_start');
         renderFoot(r.data.handoff);
+        // в диалоге с ИИ отдельного вступления нет: приветствие — первый вопрос
+        if (!r.data.reply.intro) return renderQuestion(r.data.reply);
         return say(r.data.reply.intro).then(function () {
           remember('bot', r.data.reply.intro);
           return renderQuestion(r.data.reply);

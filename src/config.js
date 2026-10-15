@@ -23,6 +23,10 @@ export function loadConfig(env = process.env) {
     scenarioCsvUrl: env.SCENARIO_CSV_URL || null,
     scoringFile: path(env.SCORING_FILE, 'config/scoring.json'),
     privacyPolicyUrl: env.PRIVACY_POLICY_URL || null,
+    // Квалификатор-диалог с ИИ: off — сценарий с вопросами; test — диалог только в тестовых опросах; on — для всех
+    qualifierAi: ['off', 'test', 'on'].includes(env.QUALIFIER_AI) ? env.QUALIFIER_AI : 'test',
+    // брошенные диалоги (без контакта) хранятся столько дней, потом удаляются
+    abandonedDays: Math.min(30, Math.max(1, Number(env.ABANDONED_DAYS) || 10)),
     telegram: {
       token: env.TELEGRAM_BOT_TOKEN || null,
       managerChatId: env.TELEGRAM_MANAGER_CHAT_ID || null,

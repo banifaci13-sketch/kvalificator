@@ -55,10 +55,20 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     await handleButton(ctx, stepId, () => ({ input: { stepId, skip: true }, label: 'Пропущено' }));
   });
 
+  // «Оставить контакт» в диалоге с ИИ — с любого шага
+  dm.callbackQuery('lc', async (ctx) => {
+    const session = qualifier.activeSession(CHANNEL, ctx.from.id);
+    if (!session) return ctx.answerCallbackQuery({ text: 'Опрос завершён. Начать заново — /restart' });
+    await ctx.answerCallbackQuery();
+    return submit(ctx, session, { action: 'contact' });
+  });
+
   dm.on('message:contact', async (ctx) => {
     const session = qualifier.activeSession(CHANNEL, ctx.from.id);
     if (!session) return startNew(ctx);
     const current = qualifier.resume(session);
+    // в диалоге с ИИ номер можно оставить в любой момент: сначала согласие, потом контакт
+    if (current.canLeaveContact) return submit(ctx, session, { action: 'contact' });
     if (current.type !== 'question' || current.step.type !== 'contact') {
       await ctx.reply('Сейчас нужен ответ на другой вопрос.');
       return ask(ctx, current);
@@ -90,7 +100,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
       meta: { ...profileMeta(ctx.from), ...(test ? { test: true } : {}) },
     });
     if (test) await ctx.reply('🧪 Тестовый опрос: заявка не попадёт к менеджерам.');
-    await ctx.reply(reply.intro, { reply_markup: { remove_keyboard: true } });
+    // в диалоге с ИИ отдельного вступления нет — приветствие в первом вопросе
+    if (reply.intro) await ctx.reply(reply.intro, { reply_markup: { remove_keyboard: true } });
     return ask(ctx, reply);
   }
 
@@ -112,6 +123,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
   }
 
   async function submit(ctx, session, input) {
+    // разбор ответа ИИ занимает пару секунд — Telegram покажет «печатает…»
+    ctx.replyWithChatAction?.('typing').catch(() => {});
     try {
       const reply = await qualifier.answer(session.id, input);
       return ask(ctx, reply);
@@ -148,6 +161,10 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
       text += '\n\nНажмите кнопку ниже или напишите телефон / e-mail.';
     } else if (!step.required) {
       markup = new InlineKeyboard().text('Пропустить', `s:${step.id}`);
+    }
+    if (reply.canLeaveContact) {
+      markup = markup instanceof InlineKeyboard ? markup.row() : new InlineKeyboard();
+      markup.text('📱 Оставить контакт и закончить', 'lc');
     }
 
     await ctx.reply(text, {
@@ -195,7 +212,8 @@ export async function setupTelegramCommands(bot) {
 
 function questionHtml(reply) {
   const { step, progress } = reply;
-  return `<i>Вопрос ${progress.index} из ${progress.total}</i>\n${esc(step.text)}`;
+  // в диалоге с ИИ счётчика вопросов нет
+  return progress ? `<i>Вопрос ${progress.index} из ${progress.total}</i>\n${esc(step.text)}` : esc(step.text);
 }
 
 function profileMeta(user) {

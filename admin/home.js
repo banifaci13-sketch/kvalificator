@@ -176,7 +176,7 @@ function leads(d) {
             h(
               'li',
               { class: 'home-lead' },
-              h('span', { class: 'home-rating', dataset: { r: String(l.rating) }, title: `Рейтинг ${l.rating} из 5` }, l.rating),
+              h('span', { class: 'home-rating', dataset: { r: String(l.rating) }, title: 'Уровень квалификации: A — лучший, E — спам' }, { 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' }[l.rating] ?? '—'),
               h('div', { class: 'home-task-main' }, h('a', { class: 'task-link', href: `#/leads?lead=${l.id}` }, l.company || `Заявка №${l.id}`), h('span', { class: 'muted small' }, `${CHANNELS[l.channel] ?? l.channel}, ${fmtDateTime(l.created_at)}`)),
             ),
           ),

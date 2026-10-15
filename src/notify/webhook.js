@@ -2,11 +2,13 @@
 // Make/n8n, Google Apps Script и т.п.
 
 import { createHmac } from 'node:crypto';
+import { ratingLetter } from '../core/scoring.js';
 
 export function createWebhookNotifier({ url, secret }) {
   return {
     async notifyLead(lead) {
-      const body = JSON.stringify({ event: 'lead.created', lead });
+      // level — уровень квалификации буквой (A — лучший); в lead.meta.dialog — диалог целиком, если он был с ИИ
+      const body = JSON.stringify({ event: 'lead.created', lead: { ...lead, level: ratingLetter(lead.rating) } });
       const headers = { 'content-type': 'application/json' };
       if (secret) headers['x-signature'] = createHmac('sha256', secret).update(body).digest('hex');
       const res = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(15_000) });

@@ -1,6 +1,8 @@
 // Выборки для админки: список лидов с фильтрами, сводка, воронка опроса, выгрузка.
 // Даты в базе — UTC; в интерфейсе и группировке по дням — московское время.
 
+import { ratingLetter } from '../core/scoring.js';
+
 const MSK = '+3 hours';
 const MSK_BACK = '-3 hours';
 const PAGE_SIZE = 50;
@@ -143,9 +145,9 @@ export function createReports(db) {
 export function leadsToCsv(leads, scenario) {
   const steps = scenario.steps.filter((s) => s.type !== 'consent');
   const header = [
-    '№', 'Дата (МСК)', 'Рейтинг', 'Статус', 'Ответственный', 'Канал',
+    '№', 'Дата (МСК)', 'Уровень', 'Статус', 'Ответственный', 'Канал',
     ...steps.map((s) => s.label ?? s.id),
-    'Теги', 'Почему такой рейтинг', 'Страница', 'UTM', 'Комментарий',
+    'Теги', 'Почему такой уровень', 'Страница', 'UTM', 'Комментарий',
   ];
   const label = (step, value) => {
     if (value == null) return '';
@@ -155,7 +157,7 @@ export function leadsToCsv(leads, scenario) {
   const rows = leads.map((l) => [
     l.id,
     toMoscow(l.created_at),
-    l.rating,
+    ratingLetter(l.rating),
     LEAD_STATUSES[l.status] ?? l.status,
     l.assignee ?? '',
     l.channel,

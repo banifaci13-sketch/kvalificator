@@ -252,7 +252,7 @@ test('ассистент выполняет действия по раздела
   const lead = s.db.completeSession(session, { answers: { company: { raw: 'Глобал Стекло' } } }, { rating: 5, score: 90, reasons: [], tags: [] });
   const fresh = await say('новые заявки');
   assert.match(fresh.reply, /Новые заявки за неделю: 1/);
-  assert.match(fresh.reply, /«Глобал Стекло» — рейтинг 5/);
+  assert.match(fresh.reply, /«Глобал Стекло» — уровень A/);
   const take = await say(`возьми заявку ${lead.id}`);
   assert.match(take.reply, /статус «В работе», ответственный — вы/);
   assert.equal(s.db.getLead(lead.id).assignee, 'Анна Сорокина');

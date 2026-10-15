@@ -24,6 +24,7 @@ import { newsRoutes } from './news-routes.js';
 import { createChat } from '../chat/store.js';
 import { createMonitor } from '../ops/monitor.js';
 import { createSystemStatus } from '../ops/status.js';
+import { createAbandoned } from '../core/abandoned.js';
 import { chatRoutes } from './chat-routes.js';
 import { createAssistant } from '../assistant/index.js';
 import { createKb } from '../assistant/kb.js';
@@ -378,6 +379,10 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       staff.get('/admin/api/users', async () => ({ users: auth.listUsers(), roles: ROLES }));
 
       staff.get('/admin/api/system', async () => system.get());
+
+      // брошенные диалоги с квалификатором: переписка без согласия — только администратору
+      const abandoned = createAbandoned({ db: db.raw, days: config.abandonedDays ?? 10 });
+      staff.get('/admin/api/abandoned', async () => ({ days: abandoned.days, dialogs: abandoned.list() }));
 
       // Что подключено на сервере: ключи не показываем, только «есть / нет»
       staff.get('/admin/api/integrations', async () => {

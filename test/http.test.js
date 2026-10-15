@@ -62,7 +62,7 @@ test('полный диалог через API: лид сохранён, оце�
   assert.equal(lead.answers.contact.phone, '+79991234567');
 
   const card = formatLeadCard(lead, scenario);
-  assert.match(card, /рейтинг 3/);
+  assert.match(card, /уровень C/);
   assert.match(card, /Контекстная реклама/);
   assert.match(card, /utm_source=yandex/);
 

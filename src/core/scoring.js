@@ -99,6 +99,10 @@ export function optionLabel(scenario, stepId, value) {
   return step?.options?.find((o) => o.value === value)?.label ?? value;
 }
 
+/** Уровень квалификации буквой: критерии те же, что у рейтинга 5…1 (A — лучший, E — спам и стоп-слова). */
+export const RATING_LETTERS = { 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' };
+export const ratingLetter = (rating) => RATING_LETTERS[rating] ?? '—';
+
 /** Категория для текста благодарности клиенту. Рейтинг клиенту не показываем. */
 export function outroKey(rating) {
   if (rating >= 4) return 'hot';

@@ -14,12 +14,12 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
 
   const model = provider === 'yandexgpt' ? config.yandexModel : config.anthropicModel;
 
-  async function call(url, init, name) {
+  async function call(url, init, name, timeoutMs = TIMEOUT) {
     let res;
     try {
-      res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(TIMEOUT) });
+      res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (err) {
-      throw new AiError(`${name} не ответил: ${err.name === 'TimeoutError' ? 'нет ответа 2 минуты' : err.message}`);
+      throw new AiError(`${name} не ответил: ${err.name === 'TimeoutError' ? `нет ответа ${Math.round(timeoutMs / 1000)} с` : err.message}`);
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new AiError(`${name}: ${body.error?.message ?? body.message ?? body.error ?? `код ${res.status}`}`);
@@ -34,7 +34,7 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
      * system — инструкция; user — запрос; history — прошлые реплики диалога [{ role: 'user'|'assistant', text }];
      * lite — лёгкая модель (быстрый разбор поручений). Возвращает { text, usage }.
      */
-    async complete({ system, user, history = [], maxTokens = 4000, temperature = 0.3, lite = false }) {
+    async complete({ system, user, history = [], maxTokens = 4000, temperature = 0.3, lite = false, timeoutMs = TIMEOUT }) {
       const turns = [...history.filter((m) => m.text), { role: 'user', text: user }];
       if (provider === 'yandexgpt') {
         const uri = lite && config.yandexLiteModel ? config.yandexLiteModel : model;
@@ -50,6 +50,7 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
             }),
           },
           'YandexGPT',
+          timeoutMs,
         );
         const text = body.result?.alternatives?.[0]?.message?.text;
         if (!text) throw new AiError('YandexGPT вернул пустой ответ');
@@ -63,6 +64,7 @@ export function createAi(config, { fetchImpl = fetch } = {}) {
           body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: turns.map((m) => ({ role: m.role, content: m.text })) }),
         },
         'Claude',
+        timeoutMs,
       );
       const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('');
       if (!text) throw new AiError('Claude вернул пустой ответ');
