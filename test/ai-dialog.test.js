@@ -242,3 +242,30 @@ test('уточнения одним сообщением: ответ свобо�
   r = (await say(s2, { value: 'бюджет 100к' })).json().reply;
   assert.equal(r.step.id, 'criteria');
 });
+
+test('бюджет и медиаплан ждут от нас: бюджет не спрашиваем, менеджеру — пометка, клиенту — обещание предложения', async () => {
+  const { start, say, db } = await setup();
+  const s = await start();
+  await say(s, { value: 'Кирилл' });
+  let r = (await say(s, { value: 'Нужна медийно-контекстная реклама. Сайт www.taller.ru. Предполагаемый период рекламы 2 месяца – сентябрь – октябрь. Города: Москва, СПб, Казань. Бюджет  не озвучиваю, пока сложно сказать, что в итоге согласуем с руководством, присылайте предложение с учетом вашей экспертизы.' })).json().reply;
+  assert.equal(r.step.id, 'clarify');
+  assert.doesNotMatch(r.step.text, /бюджет/i, 'про бюджет не спрашиваем — его ждут от нас');
+  r = (await say(s, { value: 'Не работали, запуск в сентябре' })).json().reply;
+  r = (await say(s, { value: 'опыт и результат' })).json().reply;
+  assert.equal(r.step.type, 'consent');
+  assert.match(r.step.text, /^Подготовим предложение по бюджету и медиаплан/);
+  await say(s, { value: 'yes' });
+  await say(s, { value: '+7 900 111-22-33' });
+  const a = db.getLead(1).answers;
+  assert.equal(a.budget, 'unknown');
+  assert.equal(a.proposal_request, 'Бюджет не называет — ждёт от нас предложение по бюджету и медиаплан');
+  assert.match(formatLeadCard(db.getLead(1), scenario), /<b>Ждёт от нас:<\/b> Бюджет не называет/);
+
+  // ответ на уточнение «бюджет хочу от вас услышать» — то же самое
+  const s2 = await start();
+  await say(s2, { value: 'Олег' });
+  await say(s2, { value: 'Нужна реклама в директе для автосервиса' });
+  r = (await say(s2, { value: 'Бюджет хочу от вас услышать, не работали, сайта нет, запуск в течение месяца' })).json().reply;
+  r = (await say(s2, { value: 'цена' })).json().reply;
+  assert.match(r.step.text, /^Подготовим предложение по бюджету и медиаплан/);
+});

@@ -49,6 +49,7 @@ export function createHotLeads({ db, crm, minRating = 4 }) {
         description: [
           `Уровень заявки ${ratingLetter(lead.rating)} — связаться в течение 15 минут (в рабочее время).`,
           who ? `Контакт: ${who}.` : null,
+          lead.answers?.proposal_request ? `${lead.answers.proposal_request}.` : null,
           `Карточка заявки: #/leads?lead=${lead.id}`,
         ].filter(Boolean).join('\n'),
         assigneeId: assignee?.id ?? null,

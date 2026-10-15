@@ -53,7 +53,7 @@ export function leadFacts(lead, scenario, { price } = {}) {
     if (step.type === 'consent' || step.type === 'contact' || !(step.id in a) || a[step.id] == null) continue;
     rows.push(`${step.label ?? step.id}: ${label(step, a[step.id])}`);
   }
-  const extra = { task: 'Задача словами клиента', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе исполнителя', dissatisfaction: 'Почему меняют подрядчика' };
+  const extra = { task: 'Задача словами клиента', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе исполнителя', dissatisfaction: 'Почему меняют подрядчика', proposal_request: 'Ждёт от агентства' };
   for (const [k, l] of Object.entries(extra)) if (a[k] && !scenario.steps.some((s) => s.id === k)) rows.push(`${l}: ${a[k]}`);
   if (price ?? a.price) rows.push(`Предварительная стоимость, названная клиенту: ${price ?? a.price}`);
   const dialog = lead.meta?.dialog ?? [];
