@@ -198,7 +198,13 @@
     var step = reply.step;
     dialogMode = reply.progress === null;
     setProgress(reply.progress);
-    var show = opts2 && opts2.silent ? Promise.resolve() : say(step.text).then(function () { remember('bot', step.text); });
+    // сообщения перед вопросом (примерная смета) — отдельными пузырями
+    var show = Promise.resolve();
+    if (!(opts2 && opts2.silent)) {
+      (step.before || []).concat([step.text]).forEach(function (t) {
+        show = show.then(function () { return say(t); }).then(function () { remember('bot', t); });
+      });
+    }
     return show.then(function () {
       if (step.type === 'choice') {
         renderOptions(step);

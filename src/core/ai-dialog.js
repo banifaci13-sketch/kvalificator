@@ -1,6 +1,6 @@
 // Квалификатор-диалог: вместо 19 вопросов по сценарию — короткий разговор.
 //   имя → «опишите задачу своими словами» → одно уточнение того, что не удалось понять →
-//   «что главное в выборе исполнителя» → (предварительная цена) → согласие → контакт.
+//   «что главное в выборе исполнителя» → (предварительная цена — отдельным сообщением) → согласие → контакт.
 // Интерфейс тот же, что у движка сценария (start / answer / current), поэтому каналы и сервис
 // квалификации работают без изменений.
 //
@@ -15,23 +15,20 @@ import { createMask } from '../ai/decks.js';
 
 const MAX_TEXT = 2000;
 const AI_TIMEOUT_MS = 20_000;
-// что нужно узнать из рассказа клиента — в этом порядке и уточняем, по одному вопросу за сообщение;
-// каждый пункт спрашиваем один раз («что ответил, то ответил»)
-const NEED = ['company', 'services', 'budget', 'start', 'agency_experience', 'site'];
+// что нужно узнать из рассказа клиента — недостающее спрашиваем одним сообщением, списком, один раз
+// («что ответил, то ответил»). Юрлицо не спрашиваем: название компании берём, если клиент назвал сам.
+const NEED = ['services', 'budget', 'start', 'agency_experience', 'site'];
 
-// уточняющие вопросы: короткие, по одному; где есть варианты сценария — кнопками (можно и своими словами)
-const CLARIFY = {
-  company: { text: 'Как называется ваша компания? Укажите, пожалуйста, юрлицо.', placeholder: 'Например: ООО «Ромашка»' },
-  services: { text: 'Какие услуги вам нужны?', options: 'service', placeholder: 'Или напишите своими словами' },
-  budget: { text: 'Какой бюджет в месяц рассматриваете? Можно примерно.', options: 'budget', placeholder: 'Или напишите сумму' },
-  start: { text: 'Когда хотите запуститься?', options: 'start', placeholder: 'Или напишите своими словами' },
-  agency_experience: { text: 'Работали ли раньше с агентством или подрядчиком?', options: 'agency_experience', placeholder: 'Или напишите своими словами' },
-  dissatisfaction: { text: 'Почему хотите сменить подрядчика?', placeholder: 'Что не устроило' },
-  site: { text: 'Есть ли сайт, канал или страница бренда? Пришлите, пожалуйста, ссылку.', placeholder: 'Ссылка или «нет»' },
+const ASK = {
+  services: 'какие услуги нужны: реклама, сайт, SEO, SMM, маркетплейсы или другое',
+  budget: 'какой бюджет в месяц рассматриваете — можно примерно',
+  start: 'когда хотите запуститься',
+  agency_experience: 'работали ли раньше с агентством или подрядчиком — и если да, почему хотите сменить',
+  dissatisfaction: 'почему хотите сменить подрядчика',
+  site: 'есть ли сайт, канал или страница бренда — пришлите ссылку',
 };
 // в ответе про подрядчика есть и причина смены: «да, но не устроила отчётность»
 const REASON_RE = /(?:^|[\s,])но(?=[\s,]|$)|не устро|не понрав|не доволь|недоволь|дорог|плох|слаб|не было|нет отч|мало заяв|не работал\S* как|потому|так как|из-за|ушли|расстал/i;
-const NO_RE = /^(нет|нету|пока нет|не|ничего|-|—|отсутству\S*)[.!]?$/i;
 
 // ---------- разбор по правилам (запасной и для тестов) ----------
 
@@ -206,33 +203,27 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
           text: `${state.answers.name ? `${state.answers.name}, приятно познакомиться! ` : ''}Опишите своими словами, в чём состоит задача.`,
           placeholder: 'Что нужно сделать, для какой компании и сайта, бюджет и сроки — если уже знаете',
         };
-      case 'clarify': {
-        const key = state.ask[0];
-        const q = CLARIFY[key];
-        const options = q.options ? stepOf(q.options)?.options?.map(({ value, label }) => ({ value, label })) ?? null : null;
+      case 'clarify':
         return {
-          id: `clarify_${key}`, type: options ? 'choice' : 'text', allowText: Boolean(options), options,
-          // первое уточнение — с благодарностью за рассказ, дальше — только вопрос
-          text: `${state.asked.length ? '' : `${name}спасибо! Уточню пару моментов.\n\n`}${q.text}`,
-          placeholder: q.placeholder,
+          id: 'clarify', type: 'text',
+          text: `${name}спасибо! Чтобы точнее понять задачу, уточните, пожалуйста:\n${state.ask.map((k, i) => `${i + 1}) ${ASK[k]}`).join(';\n')}.`,
+          placeholder: 'Можно одним сообщением, по пунктам или как удобно',
         };
-      }
       case 'criteria':
+        // только свой ответ, без кнопок: вариант сценария для оценки угадываем по словам
         return {
-          id: 'criteria', type: 'choice', allowText: true,
+          id: 'criteria', type: 'text',
           text: `${state.clarified ? 'Спасибо! ' : ''}Что для вас главное в выборе исполнителя?`,
-          options: criteriaStep?.options?.map(({ value, label }) => ({ value, label })) ?? [],
-          placeholder: 'Или напишите своими словами',
+          placeholder: 'Например: результат по заявкам, опыт в нашей сфере, прозрачная отчётность',
         };
       case 'consent':
         return {
           id: 'consent', type: 'consent',
-          text: [
-            priceText(state.price),
-            state.early
-              ? 'Оставьте, пожалуйста, контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.'
-              : 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.',
-          ].filter(Boolean).join('\n\n'),
+          // примерная смета — отдельным сообщением перед просьбой оставить контакт
+          before: state.price ? [priceText(state.price)] : [],
+          text: state.early
+            ? 'Оставьте, пожалуйста, контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.'
+            : 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.',
           options: [{ value: 'yes', label: 'Согласен(на) на обработку данных' }],
         };
       case 'contact':
@@ -279,6 +270,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
   function start() {
     const state = { mode: 'ai', phase: 'name', stepId: 'name', answers: {}, skipped: [], transcript: [], extracted: {}, ask: [], asked: [], clarified: false, early: false, price: null, aiCalls: 0 };
     const reply = render(state);
+    for (const t of reply.step.before ?? []) said(state, t);
     said(state, reply.step.text);
     return { state, reply };
   }
@@ -353,59 +345,6 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     return out;
   }
 
-  /** Вариант сценария по ответу: значение, подпись или номер. */
-  function optionFor(stepId, raw) {
-    const opts = stepOf(stepId)?.options ?? [];
-    const byNumber = /^\d+$/.test(raw) ? opts[Number(raw) - 1] : null;
-    return opts.find((o) => o.value === raw || o.label.toLowerCase() === raw.toLowerCase()) ?? byNumber ?? null;
-  }
-
-  /** Ответ на конкретный уточняющий вопрос — сразу в нужное поле. */
-  function applyClarify(state, key, raw, opt) {
-    const ex = (state.extracted = { ...state.extracted });
-    const no = NO_RE.test(raw);
-    switch (key) {
-      case 'company':
-        // «ООО Ромашка, бюджет 500к» — название до запятой (или по форме собственности)
-        if (!no) ex.company = (LEGAL_RE.exec(raw)?.[0] ?? raw.split(/[,;\n]/)[0]).trim().slice(0, 200);
-        break;
-      case 'site':
-        if (!no) ex.site = (SITE_RE.exec(raw)?.[0] ?? raw).replace(/[.,;]+$/, '').trim().slice(0, 200);
-        break;
-      case 'services': {
-        const named = opt ? null : named_(raw);
-        const found = opt ? [opt.value] : [...new Set([...(ruleExtract(raw).services ?? []), ...named.services])];
-        if (found.length) ex.services = found;
-        if (named?.products.length) ex.products = named.products;
-        break;
-      }
-      case 'budget': {
-        const rub = moneyFromText(raw);
-        ex.budget = opt?.value ?? (rub != null ? budgetBucket(rub) : /не знаю|не определ|пока нет|сложно|не решили|нет бюджета/i.test(raw) || no ? 'unknown' : ex.budget ?? null);
-        break;
-      }
-      case 'start':
-        ex.start = opt?.value ?? START_WORDS.find(([, re]) => re.test(raw))?.[0] ?? ex.start ?? null;
-        break;
-      case 'agency_experience': {
-        const t = raw.toLowerCase();
-        ex.agency_experience = opt?.value
-          ?? (/^(нет|не работал|впервые|первый раз|сами|никогда)/.test(t) ? 'none'
-            : /сейчас|работаем|текущ/.test(t) ? 'current'
-              : /^(да|раньше|работал|был)/.test(t) ? 'past'
-                : ruleExtract(raw).agency_experience ?? null);
-        // «да, но не устроила отчётность» — причина в том же ответе
-        if (!opt && ['past', 'current'].includes(ex.agency_experience) && REASON_RE.test(raw)) ex.dissatisfaction = raw.slice(0, 300);
-        break;
-      }
-      case 'dissatisfaction':
-        if (!no) ex.dissatisfaction = raw.slice(0, 300);
-        break;
-      default:
-    }
-    apply(state, {});
-  }
-
   function criteriaFrom(value) {
     const raw = String(value ?? '').trim();
     const opts = criteriaStep?.options ?? [];
@@ -455,24 +394,19 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         break;
       }
       case 'clarify': {
-        const key = state.ask[0];
-        const raw = text(input.value, 1);
-        const opt = CLARIFY[key].options ? optionFor(CLARIFY[key].options, raw) : null;
-        const label = opt?.label ?? raw;
-        heard(state, label);
-        state.asked.push(key);
-        state.ask.shift();
+        const t = text(input.value, 1);
+        heard(state, t);
+        state.answers.clarification = t;
         state.clarified = true;
-        applyClarify(state, key, raw, opt);
-        // свободный ответ может закрыть и другие пункты («ООО Ромашка, бюджет 200к») — разбираем целиком
-        if (!opt && raw.length > 12) apply(state, await extract(state, raw));
-        // сказали, что работали с подрядчиком, — спросим, почему меняют (тоже один раз)
-        if (key === 'agency_experience' && ['past', 'current'].includes(state.extracted.agency_experience) && !state.extracted.dissatisfaction && !state.asked.includes('dissatisfaction')) {
-          state.ask.unshift('dissatisfaction');
+        // ответ разбираем вместе с рассказом: «200к, через месяц, нет» понятнее рядом с вопросом
+        apply(state, await extract(state, `${state.answers.task}\n\nУточнение клиента: ${t}`));
+        // работали с подрядчиком и сразу сказали почему — тоже в карточку
+        if (['past', 'current'].includes(state.extracted.agency_experience) && !state.extracted.dissatisfaction && REASON_RE.test(t)) {
+          state.extracted.dissatisfaction = t.slice(0, 300);
+          state.answers.dissatisfaction = state.extracted.dissatisfaction;
         }
-        // что ответил, то ответил: уже спрошенное не повторяем, уже известное не спрашиваем
-        state.ask = state.ask.filter((k) => !state.asked.includes(k) && isMissing(state, k));
-        state.phase = state.ask.length ? 'clarify' : 'criteria';
+        // что ответил, то ответил — второй раз не спрашиваем
+        state.phase = 'criteria';
         break;
       }
       case 'criteria': {
@@ -510,7 +444,10 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
   function advance(state) {
     state.stepId = question(state)?.id ?? null;
     const reply = render(state);
-    if (reply.type === 'question') said(state, reply.step.text);
+    if (reply.type === 'question') {
+      for (const t of reply.step.before ?? []) said(state, t);
+      said(state, reply.step.text);
+    }
     return { state, reply };
   }
 

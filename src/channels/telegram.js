@@ -143,6 +143,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
       return;
     }
     const { step } = reply;
+    // сообщения перед вопросом (примерная смета) — отдельно
+    for (const t of step.before ?? []) await ctx.reply(t, { link_preview_options: { is_disabled: true } });
     let text = questionHtml(reply);
     let markup;
 

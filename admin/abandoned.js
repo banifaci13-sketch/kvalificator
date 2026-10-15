@@ -8,7 +8,7 @@ import { fill } from './docs.js';
 const CHANNELS = { web: 'Сайт', telegram: 'Telegram', max: 'MAX' };
 const STEP = {
   name: 'на имени', task: 'на описании задачи', criteria: 'на выборе исполнителя', consent: 'на согласии', contact: 'на контакте',
-  clarify_company: 'на вопросе о компании', clarify_services: 'на вопросе об услугах', clarify_budget: 'на вопросе о бюджете',
+  clarify: 'на уточняющих вопросах', clarify_company: 'на вопросе о компании', clarify_services: 'на вопросе об услугах', clarify_budget: 'на вопросе о бюджете',
   clarify_start: 'на вопросе о сроках', clarify_agency_experience: 'на вопросе о прошлых подрядчиках', clarify_dissatisfaction: 'на вопросе, почему меняют подрядчика', clarify_site: 'на вопросе о сайте',
 };
 

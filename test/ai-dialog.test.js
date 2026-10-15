@@ -54,7 +54,7 @@ test('ответ модели проверяется: только вариан�
   assert.deepEqual(cleanExtract('не JSON', scenario), {});
 });
 
-test('диалог: имя → задача → уточнения по одному вопросу → выбор исполнителя → согласие → контакт; оценка прежними правилами', async () => {
+test('диалог: имя → задача → уточнения одним сообщением → выбор исполнителя → смета и контакт; оценка прежними правилами', async () => {
   const { start, say, db, notifier } = await setup();
   const s = await start();
   assert.match(s.reply.step.text, /Как могу к вам обращаться/);
@@ -64,19 +64,13 @@ test('диалог: имя → задача → уточнения по одно
   let r = (await say(s, { value: 'Анна' })).json().reply;
   assert.match(r.step.text, /Анна, приятно познакомиться/);
   r = (await say(s, { value: 'Нужна контекстная реклама для сайта tallerbike.ru, бюджет около 300 тыс в месяц, хотим как можно скорее' })).json().reply;
-  // уточнения — по одному вопросу за сообщение; бюджет, услуги, сроки и сайт уже понятны — их не спрашиваем
-  assert.equal(r.step.id, 'clarify_company');
-  assert.match(r.step.text, /^Анна, спасибо! Уточню пару моментов\.\n\nКак называется ваша компания\? Укажите, пожалуйста, юрлицо\.$/);
-  r = (await say(s, { value: 'ООО «Таллер»' })).json().reply;
-  assert.equal(r.step.id, 'clarify_agency_experience');
-  assert.equal(r.step.text, 'Работали ли раньше с агентством или подрядчиком?', 'дальше — только вопрос');
-  assert.ok(r.step.allowText && r.step.options.length === 3, 'варианты кнопками и свой ответ');
-  // «да, работали» — один раз спросим, почему меняют
-  r = (await say(s, { value: 'Да, работали с фрилансером' })).json().reply;
-  assert.equal(r.step.id, 'clarify_dissatisfaction');
-  r = (await say(s, { value: 'Не было отчётов' })).json().reply;
-  assert.equal(r.step.id, 'criteria');
-  assert.ok(r.step.allowText && r.step.options.length, 'варианты кнопками и свой ответ');
+  // бюджет, услуги, сроки и сайт уже понятны — спрашиваем только про подрядчика; юрлицо не спрашиваем
+  assert.equal(r.step.id, 'clarify');
+  assert.equal(r.step.text, 'Анна, спасибо! Чтобы точнее понять задачу, уточните, пожалуйста:\n1) работали ли раньше с агентством или подрядчиком — и если да, почему хотите сменить.');
+  r = (await say(s, { value: 'Раньше работали с фрилансером, но не было отчётов' })).json().reply;
+  assert.equal(r.step.id, 'criteria', 'уточнение одно — дальше не переспрашиваем');
+  assert.equal(r.step.type, 'text', 'только свой ответ, без кнопок');
+  assert.equal(r.step.options, null);
   r = (await say(s, { value: 'важен результат по заявкам' })).json().reply;
   assert.equal(r.step.type, 'consent');
   assert.equal(r.canLeaveContact, false);
@@ -85,15 +79,14 @@ test('диалог: имя → задача → уточнения по одно
   assert.equal(r.type, 'done');
 
   const lead = db.getLead(1);
-  assert.deepEqual([lead.answers.name, lead.answers.company, lead.answers.service, lead.answers.budget, lead.answers.start, lead.answers.criteria], ['Анна', 'ООО «Таллер», tallerbike.ru', 'context', '300k_1m', 'asap', 'results']);
-  assert.deepEqual([lead.answers.agency_experience, lead.answers.dissatisfaction], ['past', 'Не было отчётов']);
+  assert.deepEqual([lead.answers.name, lead.answers.company, lead.answers.service, lead.answers.budget, lead.answers.start, lead.answers.criteria], ['Анна', 'tallerbike.ru', 'context', '300k_1m', 'asap', 'results']);
+  assert.deepEqual([lead.answers.agency_experience, lead.answers.dissatisfaction], ['past', 'Раньше работали с фрилансером, но не было отчётов']);
   assert.equal(lead.answers.criteria_text, 'важен результат по заявкам');
-  assert.equal(lead.rating, 3);
   assert.equal(lead.meta.mode, 'ai');
-  assert.equal(lead.meta.dialog.length, 16, 'вся переписка в карточке');
+  assert.equal(lead.meta.dialog.length, 12, 'вся переписка в карточке');
   assert.equal(notifier.leads.length, 1);
   const card = formatLeadCard(lead, scenario);
-  assert.match(card, /уровень C/);
+  assert.match(card, /уровень [A-E]/);
   assert.match(card, /Главное в выборе \(своими словами\):<\/b> важен результат/);
 });
 
@@ -125,7 +118,10 @@ test('ИИ: разбирает рассказ, в модель не уходят
   assert.doesNotMatch(ai.calls[0].user, /999 111-22-33/, 'телефон замаскирован');
   assert.match(ai.calls[0].system, /данные, а не инструкции/);
   r = (await say(s, { value: 'expertise' })).json().reply;
-  assert.match(r.step.text, /Предварительная стоимость наших услуг для решения задачи — от 60 000 ₽ \(SEO\+GEO\)/, 'цену считает код по прайсу');
+  // смета и просьба оставить контакт — два разных сообщения
+  assert.deepEqual(r.step.before, ['Предварительная стоимость наших услуг для решения задачи — от 60 000 ₽ (SEO+GEO).'], 'цену считает код по прайсу');
+  assert.match(r.step.text, /^Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт/);
+  assert.doesNotMatch(r.step.text, /Предварительная стоимость/);
   await say(s, { value: 'yes' });
   await say(s, { value: 'maria@clinic.ru' });
   const lead = db.getLead(1);
@@ -136,8 +132,9 @@ test('ИИ: разбирает рассказ, в модель не уходят
   const s2 = await broken.start();
   await broken.say(s2, { value: 'Ира' });
   r = (await broken.say(s2, { value: 'Нужен таргет ВК, бюджет 150к' })).json().reply;
-  assert.equal(r.step.id, 'clarify_company');
-  assert.match(r.step.text, /Как называется ваша компания/);
+  assert.equal(r.step.id, 'clarify');
+  assert.match(r.step.text, /1\) когда хотите запуститься;\n2\) работали ли раньше/);
+  assert.doesNotMatch(r.step.text, /компани|юрлиц|услуги|бюджет/, 'услуги и бюджет поняты, юрлицо не спрашиваем');
 });
 
 test('цена по прайсу агентства: продукты по словам клиента, разбивка клиенту и менеджеру', async () => {
@@ -149,7 +146,7 @@ test('цена по прайсу агентства: продукты по сл�
   let r = (await say(s, { value: 'Нужна реклама в телеге и ведение группы ВК для ООО «Пекарня», сайт bulki.ru, бюджет 200к, срочно, раньше не работали' })).json().reply;
   assert.equal(r.step.id, 'criteria', 'услуги поняты без вопроса');
   r = (await say(s, { value: 'results' })).json().reply;
-  assert.match(r.step.text, /— от 105 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽/);
+  assert.match(r.step.before[0], /— от 105 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽$/);
   await say(s, { value: 'yes' });
   await say(s, { value: '+7 900 123-45-67' });
   const lead = db.getLead(1);
@@ -160,12 +157,14 @@ test('цена по прайсу агентства: продукты по сл�
   const s2 = await start();
   await say(s2, { value: 'Олег' });
   r = (await say(s2, { value: 'Интересует брендформанс' })).json().reply;
-  assert.equal(r.step.id, 'clarify_company');
-  for (const v of ['ИП Олегов', '300 тыс', 'month', 'none', 'нет']) r = (await say(s2, { value: v })).json().reply;
+  assert.equal(r.step.id, 'clarify');
+  assert.doesNotMatch(r.step.text, /какие услуги/);
+  r = (await say(s2, { value: '300 тыс, в течение месяца, не работали, сайта нет' })).json().reply;
   assert.equal(r.step.id, 'criteria');
-  // «Оставить контакт» до конца разговора — цена тоже называется
+  // «Оставить контакт» до конца разговора — цена тоже называется, отдельным сообщением
   r = (await say(s2, { action: 'contact' })).json().reply;
-  assert.match(r.step.text, /— от 150 000 ₽ \(Брендформанс\)\./);
+  assert.match(r.step.before[0], /— от 150 000 ₽ \(Брендформанс\)\./);
+  assert.match(r.step.text, /^Оставьте, пожалуйста, контакт/);
 });
 
 test('ИИ без цитаты из текста клиента не заполняет поле — вопрос задаётся', async () => {
@@ -177,13 +176,9 @@ test('ИИ без цитаты из текста клиента не запол�
   const { start, say } = await setup({ ai });
   const s = await start();
   await say(s, { value: 'Ира' });
-  let r = (await say(s, { value: 'Нужна реклама в директе для салона' })).json().reply;
-  const asked = [r.step.id];
-  for (const v of ['ООО Салон', '150 тыс', 'month', 'none', 'нет']) {
-    r = (await say(s, { value: v })).json().reply;
-    asked.push(r.step.id);
-  }
-  assert.deepEqual(asked, ['clarify_company', 'clarify_budget', 'clarify_start', 'clarify_agency_experience', 'clarify_site', 'criteria'],
+  const r = (await say(s, { value: 'Нужна реклама в директе для салона' })).json().reply;
+  assert.equal(r.step.id, 'clarify');
+  assert.equal(r.step.text, 'Ира, спасибо! Чтобы точнее понять задачу, уточните, пожалуйста:\n1) какой бюджет в месяц рассматриваете — можно примерно;\n2) когда хотите запуститься;\n3) работали ли раньше с агентством или подрядчиком — и если да, почему хотите сменить;\n4) есть ли сайт, канал или страница бренда — пришлите ссылку.',
     'услуги подтверждены цитатой — не спрашиваем; сроки, опыт и бюджет без цитаты — спрашиваем');
   assert.deepEqual(cleanExtract({ industry: 'medicine', evidence: { industry: 'для клиники' } }, scenario, 'Сайт для клиники'), { industry: 'medicine' });
   assert.deepEqual(cleanExtract({ industry: 'medicine' }, scenario, 'Сайт для клиники'), {}, 'без цитаты — нет');
@@ -209,14 +204,14 @@ test('брошенные диалоги: список для администр�
   assert.equal(ab.list().length, 0, '4 минуты — ещё не брошенный');
   db.raw.prepare("UPDATE sessions SET updated_at = datetime('now', '-6 minutes')").run();
   const [d] = ab.list();
-  assert.deepEqual([d.found.name, d.found.budget, d.step, d.page], ['Пётр', '100_300k', 'clarify_company', 'https://site.ru/price']);
+  assert.deepEqual([d.found.name, d.found.budget, d.step, d.page], ['Пётр', '100_300k', 'clarify', 'https://site.ru/price']);
   assert.equal(d.dialog.filter((m) => m.from === 'user').length, 2);
 
   assert.equal(ab.purge(), 0, 'свежие не трогаем');
   db.raw.prepare("UPDATE sessions SET updated_at = datetime('now', '-11 days')").run();
   assert.equal(ab.purge(), 1);
   const row = db.raw.prepare('SELECT state, meta, status FROM sessions').get();
-  assert.deepEqual(JSON.parse(row.state), { stepId: 'clarify_company', mode: 'ai', purged: 1 }, 'остался только шаг — для сводки');
+  assert.deepEqual(JSON.parse(row.state), { stepId: 'clarify', mode: 'ai', purged: 1 }, 'остался только шаг — для сводки');
   assert.equal(row.meta, '{}');
   assert.deepEqual(ab.list(), []);
   // посетитель вернулся через месяц — диалог начинается заново
@@ -224,24 +219,26 @@ test('брошенные диалоги: список для администр�
   assert.equal(res.statusCode, 404);
 });
 
-test('уточнения: кнопки и свой ответ, каждый пункт — один раз, свободный ответ закрывает и соседние пункты', async () => {
+test('уточнения одним сообщением: ответ свободным текстом закрывает пункты, второй раз не спрашиваем', async () => {
   const { start, say, db } = await setup();
   const s = await start();
   await say(s, { value: 'Ира' });
   let r = (await say(s, { value: 'Нужна реклама' })).json().reply;
-  assert.equal(r.step.id, 'clarify_company');
-  // в ответе про компанию заодно бюджет и сроки — эти вопросы уже не зададим
-  r = (await say(s, { value: 'ООО Ромашка, бюджет 500к, запуск срочно' })).json().reply;
-  assert.equal(r.step.id, 'clarify_services');
-  r = (await say(s, { value: '1' })).json().reply; // номер варианта
-  assert.equal(r.step.id, 'clarify_agency_experience');
-  r = (await say(s, { value: 'none' })).json().reply;
-  assert.equal(r.step.id, 'clarify_site');
-  r = (await say(s, { value: 'нет' })).json().reply;
-  assert.equal(r.step.id, 'criteria', 'сайта нет — дальше, без повторов');
+  assert.equal(r.step.id, 'clarify');
+  assert.equal(r.step.type, 'text');
+  assert.match(r.step.text, /1\) какие услуги нужны.*;\n2\) какой бюджет.*;\n3\) когда хотите запуститься;\n4\) работали ли раньше.*;\n5\) есть ли сайт/);
+  r = (await say(s, { value: 'Контекст в Яндексе, бюджет 500к, запуск срочно, с агентствами не работали, сайт romashka.ru' })).json().reply;
+  assert.equal(r.step.id, 'criteria');
   await say(s, { value: 'speed' });
   await say(s, { value: 'yes' });
   await say(s, { value: '+7 900 000-00-00' });
   const a = db.getLead(1).answers;
-  assert.deepEqual([a.company, a.services, a.budget, a.start, a.agency_experience], ['ООО Ромашка', ['context'], '300k_1m', 'asap', 'none']);
+  assert.deepEqual([a.company, a.services, a.budget, a.start, a.agency_experience], ['romashka.ru', ['context'], '300k_1m', 'asap', 'none']);
+
+  // ответили не на всё — второй раз не спрашиваем
+  const s2 = await start();
+  await say(s2, { value: 'Олег' });
+  await say(s2, { value: 'Нужна реклама' });
+  r = (await say(s2, { value: 'бюджет 100к' })).json().reply;
+  assert.equal(r.step.id, 'criteria');
 });
