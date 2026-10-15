@@ -97,7 +97,7 @@
     '<section class="panel" role="dialog" aria-modal="false" aria-labelledby="kv-title" hidden>' +
       '<header class="head">' +
         '<div class="avatar" aria-hidden="true">' + iconChat() + '</div>' +
-        '<div class="head-text"><h2 id="kv-title"></h2><p class="sub"></p></div>' +
+        '<div class="head-text"><img class="logo" alt="" hidden><h2 id="kv-title"></h2><p class="sub"></p></div>' +
         '<button class="restart" type="button" aria-label="Начать заново" title="Начать заново">' + iconRestart() + '</button>' +
         '<button class="close" type="button" aria-label="Закрыть">' + iconClose() + '</button>' +
       '</header>' +
@@ -291,9 +291,20 @@
         field.setAttribute('inputmode', /[a-zа-я@]/i.test(v) ? 'email' : 'tel');
       });
     }
+    // на компьютере Enter отправляет, Shift+Enter — новая строка; на телефоне Enter — новая строка,
+    // отправка — кнопкой (как в мессенджерах)
     field.addEventListener('keydown', function (e) {
-      if (multiline && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+      if (multiline && !coarse && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     });
+    field.setAttribute('enterkeyhint', multiline && coarse ? 'enter' : 'send');
+    if (multiline) {
+      // поле растёт вместе с текстом — длинный ответ видно целиком (до ~6 строк)
+      field.addEventListener('input', function () {
+        field.style.height = 'auto';
+        field.style.height = Math.min(field.scrollHeight + 3, 160) + 'px';
+        scrollEnd();
+      });
+    }
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var v = field.value.trim();
@@ -515,8 +526,37 @@
   }
 
   // ---------- открытие / закрытие ----------
+  // ---------- телефон: экран целиком, клавиатура, прокрутка страницы ----------
+  var mobile = window.matchMedia ? window.matchMedia('(max-width: 520px)') : { matches: false };
+  var coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+  var vv = window.visualViewport || null;
+  var savedOverflow = null;
+  // клавиатура уменьшает видимую область — подгоняем окно чата, чтобы поле ввода не уходило под неё
+  function fitViewport() {
+    if (!mobile.matches || !vv || panel.hidden) { panel.style.top = ''; panel.style.height = ''; return; }
+    panel.style.top = vv.offsetTop + 'px';
+    panel.style.height = vv.height + 'px';
+    scrollEnd();
+  }
+  if (vv) {
+    vv.addEventListener('resize', fitViewport);
+    vv.addEventListener('scroll', fitViewport);
+  }
+  function lockPage(on) {
+    var el = document.documentElement;
+    if (on && mobile.matches && savedOverflow === null) {
+      savedOverflow = el.style.overflow;
+      el.style.overflow = 'hidden';
+    } else if (!on && savedOverflow !== null) {
+      el.style.overflow = savedOverflow;
+      savedOverflow = null;
+    }
+  }
+
   function open() {
     panel.hidden = false;
+    lockPage(true);
+    fitViewport();
     host.classList.add('open');
     launcher.setAttribute('aria-expanded', 'true');
     launcher.hidden = true;
@@ -532,6 +572,8 @@
 
   function close() {
     panel.hidden = true;
+    lockPage(false);
+    fitViewport();
     host.classList.remove('open');
     launcher.hidden = false;
     launcher.setAttribute('aria-expanded', 'false');
@@ -548,17 +590,17 @@
     if (t) { e.preventDefault(); open(); }
   });
 
-  // Оригинальный знак бренда, если он загружен на сервер; иначе остаётся иконка чата
-  (function loadMark() {
-    var img = new Image();
-    img.alt = '';
+  // Логотип агентства в шапке (утверждённый файл с сервера, для тёмного фона); не загрузился —
+  // остаются иконка и название текстом
+  (function loadLogo() {
+    var img = $('.logo');
     img.onload = function () {
-      var avatar = $('.avatar');
-      avatar.textContent = '';
-      avatar.classList.add('has-logo');
-      avatar.appendChild(img);
+      img.hidden = false;
+      $('.avatar').hidden = true;
+      $('#kv-title').classList.add('sr-only');
     };
-    img.src = API + '/brand/logo/mark';
+    img.onerror = function () { img.remove(); };
+    img.src = API + '/brand/logo/onDark';
   })();
 
   function mount() {
@@ -595,6 +637,10 @@
       '.avatar.has-logo{background:#fff;overflow:hidden}',
       '.avatar img{width:30px;height:30px;object-fit:contain}',
       '.head-text{flex:1;min-width:0}',
+      '.logo{display:block;height:30px;width:auto;max-width:100%;margin:0 0 4px}',
+      '.logo[hidden]{display:none}',
+      '.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}',
+      '.avatar[hidden]{display:none}',
       'h2{margin:0;font-size:16px;font-weight:700}',
       '.sub{margin:2px 0 0;font-size:13px;opacity:.85}',
       '.close,.restart{flex:none;display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:#fff}',
@@ -631,8 +677,16 @@
       '.skip{align-self:center;min-height:36px;padding:6px 12px;border:0;background:transparent;color:var(--kv-muted);text-decoration:underline}',
       '.foot{padding:8px 16px 12px;font-size:12px;color:var(--kv-muted);text-align:center;border-top:1px solid var(--kv-line)}',
       '.foot:empty{display:none}',
-      '@media (max-width:520px){.panel{inset:0;width:auto;height:auto;border-radius:0;padding-bottom:env(safe-area-inset-bottom)}',
-      '.launcher{bottom:16px;' + side + ':16px}.launcher-label{display:none}.launcher{padding:0 8px}}',
+      // телефон: чат на весь экран (высоту подгоняет fitViewport под клавиатуру), отступы под вырез и полоску «домой»
+      '@media (max-width:520px){.panel{inset:0;width:auto;height:100%;height:100dvh;border-radius:0;animation:kv-up .2s ease-out}',
+      '@keyframes kv-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}',
+      '.head{padding:calc(12px + env(safe-area-inset-top)) 8px 12px 16px;gap:8px}',
+      '.logo{height:26px;margin-bottom:3px}.sub{font-size:12px}',
+      '.log{padding:12px 12px 8px}.msg{max-width:88%;font-size:15px}',
+      '.controls{padding:8px 12px calc(10px + env(safe-area-inset-bottom));max-height:55%;border-top:1px solid var(--kv-line);background:var(--kv-bg)}',
+      '.option{min-height:48px}.skip{min-height:40px}',
+      '.foot{padding-bottom:calc(10px + env(safe-area-inset-bottom))}',
+      '.launcher{bottom:calc(16px + env(safe-area-inset-bottom));' + side + ':16px}.launcher-label{display:none}.launcher{padding:0 8px}}',
       '@media (prefers-reduced-motion:reduce){.panel,.launcher,.progress span{animation:none;transition:none}}',
     ].join('');
   }

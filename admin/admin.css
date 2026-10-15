@@ -241,6 +241,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .filters .input { width: 240px; }
 .filters .select { width: auto; min-width: 140px; }
 .filters .date { width: 150px; }
+.filters-toggle { display: none; }
+.filters-more { display: contents; }
+.filters-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 700; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .rating-filter { display: inline-flex; justify-self: start; align-self: start; width: max-content; max-width: 100%; gap: 2px; padding: 3px; border-radius: var(--radius-s); background: var(--surface-3); }
 .rating-filter button {
@@ -830,7 +833,7 @@ details.menu summary::-webkit-details-marker { display: none; }
 .pm-add-board, .add-task, .column-add { border: 0; background: transparent; color: var(--accent-text); font-weight: 600; cursor: pointer; font-size: 14px; }
 .pm-add-board { padding: 7px 12px; border-radius: var(--radius-s); }
 .pm-add-board:hover, .add-task:hover { background: var(--accent-soft); }
-.pm-filters .input[type="search"] { width: auto; flex: 1 1 180px; }
+.pm-filters .input[type="search"] { width: auto; flex: 1 1 0; min-width: 120px; order: 99; }
 .pm-filters .select { min-width: 0; }
 .task-board .column { min-height: 64vh; border-top: 3px solid var(--col, var(--line)); }
 .task-board .column header { align-items: center; gap: 8px; padding: 10px 8px 6px 14px; border-bottom: 0; background: color-mix(in srgb, var(--col, transparent) 9%, transparent); border-radius: var(--radius-m) var(--radius-m) 0 0; }
@@ -1063,10 +1066,19 @@ details.menu summary::-webkit-details-marker { display: none; }
   .leads td.c-service, .leads td.c-budget { grid-column: 1 / -1; color: var(--muted); }
   .leads td.c-channel { color: var(--muted); }
   .leads .task { max-width: none; }
-  .page { padding: 16px 16px 40px; }
+  /* снизу — место под кнопку ассистента, чтобы она не закрывала последнюю карточку */
+  .page { padding: 16px 16px 96px; }
   .page-head h1 { font-size: 24px; }
   .subnav { padding: 0 8px; }
   .filters .input, .filters .select, .filters .date { width: 100%; }
+  /* фильтры на телефоне: поиск и кнопка «Фильтры» в одну строку, остальное — по кнопке */
+  .filters.collapsible { flex-wrap: wrap; gap: 8px; padding: 8px; }
+  .filters.collapsible > .input[type="search"] { flex: 1 1 0; min-width: 0; width: auto; order: 0; }
+  .filters.collapsible .filters-toggle { display: inline-flex; align-items: center; flex: none; min-height: 44px; }
+  .filters.collapsible:not(.open) .filters-more { display: none; }
+  .filters.collapsible.open .filters-more { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .filters.collapsible.open .filters-more > * { width: 100%; }
+  .filters.collapsible.open .filters-more .rating-filter { width: max-content; }
   .work { grid-template-columns: 1fr; }
   .staff-fields { grid-template-columns: 1fr; }
   table.staff, .staff tbody { display: block; min-width: 0; }

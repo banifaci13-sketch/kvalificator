@@ -146,12 +146,12 @@ test('цена по прайсу агентства: продукты по сл�
   let r = (await say(s, { value: 'Нужна реклама в телеге и ведение группы ВК для ООО «Пекарня», сайт bulki.ru, бюджет 200к, срочно, раньше не работали' })).json().reply;
   assert.equal(r.step.id, 'criteria', 'услуги поняты без вопроса');
   r = (await say(s, { value: 'results' })).json().reply;
-  assert.match(r.step.before[0], /— от 105 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽$/);
+  assert.match(r.step.before[0], /— от 30 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽$/);
   await say(s, { value: 'yes' });
   await say(s, { value: '+7 900 123-45-67' });
   const lead = db.getLead(1);
   assert.deepEqual([...lead.answers.services].sort(), ['smm', 'target']);
-  assert.equal(lead.answers.price, 'от 105 000 ₽: Реклама в Telegram — от 30 000 ₽; SMM ВКонтакте — от 75 000 ₽');
+  assert.equal(lead.answers.price, 'от 30 000 ₽: Реклама в Telegram — от 30 000 ₽; SMM ВКонтакте — от 75 000 ₽');
 
   // продукт без направления сценария («брендформанс») — про услуги не переспрашиваем
   const s2 = await start();

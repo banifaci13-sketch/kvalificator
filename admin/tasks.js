@@ -2,7 +2,7 @@
 // Ещё «Мои задачи» со всех проектов, клиенты агентства и карточка клиента.
 // Задача открывается в боковой панели; поля сохраняются сразу при изменении.
 
-import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, confirmDialog, rowActions, countdown, taskDeadline } from './admin.js';
+import { h, api, app, shell, toast, navigate, fmtDateTime, plural, ctx, icon, userAvatar, confirmDialog, rowActions, countdown, taskDeadline, collapsibleFilters } from './admin.js';
 import { fill, formDialog } from './docs.js';
 import { clientMeetings } from './calendar.js';
 import { setAssistantTask } from './assistant.js';
@@ -813,7 +813,7 @@ export async function renderProjects(params) {
   );
 
   const tabs = h('div', { class: 'pm-tabs', role: 'tablist', 'aria-label': 'Доски проекта' });
-  const filters = h('div', { class: 'filters pm-filters' });
+  const filters = h('div', { class: 'filters pm-filters collapsible' });
   const board = h('div', { class: 'board task-board' }, h('p', { class: 'muted' }, 'Загружаю…'));
   const people = h('div', { class: 'pm-people' });
   const newBtn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Новая задача');
@@ -895,8 +895,9 @@ export async function renderProjects(params) {
 
   async function renderFilters() {
     const { team: list } = await loadTeam().catch(() => ({ team: [] }));
-    fill(
-      filters,
+    const active = [f.mine, f.assignee, f.due && f.due !== Object.keys(DUE_FILTERS)[0], f.prio].filter(Boolean).length;
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Поиск', value: f.q, 'aria-label': 'Поиск', onchange: (e) => go({ q: e.target.value.trim() }) });
+    fill(filters, ...collapsibleFilters(search, [
       h(
         'div',
         { class: 'rating-filter', role: 'group', 'aria-label': 'Чьи задачи' },
@@ -918,8 +919,7 @@ export async function renderProjects(params) {
         { class: 'select', 'aria-label': 'Важность', onchange: (e) => go({ prio: e.target.value }) },
         [['', 'Любая важность'], ['3', 'Высокая и критичная'], ['4', 'Критичная']].map(([v, l]) => h('option', { value: v, selected: v === f.prio }, l)),
       ),
-      h('input', { class: 'input', type: 'search', placeholder: 'Поиск по задачам', value: f.q, 'aria-label': 'Поиск', onchange: (e) => go({ q: e.target.value.trim() }) }),
-    );
+    ], active));
   }
 
   newBtn.addEventListener('click', () => openTask(null, { defaults: { client_id: current.internal ? null : current.id, column_id: active?.columns[0]?.id, assignee_id: f.mine ? ctx.me.id : null }, onChange: refresh }));

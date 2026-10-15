@@ -885,6 +885,24 @@ function routeQuery(f) {
   return q;
 }
 
+/**
+ * Фильтры на телефоне: поиск на виду, остальное — под кнопкой «Фильтры» (с числом выбранных),
+ * чтобы список не начинался со второго экрана. На компьютере кнопки нет, всё в одну строку.
+ */
+export function collapsibleFilters(search, rest, active = 0) {
+  const more = h('div', { class: 'filters-more' }, rest);
+  const toggle = h('button', {
+    type: 'button', class: 'btn filters-toggle', 'aria-expanded': 'false',
+    onclick: () => {
+      const bar = toggle.parentElement;
+      const open = !bar.classList.contains('open');
+      bar.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    },
+  }, 'Фильтры', active ? h('span', { class: 'filters-count' }, String(active)) : null);
+  return [search, toggle, more];
+}
+
 function filterBar(route, f, { rating = true, status = true, search = true } = {}) {
   const update = (patch) => navigate(route, routeQuery({ ...f, ...patch, page: 1 }));
   let timer;
@@ -916,10 +934,11 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
     PERIODS.map(([v, label]) => h('option', { value: v, selected: v === f.period }, label)),
   );
 
+  const active = [f.period !== '30', f.rating, f.status, f.channel, f.test].filter(Boolean).length;
   return h(
     'div',
-    { class: 'filters' },
-    search
+    { class: 'filters collapsible' },
+    ...collapsibleFilters(search
       ? h('input', {
           class: 'input', type: 'search', placeholder: 'Компания, контакт, № лида', value: f.q, 'aria-label': 'Поиск',
           oninput: (e) => {
@@ -927,7 +946,7 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
             timer = setTimeout(() => update({ q: e.target.value.trim() }), 400);
           },
         })
-      : null,
+      : null, [
     periodSelect,
     f.period === 'custom'
       ? [
@@ -956,6 +975,7 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
       h('input', { type: 'checkbox', checked: f.test, onchange: (e) => update({ test: e.target.checked }) }),
       'Тестовые',
     ),
+    ], active),
   );
 }
 
