@@ -739,6 +739,13 @@ details.menu summary::-webkit-details-marker { display: none; }
 .meeting-time { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .meeting-time > div { display: grid; gap: 6px; }
 .video-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.repeat-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.repeat-row > * { flex: 1 1 140px; min-width: 0; }
+.repeat-row > select:first-child { flex: 2 1 280px; }
+.repeat-row [hidden], .repeat-box [hidden] { display: none; }
+.repeat-box .weekdays button { min-width: 38px; }
+.series-scope .hint { margin: 0; }
+.ev-repeat { opacity: .75; }
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 12px; }
 .account-form h3 { font-size: 14px; margin: 16px 0 8px; }
 

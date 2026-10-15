@@ -108,6 +108,10 @@ const abandoned = createAbandoned({ db: db.raw, days: config.abandonedDays });
 const purgeJob = monitor.job('purge', `Удаление брошенных диалогов старше ${config.abandonedDays} дн.`, 3600e3);
 const purgeTimer = setInterval(() => purgeJob(() => abandoned.purge()), 3600e3);
 setTimeout(() => purgeJob(() => abandoned.purge()), 60e3);
+// раз в час: регулярные встречи — продлить серии на полгода вперёд
+const seriesJob = monitor.job('meetings', 'Регулярные встречи: продление на полгода вперёд', 3600e3);
+const seriesTimer = setInterval(() => seriesJob(() => calendar.extendSeries()), 3600e3);
+setTimeout(() => seriesJob(() => calendar.extendSeries()), 90e3);
 // Напоминания о встречах и утренний план — в личный Telegram сотрудников (нужен токен бота)
 const reminders = config.telegram.token
   ? startReminders({ calendar, crm, send: telegramSender({ token: config.telegram.token }), log, publicUrl: config.publicUrl, track: monitor.job('reminders', 'Напоминания о встречах и план дня в Telegram', 60_000) })
@@ -121,6 +125,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     clearInterval(retryTimer);
     clearInterval(moneyTimer);
     clearInterval(purgeTimer);
+    clearInterval(seriesTimer);
     reminders?.stop();
     scenarioSource.stop();
     if (telegramBot?.isRunning()) await telegramBot.stop();

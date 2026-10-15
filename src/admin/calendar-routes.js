@@ -1,7 +1,7 @@
 // API раздела «Календарь»: встречи, ссылки Zoom/Телемост, Telegram для напоминаний, подписка на календарь.
 // Подключается внутри авторизованной части админки (req.user уже есть).
 
-import { CalendarError, FORMATS, PROVIDERS, REMIND_OPTIONS, fromDbTime } from '../calendar/store.js';
+import { CalendarError, FORMATS, PROVIDERS, REMIND_OPTIONS, REPEATS, fromDbTime } from '../calendar/store.js';
 import { VideoError } from '../calendar/video.js';
 import { parseFollowup } from '../assistant/followup.js';
 
@@ -28,8 +28,23 @@ const meetingBody = {
     remind: { type: 'array', maxItems: 6, items: { type: 'integer' } },
     participants: { type: 'array', maxItems: 50, items: { type: 'integer' } },
     cancelled: { type: 'boolean' },
+    // регулярная встреча: правило повтора; null — больше не повторять
+    repeat: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: ['rule'],
+      properties: {
+        rule: { type: 'string', enum: Object.keys(REPEATS) },
+        days: { type: 'array', maxItems: 7, items: { type: 'integer', minimum: 1, maximum: 7 } },
+        until: { type: ['string', 'null'], format: 'date' },
+        count: { type: ['integer', 'null'], minimum: 2, maximum: 500 },
+      },
+    },
+    // для встречи из серии: изменить только эту или эту и следующие
+    scope: { type: 'string', enum: ['one', 'following'] },
   },
 };
+const scopeQuery = { type: 'object', properties: { scope: { type: 'string', enum: ['one', 'following'] } } };
 
 export async function calendarRoutes(api, { calendar, video, config, notify = null, crm = null, auth = null }) {
   api.setErrorHandler((err, req, reply) => {
@@ -49,6 +64,7 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
       formats: FORMATS,
       providers: PROVIDERS,
       remindOptions: REMIND_OPTIONS,
+      repeats: REPEATS,
       video: video.available,
       telegram: { linked: Boolean(me?.telegram_chat_id), bot: config.telegram.botUsername ?? null, enabled: config.telegram.botEnabled },
       ics: me?.calendar_token ? icsUrl(me.calendar_token) : null,
@@ -77,10 +93,13 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
 
   api.post('/admin/api/meetings', { schema: { body: { ...meetingBody, required: ['title', 'startsAt'] } } }, async (req) => {
     const m = calendar.create(req.body, req.user);
-    // участникам — уведомление в кабинете
+    // участникам — уведомление в кабинете (о серии — одно, с правилом повтора)
     const when = new Date(`${m.starts_at.replace(' ', 'T')}Z`).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
+    const text = m.series
+      ? `Вас пригласили на регулярную встречу «${m.title}» — ${m.series.label[0].toLowerCase()}${m.series.label.slice(1)}, первая — ${when}`
+      : `Вас пригласили на встречу «${m.title}» — ${when}`;
     for (const p of m.participants ?? []) {
-      notify?.add(p.id, { kind: 'meeting', text: `Вас пригласили на встречу «${m.title}» — ${when}`, href: `#/calendar?meeting=${m.id}`, actor: req.user.name, actorId: req.user.id });
+      notify?.add(p.id, { kind: 'meeting', text, href: `#/calendar?meeting=${m.id}`, actor: req.user.name, actorId: req.user.id });
     }
     return { meeting: publicMeeting(m) };
   });
@@ -153,16 +172,17 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
     return { meeting: publicMeeting(updated), tasks };
   });
 
-  api.put('/admin/api/meetings/:id', { schema: { params: idParams, body: meetingBody } }, async (req) => ({
-    meeting: publicMeeting(calendar.update(req.params.id, req.body)),
-  }));
+  api.put('/admin/api/meetings/:id', { schema: { params: idParams, body: meetingBody } }, async (req) => {
+    const { scope = 'one', ...patch } = req.body;
+    return { meeting: publicMeeting(calendar.update(req.params.id, patch, { scope })) };
+  });
 
-  api.delete('/admin/api/meetings/:id', { schema: { params: idParams } }, async (req, reply) => {
+  api.delete('/admin/api/meetings/:id', { schema: { params: idParams, querystring: scopeQuery } }, async (req, reply) => {
     const m = calendar.get(req.params.id);
     if (req.user.role !== 'admin' && m.created_by_id !== req.user.id) {
       return reply.code(403).send({ error: 'Удалить встречу может её автор или администратор — остальные могут отменить' });
     }
-    calendar.remove(m.id);
+    calendar.remove(m.id, { scope: req.query.scope ?? 'one' });
     return { ok: true };
   });
 
@@ -181,6 +201,8 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
             startsAt: { type: 'string', maxLength: 40 },
             duration: { type: 'integer', minimum: 5, maximum: 720 },
             agenda: nullableText(5000),
+            // для регулярной встречи — постоянная ссылка (в Zoom — повторяющаяся встреча без времени)
+            recurring: { type: 'boolean' },
           },
         },
       },
@@ -189,7 +211,7 @@ export async function calendarRoutes(api, { calendar, video, config, notify = nu
     async (req) => {
       const start = new Date(req.body.startsAt);
       if (Number.isNaN(start.getTime())) throw new CalendarError('Неверная дата или время');
-      const res = await video.create(req.body.provider, { title: req.body.title || 'Встреча', start, duration: req.body.duration ?? 60, agenda: req.body.agenda });
+      const res = await video.create(req.body.provider, { title: req.body.title || 'Встреча', start, duration: req.body.duration ?? 60, agenda: req.body.agenda, recurring: Boolean(req.body.recurring) });
       req.log.info({ provider: res.provider, by: req.user.login }, 'Создана видеовстреча');
       return res;
     },

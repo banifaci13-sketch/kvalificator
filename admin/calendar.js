@@ -38,6 +38,23 @@ function mondayOf(date) {
   const d = new Date(`${date}T12:00:00Z`);
   return addDays(date, -((d.getUTCDay() + 6) % 7));
 }
+/** День недели: 1 — пн … 7 — вс. */
+const weekdayOf = (date) => ((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
+const WD_SHORT = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const WD_ACC = ['', 'понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'];
+const NTH = ['', 'первый', 'второй', 'третий', 'четвёртый', 'последний'];
+const NTH_F = ['', 'первую', 'вторую', 'третью', 'четвёртую', 'последнюю'];
+/** Подписи «каждый месяц …» зависят от даты первой встречи. */
+function repeatOptionLabel(rule, label, date) {
+  const day = Number(date.slice(8, 10));
+  if (rule === 'monthly') return `Каждый месяц, ${day}-го числа`;
+  if (rule === 'monthly_weekday') {
+    const wd = weekdayOf(date);
+    const nth = Math.min(Math.ceil(day / 7), 5);
+    return `Каждый месяц, в ${[3, 5, 6].includes(wd) ? NTH_F[nth] : NTH[nth]} ${WD_ACC[wd]}`;
+  }
+  return label;
+}
 const dayLabel = (date, opts) => new Date(`${date}T12:00:00Z`).toLocaleDateString('ru-RU', { timeZone: 'UTC', ...opts });
 const endTime = (m) => msk(new Date(new Date(m.starts_at_iso).getTime() + m.duration * 60_000).toISOString()).time;
 
@@ -193,7 +210,7 @@ function weekGrid(week, meetings, reload) {
             title: `${msk(m.starts_at_iso).time}–${endTime(m)} ${m.title}`,
           },
           h('span', { class: 'ev-time num' }, `${msk(m.starts_at_iso).time}–${endTime(m)}`),
-          h('span', { class: 'ev-title' }, m.title),
+          h('span', { class: 'ev-title' }, m.series_id ? h('span', { class: 'ev-repeat', title: 'Регулярная встреча', 'aria-label': 'Регулярная встреча' }, '↻ ') : null, m.title),
           hgt > 50 && m.client_name ? h('span', { class: 'ev-client' }, m.client_name) : null,
         );
       }),
@@ -242,7 +259,7 @@ function agenda(meetings, reload) {
             h(
               'li',
               { class: m.cancelled ? 'cancelled' : '' },
-              h('button', { type: 'button', class: 'linkish task-link', onclick: () => openMeeting(m.id, { onChange: reload }) }, h('span', { class: 'num' }, `${msk(m.starts_at_iso).time}–${endTime(m)}`), ' ', m.title),
+              h('button', { type: 'button', class: 'linkish task-link', onclick: () => openMeeting(m.id, { onChange: reload }) }, h('span', { class: 'num' }, `${msk(m.starts_at_iso).time}–${endTime(m)}`), ' ', m.series_id ? h('span', { class: 'ev-repeat', title: 'Регулярная встреча' }, '↻ ') : null, m.title),
               h('span', { class: 'task-meta' }, m.client_name ?? '', m.link ? h('a', { href: m.link, target: '_blank', rel: 'noopener' }, 'Подключиться') : null),
             ),
           ),
@@ -316,6 +333,99 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
   );
   const reminders = settings.remindOptions.map(([min, label]) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: min, checked: m.remind.includes(min) }), label));
 
+  // ----- повтор -----
+  // у встречи из серии правило показывается как есть; меняется — для этой и следующих встреч
+  const series = m.series ?? null;
+  const rep = {
+    rule: series?.rule ?? '',
+    days: series?.days ?? null,
+    end: series?.until ? 'until' : series?.count ? 'count' : 'never',
+    touched: false,
+  };
+  const repeatSel = h('select', { class: 'select', id: 'm-repeat' }, h('option', { value: '' }, 'Не повторять'), Object.entries(settings.repeats).map(([v, label]) => h('option', { value: v, selected: v === rep.rule }, label)));
+  const dayBtns = [1, 2, 3, 4, 5, 6, 7].map((d) =>
+    h('button', {
+      type: 'button', 'aria-pressed': 'false', 'aria-label': WD_ACC[d],
+      onclick: (e) => {
+        const cur = rep.days ?? [weekdayOf(date.value)];
+        const next = cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d].sort();
+        if (!next.length) return;
+        rep.days = next;
+        repeatChanged();
+        e.currentTarget.blur();
+      },
+    }, WD_SHORT[d]),
+  );
+  const daysBox = h('div', { class: 'rating-filter weekdays', role: 'group', 'aria-label': 'Дни недели' }, dayBtns);
+  const endSel = h('select', { class: 'select', id: 'm-repeat-end' },
+    h('option', { value: 'never', selected: rep.end === 'never' }, 'Без даты окончания'),
+    h('option', { value: 'until', selected: rep.end === 'until' }, 'До даты'),
+    h('option', { value: 'count', selected: rep.end === 'count' }, 'Количество встреч'));
+  const untilEl = h('input', { class: 'input', type: 'date', id: 'm-repeat-until', value: series?.until ?? '', 'aria-label': 'Последняя дата' });
+  const countEl = h('input', { class: 'input', type: 'number', id: 'm-repeat-count', min: 2, max: 500, value: series?.count ?? 10, 'aria-label': 'Сколько встреч' });
+  const repeatHint = h('p', { class: 'hint' });
+  const repeatBox = h('div', { class: 'field full repeat-box' },
+    h('label', { for: 'm-repeat' }, 'Повтор'),
+    h('div', { class: 'repeat-row' }, repeatSel, endSel, untilEl, countEl),
+    daysBox,
+    repeatHint);
+  // для встречи из серии: изменить только эту или эту и следующие
+  const scope = { value: 'one' };
+  const scopeBtns = [['one', 'Только эту'], ['following', 'Эту и следующие']].map(([v, label]) =>
+    h('button', { type: 'button', 'aria-pressed': String(scope.value === v), onclick: () => { scope.value = v; syncScope(); } }, label));
+  const scopeBox = series
+    ? h('div', { class: 'field full series-scope' },
+        h('p', { class: 'hint' }, '↻ Регулярная встреча: ', h('b', {}, series.label), '.'),
+        h('span', { class: 'label' }, 'Изменения, отмена и удаление касаются'),
+        h('div', { class: 'rating-filter', role: 'group', 'aria-label': 'Какие встречи менять' }, scopeBtns))
+    : null;
+  function syncScope() {
+    scopeBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(['one', 'following'][i] === scope.value)));
+    cancelBtn && (cancelBtn.textContent = m.cancelled ? 'Вернуть' : scope.value === 'following' ? 'Отменить эту и следующие' : 'Отменить встречу');
+    deleteBtn && (deleteBtn.textContent = scope.value === 'following' ? 'Удалить эту и следующие' : 'Удалить');
+  }
+  function repeatChanged() {
+    rep.touched = true;
+    // правило меняется только для этой и следующих встреч
+    if (series && scope.value !== 'following') {
+      scope.value = 'following';
+      syncScope();
+    }
+    syncRepeat();
+  }
+  function syncRepeat() {
+    const d = date.value || todayMsk();
+    [...repeatSel.options].forEach((o) => { if (o.value) o.textContent = repeatOptionLabel(o.value, settings.repeats[o.value], d); });
+    const on = Boolean(repeatSel.value);
+    const weekly = ['weekly', 'biweekly'].includes(repeatSel.value);
+    daysBox.hidden = !weekly;
+    endSel.hidden = !on;
+    untilEl.hidden = !on || endSel.value !== 'until';
+    countEl.hidden = !on || endSel.value !== 'count';
+    const days = rep.days ?? [weekdayOf(d)];
+    dayBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(days.includes(i + 1))));
+    fill(repeatHint, on && series && rep.touched ? 'Новое правило — с этой встречи; прошлые встречи серии не меняются.' : on && !series ? 'Каждая встреча серии — отдельная в календаре: напоминания, итоги и задачи по итогам — у каждой свои.' : null);
+  }
+  repeatSel.addEventListener('change', repeatChanged);
+  endSel.addEventListener('change', repeatChanged);
+  untilEl.addEventListener('change', repeatChanged);
+  countEl.addEventListener('change', repeatChanged);
+  date.addEventListener('change', () => {
+    // день недели берём из даты, пока его не выбрали вручную
+    if (!rep.touched && !series) rep.days = null;
+    syncRepeat();
+  });
+  const repeatValue = () => {
+    if (!repeatSel.value) return null;
+    const weekly = ['weekly', 'biweekly'].includes(repeatSel.value);
+    return {
+      rule: repeatSel.value,
+      ...(weekly ? { days: rep.days ?? [weekdayOf(date.value)] } : {}),
+      until: endSel.value === 'until' && untilEl.value ? untilEl.value : null,
+      count: endSel.value === 'count' ? Number(countEl.value) || null : null,
+    };
+  };
+
   // ----- формат и видеосвязь -----
   const providerInfo = h('p', { class: 'hint' });
   const videoBtns = ['zoom', 'telemost'].map((p) =>
@@ -330,7 +440,7 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
           btn.disabled = true;
           btn.textContent = 'Создаю…';
           try {
-            const res = await api('/admin/api/video', { method: 'POST', body: { provider: p, title: title.value.trim(), startsAt: toIso(date.value, time.value), duration: Number(duration.value), agenda: agendaEl.value || null } });
+            const res = await api('/admin/api/video', { method: 'POST', body: { provider: p, title: title.value.trim(), startsAt: toIso(date.value, time.value), duration: Number(duration.value), agenda: agendaEl.value || null, recurring: Boolean(repeatSel.value) } });
             link.value = res.link;
             Object.assign(state, { provider: p, hostLink: res.hostLink, externalId: res.externalId });
             renderProvider();
@@ -386,7 +496,44 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
     agenda: agendaEl.value.trim() || null,
     remind: reminders.map((l) => l.querySelector('input')).filter((i) => i.checked).map((i) => Number(i.value)),
     participants: people.map((l) => l.querySelector('input')).filter((i) => i.checked).map((i) => Number(i.value)),
+    // правило повтора: у новой встречи — если выбрано; у существующей — только если его меняли
+    ...(!id ? (repeatSel.value ? { repeat: repeatValue() } : {}) : rep.touched ? { repeat: repeatValue() } : {}),
+    ...(series ? { scope: scope.value } : {}),
   });
+
+  const following = () => series && scope.value === 'following' && !m.cancelled;
+  const cancelBtn = id
+    ? h('button', {
+        type: 'button', class: 'btn btn-s',
+        onclick: async () => {
+          if (following() && !(await confirmDialog('Отменить эту и все следующие встречи серии? Эта останется в истории отменённой, следующие исчезнут из календаря.'))) return;
+          try {
+            await api(`/admin/api/meetings/${id}`, { method: 'PUT', body: { cancelled: !m.cancelled, ...(following() ? { scope: 'following' } : {}) } });
+            panel.changed = true;
+            toast(m.cancelled ? 'Встреча восстановлена' : following() ? 'Серия отменена с этой встречи' : 'Встреча отменена');
+            closePanel();
+          } catch (err) {
+            toast(err.message);
+          }
+        },
+      }, m.cancelled ? 'Вернуть' : 'Отменить встречу')
+    : null;
+  const deleteBtn = id
+    ? h('button', {
+        type: 'button', class: 'btn btn-s',
+        onclick: async () => {
+          const all = series && scope.value === 'following';
+          if (!(await confirmDialog(all ? 'Удалить эту и все следующие встречи серии? Прошлые встречи останутся.' : 'Удалить встречу из календаря? Лучше отменить — тогда она останется в истории.'))) return;
+          try {
+            await api(`/admin/api/meetings/${id}${all ? '?scope=following' : ''}`, { method: 'DELETE' });
+            panel.changed = true;
+            closePanel();
+          } catch (err) {
+            toast(err.message);
+          }
+        },
+      }, 'Удалить')
+    : null;
 
   const form = h(
     'form',
@@ -399,7 +546,7 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
         try {
           const res = await api(id ? `/admin/api/meetings/${id}` : '/admin/api/meetings', { method: id ? 'PUT' : 'POST', body: collect() });
           panel.changed = true;
-          toast(id ? 'Встреча сохранена' : 'Встреча запланирована');
+          toast(id ? (series && scope.value === 'following' ? 'Сохранено для этой и следующих встреч' : 'Встреча сохранена') : res.meeting.series ? 'Регулярная встреча запланирована' : 'Встреча запланирована');
           if (!id) {
             await onCreated?.(res.meeting);
             return openMeeting(res.meeting.id, { onChange });
@@ -418,6 +565,8 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
     h('div', { class: 'field' }, h('label', { for: 'm-guests' }, 'Гости со стороны клиента'), guests),
     h('div', { class: 'field' }, h('label', { for: 'm-date' }, 'Дата'), date),
     h('div', { class: 'field meeting-time' }, h('div', {}, h('label', { for: 'm-time' }, 'Начало, МСК'), time), h('div', {}, h('label', { for: 'm-duration' }, 'Длится'), duration)),
+    repeatBox,
+    scopeBox,
     id && !m.cancelled ? h('p', { class: 'hint full meeting-countdown' }, 'До начала: ', countdown(m.starts_at_iso, { kind: 'meeting', end: new Date(Date.parse(m.starts_at_iso) + (m.duration ?? 60) * 60e3).toISOString() })) : null,
     h('div', { class: 'field full' }, h('span', { class: 'label' }, 'Формат'), h('div', { class: 'rating-filter', role: 'group', 'aria-label': 'Формат' }, formatBtns)),
     onlineBox,
@@ -452,36 +601,8 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
       // итоги встречи (постмит) — блок ниже: резюме и задачи исполнителям
       id ? h('button', { type: 'button', class: 'btn', onclick: () => drawer.querySelector('.followup')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, 'Итоги встречи') : null,
       h('span', { class: 'spacer' }),
-      id
-        ? h('button', {
-            type: 'button', class: 'btn btn-s',
-            onclick: async () => {
-              try {
-                await api(`/admin/api/meetings/${id}`, { method: 'PUT', body: { cancelled: !m.cancelled } });
-                panel.changed = true;
-                toast(m.cancelled ? 'Встреча восстановлена' : 'Встреча отменена');
-                closePanel();
-              } catch (err) {
-                toast(err.message);
-              }
-            },
-          }, m.cancelled ? 'Вернуть' : 'Отменить встречу')
-        : null,
-      id
-        ? h('button', {
-            type: 'button', class: 'btn btn-s',
-            onclick: async () => {
-              if (!(await confirmDialog('Удалить встречу из календаря? Лучше отменить — тогда она останется в истории.'))) return;
-              try {
-                await api(`/admin/api/meetings/${id}`, { method: 'DELETE' });
-                panel.changed = true;
-                closePanel();
-              } catch (err) {
-                toast(err.message);
-              }
-            },
-          }, 'Удалить')
-        : null,
+      cancelBtn,
+      deleteBtn,
     ),
   );
   fill(heading, id ? (m.cancelled ? 'Отменённая встреча' : 'Встреча') : 'Новая встреча');
@@ -490,6 +611,8 @@ export async function openMeeting(id, { defaults = {}, onChange = () => {}, onCr
   fill(body, linked, form, id ? h('p', { class: 'muted small' }, `Запланировал ${m.created_by ?? '—'}`) : null, id ? followupSection(m, () => (panel.changed = true)) : null);
   syncFormat();
   renderProvider();
+  syncRepeat();
+  syncScope();
   title.focus();
 }
 

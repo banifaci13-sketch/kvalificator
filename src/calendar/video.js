@@ -42,8 +42,8 @@ export function createVideo(config, { fetchImpl = fetch } = {}) {
   return {
     available: { zoom: Boolean(zoom), telemost: Boolean(telemost) },
 
-    /** { title, start: Date, duration, agenda } → { provider, link, hostLink, externalId } */
-    async create(provider, { title, start, duration, agenda }) {
+    /** { title, start: Date, duration, agenda, recurring } → { provider, link, hostLink, externalId } */
+    async create(provider, { title, start, duration, agenda, recurring = false }) {
       if (provider === 'zoom') {
         if (!zoom) throw new VideoError('Zoom не подключён: нужны ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID и ZOOM_CLIENT_SECRET');
         const token = await zoomAccessToken();
@@ -56,8 +56,8 @@ export function createVideo(config, { fetchImpl = fetch } = {}) {
             headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
             body: JSON.stringify({
               topic: title.slice(0, 200),
-              type: 2,
-              start_time: local,
+              // регулярная встреча — одна постоянная ссылка: повторяющаяся встреча Zoom без фиксированного времени
+              ...(recurring ? { type: 3 } : { type: 2, start_time: local }),
               timezone: 'Europe/Moscow',
               duration,
               agenda: agenda?.slice(0, 2000) || undefined,

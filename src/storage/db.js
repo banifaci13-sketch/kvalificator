@@ -502,6 +502,23 @@ const MIGRATIONS = [
      PRIMARY KEY (message_id, file_id)
    );
    CREATE INDEX chat_files_file ON chat_files (file_id);`,
+
+  // Регулярные встречи: правило повтора и шаблон; сами встречи — обычные записи со ссылкой на серию
+  `CREATE TABLE meeting_series (
+     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+     rule          TEXT NOT NULL,
+     days          TEXT,
+     start_date    TEXT NOT NULL,
+     time          TEXT NOT NULL,
+     until         TEXT,
+     count         INTEGER,
+     template      TEXT NOT NULL,
+     generated_to  TEXT NOT NULL,
+     created_by_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   ALTER TABLE meetings ADD COLUMN series_id INTEGER REFERENCES meeting_series(id) ON DELETE SET NULL;
+   CREATE INDEX meetings_series ON meetings (series_id, starts_at);`,
 ];
 
 /** Номер текущей версии схемы базы. */
