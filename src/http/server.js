@@ -74,7 +74,9 @@ export async function buildServer({ config, qualifier, logger, admin, brand = nu
     root: resolve(config.root, 'widget'),
     prefix: '/',
     index: false,
-    maxAge: '1h',
+    // без долгого кэша: браузер каждый раз сверяет widget.js с сервером (ответ 304, если не менялся) —
+    // обновления виджета на сайте видны сразу, а не через час
+    maxAge: 0,
   });
 
   app.setErrorHandler((err, req, reply) => {

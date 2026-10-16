@@ -219,7 +219,6 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         return {
           id: 'task', type: 'text',
           text: `${state.answers.name ? `${state.answers.name}, приятно познакомиться! ` : ''}Опишите своими словами, в чём состоит задача.`,
-          placeholder: 'Что нужно сделать, для какой компании и сайта, бюджет и сроки — если уже знаете',
         };
       case 'clarify':
         return {
