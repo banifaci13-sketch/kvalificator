@@ -118,9 +118,18 @@ function normalizeChoice(step, value) {
   return option.value;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const TELEGRAM_RE = /^@[a-z0-9_]{4,32}$/i;
+const EMAIL_RE = /[^\s@<>(),;:"'«»]+@[^\s@<>(),;:"'«»]+\.[a-zа-я]{2,}/i;
+const TG_LINK_RE = /(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([a-z][a-z0-9_]{3,31})/i;
+const TG_RE = /(?<![\w.@])@([a-z][a-z0-9_]{3,31})(?![\w@]|\.[a-z])/i;
+// «тг anna_smm», «телеграм: anna_smm» — ник без @
+const TG_WORD_RE = /(?:тг|телеграм\S*|телега\S*|telegram|tg)\s*[:—-]?\s*@?([a-z][a-z0-9_]{3,31})(?![\w.])/i;
+const PHONE_RE = /(?:\+?\s?7|(?<!\d)8)?[\s(‐–-]*\d{3}[\s)‐–-]*\d{3}[\s‐–-]*\d{2}[\s‐–-]*\d{2}(?!\d)|\+\d{1,3}[\d\s()‐–-]{7,16}\d/;
+const VK_RE = /(?:https?:\/\/)?(?:m\.)?vk\.(?:com|ru)\/[a-z0-9_.]+/i;
 
+/**
+ * Контакт из ответа клиента: телефон, Telegram, e-mail или ВКонтакте — в том числе внутри фразы
+ * («мой номер 8 (900) 123-45-67, звоните после 18», «пишите в тг anna_smm»). raw — как написал клиент.
+ */
 export function normalizeContact(value) {
   // Мессенджеры присылают контакт объектом (кнопка «Поделиться номером»)
   if (value && typeof value === 'object') {
@@ -129,10 +138,19 @@ export function normalizeContact(value) {
     return { raw: phone, phone, ...(value.name ? { name: String(value.name) } : {}) };
   }
   const raw = String(value ?? '').trim().slice(0, 200);
-  if (EMAIL_RE.test(raw)) return { raw, email: raw.toLowerCase() };
-  if (TELEGRAM_RE.test(raw)) return { raw, telegram: raw };
-  const phone = normalizePhone(raw);
-  if (phone) return { raw, phone };
+  const out = { raw };
+  const email = EMAIL_RE.exec(raw)?.[0];
+  if (email) out.email = email.toLowerCase();
+  // без почты: в «anna@mail.ru» ник «@mail» — не Telegram
+  const rest = email ? raw.replace(email, ' ') : raw;
+  const tg = TG_LINK_RE.exec(rest)?.[1] ?? TG_RE.exec(rest)?.[1] ?? TG_WORD_RE.exec(rest)?.[1];
+  if (tg) out.telegram = `@${tg}`;
+  const phoneText = PHONE_RE.exec(rest.replace(TG_LINK_RE, ' '))?.[0];
+  const phone = normalizePhone(phoneText) ?? (!email && !tg ? normalizePhone(raw) : null);
+  if (phone) out.phone = phone;
+  const vk = VK_RE.exec(rest)?.[0];
+  if (vk) out.vk = vk;
+  if (out.email || out.telegram || out.phone || out.vk) return out;
   throw new AnswerError('Укажите телефон, e-mail или Telegram (например, @username)');
 }
 

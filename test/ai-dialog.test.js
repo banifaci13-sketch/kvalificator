@@ -323,3 +323,34 @@ test('таргет остаётся, когда клиент называет с
   assert.deepEqual(wantedServices(['target'], 'нужен таргетолог'), ['target']);
   assert.deepEqual(wantedServices(['target', 'context'], 'медийная и контекстная реклама'), ['context']);
 });
+
+test('услуги от ИИ сверяются со словарём: отказанные не попадают, SEO своими словами — попадает; ИИ видит вопросы уточнения', async () => {
+  const ai = fakeAi((req) => (/Бот уточнил/.test(req.user)
+    ? JSON.stringify({ budget_rub: 200000, evidence: { budget_rub: '200к' } })
+    : JSON.stringify({
+      services: ['context', 'seo', 'target'],
+      evidence: { services: 'директ не нужен, хотим, чтобы сайт находили в поиске' },
+    })));
+  const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
+  const { start, say, db } = await setup({ ai, pricing });
+  const s = await start();
+  await say(s, { value: 'Павел' });
+  let r = (await say(s, { value: 'директ не нужен, хотим, чтобы сайт находили в поиске' })).json().reply;
+  assert.equal(r.step.id, 'clarify');
+  r = (await say(s, { value: '1) 200к 2) срочно 3) нет 4) pavel.ru' })).json().reply;
+  const clarifyCall = ai.calls.at(-1);
+  assert.match(clarifyCall.user, /Бот уточнил:\n1\) какой бюджет/);
+  assert.match(clarifyCall.user, /Ответ клиента: 1\) 200к/);
+  if (r.step.id === 'criteria') r = (await say(s, { value: 'результат' })).json().reply;
+  await say(s, { value: '+7 900 000-00-03', consent: true });
+  const a = db.getLead(1).answers;
+  assert.deepEqual(a.services, ['seo']);
+  assert.equal(a.budget, '100_300k');
+  assert.equal(a.start, 'asap', 'ИИ не ответил — дописали правила по пунктам');
+  assert.equal(a.agency_experience, 'none');
+});
+
+test('сумма за год от ИИ пересчитывается в месяц кодом', () => {
+  assert.deepEqual(cleanExtract({ budget_rub: 6_000_000, budget_period: 'year' }, scenario), { budget: '300k_1m' });
+  assert.deepEqual(cleanExtract({ budget_rub: 900_000, budget_period: 'quarter' }, scenario), { budget: '300k_1m' });
+});

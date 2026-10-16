@@ -1,0 +1,262 @@
+// Корпус формулировок клиентов для проверки распознавания без ИИ (правила + словарь прайса).
+// services — какие направления должны распознаться (порядок не важен), products — какие продукты
+// прайса обязательно в смете, noProducts — каких быть не должно.
+
+export const SERVICE_PHRASES = [
+  // ---------- контекстная реклама ----------
+  { text: 'Нужна контекстная реклама', services: ['context'] },
+  { text: 'нужен контекст', services: ['context'] },
+  { text: 'настроить директ', services: ['context'] },
+  { text: 'Яндекс Директ для автосервиса', services: ['context'] },
+  { text: 'нужна реклама в Яндекс.Директе', services: ['context'] },
+  { text: 'Я.Директ под ключ', services: ['context'] },
+  { text: 'ядирект', services: ['context'] },
+  { text: 'yandex direct', services: ['context'] },
+  { text: 'реклама в директе', services: ['context'] },
+  { text: 'реклама в директа для бренда', services: ['context'] },
+  { text: 'запустить рекламу в яндексе', services: ['context'] },
+  { text: 'реклама на поиске яндекса и в РСЯ', services: ['context'] },
+  { text: 'нужна реклама в гугле', services: ['context'] },
+  { text: 'Google Ads', services: ['context'] },
+  { text: 'гугл адс', services: ['context'] },
+  { text: 'контекстолог нужен', services: ['context'] },
+  { text: 'контекстная рекламма', services: ['context'] },
+  { text: 'нужна кантекстная реклама', services: ['context'] },
+  { text: 'дирекд настроить', services: ['context'] },
+  { text: 'PPC', services: ['context'] },
+  { text: 'поисковая реклама', services: ['context'] },
+  { text: 'ретаргетинг и смарт-баннеры', services: ['context'] },
+  { text: 'товарная кампания в директе для интернет-магазина', services: ['context'] },
+  { text: 'единая перформанс-кампания', services: ['context'] },
+  { text: 'аудит директа', services: ['context'], products: ['context_audit'] },
+  { text: 'проверить настройки рекламного кабинета директа', services: ['context'], products: ['context_audit'] },
+  { text: 'lbhtrn yfcnhjbnm', services: ['context'] }, // «директ настроить» в английской раскладке
+
+  // ---------- таргет ----------
+  { text: 'Нужен таргет', services: ['target'] },
+  { text: 'таргетированная реклама', services: ['target'] },
+  { text: 'нужен таргетолог', services: ['target'] },
+  { text: 'таргетинг вк', services: ['target'], products: ['target_vk'] },
+  { text: 'реклама вконтакте', services: ['target'], products: ['target_vk'] },
+  { text: 'реклама в ВК', services: ['target'], products: ['target_vk'] },
+  { text: 'VK Ads', services: ['target'], products: ['target_vk'] },
+  { text: 'реклама в телеграме', services: ['target'], products: ['target_tg'] },
+  { text: 'реклама в телеге', services: ['target'], products: ['target_tg'] },
+  { text: 'Telegram Ads', services: ['target'], products: ['target_tg'] },
+  { text: 'посевы в телеграм-каналах', services: ['target'] },
+  { text: 'реклама в тикток', services: ['target'], products: ['target_tt'] },
+  { text: 'реклама в соцсетях', services: ['target'] },
+  { text: 'реклама в соц сетях', services: ['target'] },
+  { text: 'myTarget', services: ['target'] },
+  { text: 'таргед настроить', services: ['target'] },
+  { text: 'таргит в вк', services: ['target'] },
+  { text: 'реклама мобильного приложения', services: ['target'], products: ['target_apps'] },
+  { text: 'аудит таргета', services: ['target'], products: ['target_audit'] },
+  { text: 'nfhutn', services: ['target'] }, // «таргет» в английской раскладке
+
+  // ---------- SEO ----------
+  { text: 'Нужно SEO', services: ['seo'] },
+  { text: 'нужно сео', services: ['seo'] },
+  { text: 'СЕО продвижение', services: ['seo'] },
+  { text: 'продвижение сайта', services: ['seo'] },
+  { text: 'раскрутка сайта', services: ['seo'] },
+  { text: 'вывести сайт в топ', services: ['seo'] },
+  { text: 'хотим в топ яндекса', services: ['seo'] },
+  { text: 'поднять позиции сайта', services: ['seo'] },
+  { text: 'нужен сеошник', services: ['seo'] },
+  { text: 'органический трафик', services: ['seo'] },
+  { text: 'продвижение в поисковиках', services: ['seo'] },
+  { text: 'SEO под Яндекс', services: ['seo'], products: ['seo_yandex'] },
+  { text: 'SEO под гугл', services: ['seo'], products: ['seo_google'] },
+  { text: 'SEO под Яндекс и Google', services: ['seo'], products: ['seo'] },
+  { text: 'чтобы нас находили нейросети, GEO', services: ['seo'] },
+  { text: 'ыущ', services: ['seo'] }, // «seo» в русской раскладке
+
+  // ---------- маркетплейсы ----------
+  { text: 'нужно продвижение на маркетплейсах', services: ['marketplaces'] },
+  { text: 'хотим продвигать товары на Wildberries', services: ['marketplaces'] },
+  { text: 'нужен рост продаж на вб', services: ['marketplaces'] },
+  { text: 'продвижение на озоне', services: ['marketplaces'] },
+  { text: 'Нужна реклама на Ozon', services: ['marketplaces'] },
+  { text: 'выйти на яндекс маркет', services: ['marketplaces'] },
+  { text: 'вайлдберис продвижение', services: ['marketplaces'] },
+  { text: 'продвигать карточки на валберис', services: ['marketplaces'] },
+  { text: 'нужен внешний трафик на маркетплейсы', services: ['marketplaces'] },
+
+  // ---------- SMM ----------
+  { text: 'Нужно SMM', services: ['smm'] },
+  { text: 'нужен смм', services: ['smm'] },
+  { text: 'ведение соцсетей', services: ['smm'] },
+  { text: 'ведение группы вк', services: ['smm'], products: ['smm_vk'] },
+  { text: 'ведение телеграм-канала', services: ['smm'], products: ['smm_tg'] },
+  { text: 'нужен контент-план и посты', services: ['smm'] },
+  { text: 'нужен сммщик', services: ['smm'] },
+  { text: 'оформление сообщества', services: ['smm'] },
+  { text: 'ыьь', services: ['smm'] }, // «smm» в русской раскладке
+
+  // ---------- аналитика ----------
+  { text: 'нужна сквозная аналитика', services: ['analytics'] },
+  { text: 'настроить яндекс метрику и цели', services: ['analytics'] },
+  { text: 'веб-аналитика', services: ['analytics'] },
+  { text: 'подключить коллтрекинг', services: ['analytics'] },
+  { text: 'roistat настроить', services: ['analytics'] },
+  { text: 'связать сайт с CRM', services: ['analytics'] },
+
+  // ---------- сайт ----------
+  { text: 'нужен сайт', services: ['site'] },
+  { text: 'сделать лендинг', services: ['site'], products: ['site_lp'] },
+  { text: 'нужен лендос', services: ['site'] },
+  { text: 'разработка сайта с нуля', services: ['site'] },
+  { text: 'нужно переделать сайт', services: ['site'] },
+  { text: 'хотим новый сайт', services: ['site'] },
+  { text: 'сделать интернет-магазин', services: ['site'] },
+  { text: 'нужна техподдержка сайта', services: ['site'], products: ['site_support'] },
+  { text: 'нужен одностраничник', services: ['site'] },
+
+  // ---------- комплекс, консультация, продукты без направления ----------
+  { text: 'нужно комплексное продвижение', services: ['complex'] },
+  { text: 'нужен маркетинг под ключ', services: ['complex'] },
+  { text: 'не знаю, что нужно, нужна консультация', services: ['consult'] },
+  { text: 'нужна медийная реклама', services: [], products: ['media'], noProducts: ['target'] },
+  { text: 'нужна охватная реклама', services: [], products: ['media'] },
+  { text: 'брендформанс', services: [], products: ['brandformance'] },
+  { text: 'нужна стратегия интернет-маркетинга', services: [], products: ['strategy'] },
+  { text: 'внедрить ИИ в отдел продаж', services: [], products: ['ai_implementation'] },
+
+  // ---------- комбинации ----------
+  { text: 'нужна медийная и контекстная реклама в директа для бренда подгузников', services: ['context'], products: ['media', 'context'], noProducts: ['target'] },
+  { text: 'директ + сео', services: ['context', 'seo'] },
+  { text: 'директ и SEO', services: ['context', 'seo'] },
+  { text: 'контекст и таргет', services: ['context', 'target'] },
+  { text: 'SEO/SMM', services: ['seo', 'smm'] },
+  { text: 'нужен сайт и реклама в директе', services: ['site', 'context'] },
+  { text: 'сделать лендинг и запустить таргет в вк', services: ['site', 'target'] },
+  { text: 'нужно всё: сайт, SEO, директ и соцсети', services: ['site', 'seo', 'context', 'smm'] },
+  { text: 'реклама в яндексе и вк', services: ['context', 'target'] },
+  { text: 'продвижение на вб и озоне плюс таргет', services: ['marketplaces', 'target'] },
+  { text: 'нужен директ, аналитика и SMM', services: ['context', 'analytics', 'smm'] },
+
+  // ---------- отрицания и упоминания ----------
+  { text: 'директ не нужен, нужно SEO', services: ['seo'] },
+  { text: 'SEO нам не нужно, а вот директ хотим', services: ['context'] },
+  { text: 'нужен директ, без SEO', services: ['context'] },
+  { text: 'всё кроме SMM: директ и таргет', services: ['context', 'target'] },
+  { text: 'сайт у нас есть, нужна реклама в директе', services: ['context'] },
+  { text: 'ведём трафик на сайт, нужна контекстная реклама', services: ['context'] },
+  { text: 'продаём на маркетплейсах, нужен таргет вк', services: ['target'] },
+  { text: 'таргет не интересует, только контекст', services: ['context'] },
+  { text: 'нужен директ без лишних затрат', services: ['context'] },
+  { text: 'не только SEO, но и директ', services: ['seo', 'context'] },
+];
+
+// Поля заявки из рассказа клиента (разбор правилами; «сегодня» в тестах — 16 октября 2026).
+// Указаны только проверяемые поля; null — поле не должно заполниться.
+export const FIELD_PHRASES = [
+  // ---------- бюджет ----------
+  { text: 'бюджет 300 000 рублей в месяц', budget: '300k_1m' },
+  { text: 'бюджет 300к', budget: '300k_1m' },
+  { text: 'бюджет около 150 тыс', budget: '100_300k' },
+  { text: 'до 100 тыс в месяц', budget: 'lt100k' },
+  { text: 'готовы тратить 1,5 млн', budget: '1m_3m' },
+  { text: 'бюджет двести пятьдесят тысяч', budget: '100_300k' },
+  { text: 'пол ляма в месяц на рекламу', budget: '300k_1m' },
+  { text: 'сотка в месяц', budget: '100_300k' },
+  { text: 'бюджет 2 ляма', budget: '1m_3m' },
+  { text: 'бюджет 5кк', budget: 'gt3m' },
+  { text: 'годовой бюджет 6 млн', budget: '300k_1m' },
+  { text: '1,2 млн в год на продвижение', budget: '100_300k' },
+  { text: '300 тыр', budget: '300k_1m' },
+  { text: '50 т.р. в месяц', budget: 'lt100k' },
+  { text: 'бюджет от 200 до 400 тысяч рублей', budget: '300k_1m' },
+  { text: 'оборот 50 млн, на рекламу готовы 500к', budget: '300k_1m' },
+  { text: 'квартиры стоимостью от 5 млн, бюджет 300к', budget: '300k_1m' },
+  { text: 'средний чек 15 000 рублей', budget: null },
+  { text: 'у нас 50 000 подписчиков', budget: null },
+  { text: 'звоните +7 900 123-45-67', budget: null },
+  { text: 'хотим 1000 заявок в месяц', budget: null },
+  { text: 'бюджет пока не определён', budget: 'unknown' },
+  { text: 'бюджет обсуждаем', budget: 'unknown' },
+  { text: 'не знаю, сколько нужно', budget: 'unknown' },
+  { text: 'бюджет хотим услышать от вас', budget: 'unknown', proposal: true },
+  { text: 'сколько нужно, столько и выделим', budget: 'unknown', proposal: true },
+  { text: 'пришлите коммерческое предложение', proposal: true },
+
+  // ---------- сроки ----------
+  { text: 'срочно', start: 'asap' },
+  { text: 'нужно запуститься как можно быстрее', start: 'asap' },
+  { text: 'хотим стартовать на следующей неделе', start: 'asap' },
+  { text: 'запуск через 2 недели', start: 'month' },
+  { text: 'в течение месяца', start: 'month' },
+  { text: 'запуск в ноябре', start: 'month' },
+  { text: 'с января', start: 'quarter' },
+  { text: 'через пару месяцев', start: 'quarter' },
+  { text: 'через полгода', start: 'exploring' },
+  { text: 'к лету', start: 'exploring' },
+  { text: 'не горит, пока изучаем рынок', start: 'exploring' },
+  { text: 'не срочно', start: 'exploring' },
+  { text: 'собираем предложения', start: 'exploring' },
+  { text: 'сейчас работаем с агентством', start: null },
+
+  // ---------- опыт с подрядчиками ----------
+  { text: 'раньше работали с фрилансером', agency_experience: 'past' },
+  { text: 'был таргетолог, не устроил', agency_experience: 'past' },
+  { text: 'работаем с агентством, хотим сменить', agency_experience: 'current' },
+  { text: 'сейчас нас ведёт подрядчик', agency_experience: 'current' },
+  { text: 'хотим поменять подрядчика', agency_experience: 'current' },
+  { text: 'с агентствами не работали', agency_experience: 'none' },
+  { text: 'впервые обращаемся', agency_experience: 'none' },
+  { text: 'вели рекламу своими силами', agency_experience: 'none' },
+
+  // ---------- сайт ----------
+  { text: 'сайт tallerbike.ru', site: 'tallerbike.ru' },
+  { text: 'наш сайт https://mommy-shop.ru/catalog', site: 'https://mommy-shop.ru/catalog' },
+  { text: 'канал t.me/mommy_brand', site: 't.me/mommy_brand' },
+  { text: 'группа vk.com/mommy', site: 'vk.com/mommy' },
+  { text: 'телеграм-канал @mommy_brand', site: '@mommy_brand' },
+  { text: 'сайта пока нет', site: 'нет сайта' },
+  { text: 'без сайта', site: 'нет сайта' },
+  { text: 'пишите на info@mommy.ru', site: null },
+
+  // ---------- сфера, рынок, география, роль, ЛПР ----------
+  { text: 'мы застройщик, продаём квартиры в ЖК', industry: 'realty' },
+  { text: 'стоматологическая клиника', industry: 'medicine' },
+  { text: 'автосалон в Казани', industry: 'auto' },
+  { text: 'МФО, займы онлайн', industry: 'finance' },
+  { text: 'интернет-магазин детских товаров', industry: 'ecom' },
+  { text: 'база отдыха в Карелии', industry: 'tourism' },
+  { text: 'сеть фитнес-клубов', industry: 'sport' },
+  { text: 'завод, производство оборудования', industry: 'b2b_services' },
+  { text: 'продаём оптом для бизнеса', market: 'b2b' },
+  { text: 'продаём в розницу частным покупателям', market: 'b2c' },
+  { text: 'работаем и с юрлицами, и с физлицами', market: 'both' },
+  { text: 'работаем по всей России', geography: 'russia' },
+  { text: 'Россия и Казахстан', geography: 'cis' },
+  { text: 'выходим на рынок ОАЭ', geography: 'international' },
+  { text: 'я собственник бизнеса', role: 'owner' },
+  { text: 'я директор по маркетингу', role: 'marketing_head' },
+  { text: 'я маркетолог в компании', role: 'marketer' },
+  { text: 'я менеджер, собираю предложения для руководства', role: 'manager', decision_maker: 'other' },
+  { text: 'решение принимаю я', decision_maker: 'me' },
+  { text: 'решаем вместе с директором', decision_maker: 'with_me' },
+];
+
+// Ответ на уточнение по пунктам: asked — что спросил бот, reply — ответ клиента.
+export const CLARIFY_PHRASES = [
+  { asked: ['budget', 'start', 'agency_experience', 'site'], reply: '1) 200к 2) через месяц 3) нет 4) нет', expect: { budget: '100_300k', start: 'month', agency_experience: 'none', site: 'нет сайта' } },
+  { asked: ['budget', 'start', 'agency_experience', 'site'], reply: '200к, через месяц, нет, нет', expect: { budget: '100_300k', start: 'month', agency_experience: 'none', site: 'нет сайта' } },
+  { asked: ['budget', 'start', 'agency_experience', 'site'], reply: '150\nсрочно\nда, раньше работали с фрилансером\nmommy.ru', expect: { budget: '100_300k', start: 'asap', agency_experience: 'past', site: 'mommy.ru' } },
+  { asked: ['budget', 'agency_experience'], reply: 'не знаю; да, работаем сейчас', expect: { budget: 'unknown', agency_experience: 'current' } },
+  { asked: ['budget'], reply: 'на ваше усмотрение', expect: { budget: 'unknown', proposal: true } },
+  { asked: ['agency_experience'], reply: 'нет', expect: { agency_experience: 'none' } },
+  { asked: ['site'], reply: 'магазин Mommy на вайлдберриз', expect: { site: 'магазин Mommy на вайлдберриз' } },
+  { asked: ['services', 'budget'], reply: '1. директ и сео 2. 300 тыс', expect: { services: ['context', 'seo'], budget: '300k_1m' } },
+];
+
+// упоминания сайта — не заказ сайта
+SERVICE_PHRASES.push(
+  { text: 'нужна реклама для сайта', services: [] },
+  { text: 'хотим, чтобы сайт находили в поиске', services: ['seo'] },
+  { text: 'хотим, чтобы на сайт шли заявки из директа', services: ['context'] },
+  { text: 'нужен трафик на наш сайт', services: [] },
+  { text: 'у нас есть сайт и группа вк, нужен таргет', services: ['target'] },
+);

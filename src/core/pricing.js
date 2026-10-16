@@ -97,7 +97,8 @@ export function createPricing(matrix) {
     const t = norm(text);
     // названное прямо («реклама в телеге», «ведение группы вк») — точнее уточняющих слов: при рекламе
     // и SMM сразу «вк» из одной фразы не должно уточнять другое направление
-    const chosen = products.filter((p) => p.words?.test(t));
+    // продукт направления, которого нет в списке («есть лендинг» при заказе директа), — не в смету
+    const chosen = products.filter((p) => p.words?.test(t) && (!p.service || !list.length || list.includes(p.service)));
     for (const s of list) {
       if (chosen.some((p) => p.service === s)) continue;
       const refined = products.filter((p) => p.service === s && p.match?.test(t));
@@ -122,6 +123,8 @@ export function createPricing(matrix) {
   return {
     detect,
     pick,
+    /** Направление продукта прайса (или null — продукт сам по себе: медийная, стратегия…). */
+    serviceOf: (id) => products.find((p) => p.id === id)?.service ?? null,
     /**
      * Предварительная стоимость по услугам и словам клиента или null, если продуктов прайса нет.
      * total — «от 30 000 ₽»: самая низкая цена из сметы (с неё начинается работа), не сумма;
