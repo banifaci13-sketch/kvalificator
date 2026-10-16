@@ -24,7 +24,7 @@
 
   var opts = {
     title: ds.title || BRAND.title,
-    subtitle: ds.subtitle || 'Подберём решение под вашу задачу',
+    subtitle: ds.subtitle || 'Давайте обсудим вашу задачу',
     button: ds.button || 'Обсудить задачу',
     color: ds.color || BRAND.color,
     accent: ds.accent || BRAND.accent,
@@ -140,7 +140,14 @@
   function bubble(from, text, extraClass) {
     var el = document.createElement('div');
     el.className = 'msg ' + from + (extraClass ? ' ' + extraClass : '');
-    el.textContent = text;
+    // **…** в сообщениях бота — жирным (суммы в смете); всё остальное — простым текстом, без HTML
+    if (from === 'bot' && text && text.indexOf('**') >= 0) {
+      text.split(/\*\*(.+?)\*\*/).forEach(function (part, i) {
+        if (!part) return;
+        if (i % 2) { var b = document.createElement('b'); b.textContent = part; el.appendChild(b); }
+        else el.appendChild(document.createTextNode(part));
+      });
+    } else el.textContent = text;
     log.appendChild(el);
     scrollEnd();
     return el;
@@ -305,10 +312,40 @@
         scrollEnd();
       });
     }
+    // контакт: под полем — галочка согласия и кнопка «Отправить» (без галочки не отправить)
+    var agree = null;
+    if (step.consent) {
+      form.className = 'input with-consent';
+      btn.className = 'primary';
+      btn.removeAttribute('aria-label');
+      btn.textContent = 'Отправить';
+      btn.disabled = true;
+      var lbl = document.createElement('label');
+      lbl.className = 'agree';
+      agree = document.createElement('input');
+      agree.type = 'checkbox';
+      agree.addEventListener('change', function () { btn.disabled = !agree.checked; });
+      lbl.appendChild(agree);
+      var span = document.createElement('span');
+      span.appendChild(document.createTextNode(step.consent.label));
+      if (privacyUrl) {
+        span.appendChild(document.createTextNode(' ('));
+        var a = document.createElement('a');
+        a.href = privacyUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'политика';
+        span.appendChild(a);
+        span.appendChild(document.createTextNode(')'));
+      }
+      lbl.appendChild(span);
+      form.insertBefore(lbl, btn);
+    }
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var v = field.value.trim();
       if (!v) { field.focus(); return; }
+      if (agree && !agree.checked) { agree.focus(); return; }
       send(step, v, v);
     });
     controls.appendChild(form);
@@ -371,6 +408,8 @@
     remember('user', label);
     goal('kval_step_' + step.id);
     var body = skip ? { stepId: step.id, skip: true } : { stepId: step.id, value: String(value) };
+    // контакт отправляется только с отмеченной галочкой согласия
+    if (!skip && step.consent) body.consent = true;
     request(body, function () { send(step, value, label, skip); });
   }
 
@@ -668,7 +707,11 @@
       '.primary{min-height:46px;padding:10px 18px;border:0;border-radius:12px;background:var(--kv-color);color:#fff;font-weight:600}',
       '.primary:hover{filter:brightness(1.1)}',
       '.consent p{margin:0 0 8px;font-size:13px;color:var(--kv-muted)}',
-      '.consent a,.foot a{color:var(--kv-accent-text)}',
+      '.consent a,.foot a,.agree a{color:var(--kv-accent-text)}',
+      '.input.with-consent{flex-direction:column;align-items:stretch}',
+      '.agree{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--kv-muted);cursor:pointer}',
+      '.input .agree input{flex:none;width:18px;height:18px;min-height:0;margin:0;padding:0;border:0;accent-color:var(--kv-color)}',
+      '.primary:disabled{opacity:.45;cursor:not-allowed;filter:none}',
       '.input{display:flex;gap:8px;align-items:flex-end}',
       '.input input,.input textarea{flex:1;min-width:0;min-height:46px;padding:12px 14px;border:1.5px solid var(--kv-line);border-radius:12px;background:var(--kv-bg);color:var(--kv-text);font:inherit;font-size:16px;resize:none}',
       '.input input:focus,.input textarea:focus{outline:none;border-color:var(--kv-accent)}',

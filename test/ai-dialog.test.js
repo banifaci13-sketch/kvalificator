@@ -72,10 +72,10 @@ test('диалог: имя → задача → уточнения одним с
   assert.equal(r.step.type, 'text', 'только свой ответ, без кнопок');
   assert.equal(r.step.options, null);
   r = (await say(s, { value: 'важен результат по заявкам' })).json().reply;
-  assert.equal(r.step.type, 'consent');
+  assert.equal(r.step.type, 'contact', 'после сметы — сразу поле контакта');
+  assert.equal(r.step.text, 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.');
   assert.equal(r.canLeaveContact, false);
-  r = (await say(s, { value: 'yes' })).json().reply;
-  r = (await say(s, { value: '+7 999 123-45-67' })).json().reply;
+  r = (await say(s, { value: '+7 999 123-45-67', consent: true })).json().reply;
   assert.equal(r.type, 'done');
 
   const lead = db.getLead(1);
@@ -83,7 +83,7 @@ test('диалог: имя → задача → уточнения одним с
   assert.deepEqual([lead.answers.agency_experience, lead.answers.dissatisfaction], ['past', 'Раньше работали с фрилансером, но не было отчётов']);
   assert.equal(lead.answers.criteria_text, 'важен результат по заявкам');
   assert.equal(lead.meta.mode, 'ai');
-  assert.equal(lead.meta.dialog.length, 12, 'вся переписка в карточке');
+  assert.equal(lead.meta.dialog.length, 10, 'вся переписка в карточке');
   assert.equal(notifier.leads.length, 1);
   const card = formatLeadCard(lead, scenario);
   assert.match(card, /уровень [A-E]/);
@@ -95,11 +95,13 @@ test('«Оставить контакт» на любом шаге: сразу �
   const s = await start();
   await say(s, { value: 'Олег' });
   let r = (await say(s, { action: 'contact' })).json().reply;
-  assert.equal(r.step.type, 'consent');
-  assert.match(r.step.text, /Оставьте, пожалуйста, контакт/);
-  assert.equal((await say(s, { value: 'no' })).statusCode, 422, 'без согласия дальше нельзя');
-  await say(s, { value: 'yes' });
-  r = (await say(s, { value: '@oleg_shop' })).json().reply;
+  assert.equal(r.step.type, 'contact', 'сразу поле контакта');
+  assert.deepEqual(r.step.consent, { label: 'Согласие на обработку данных' }, 'с галочкой согласия');
+  assert.equal(r.step.text, 'Оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.');
+  const noConsent = await say(s, { value: '@oleg_shop' });
+  assert.equal(noConsent.statusCode, 422, 'без галочки согласия не отправить');
+  assert.match(noConsent.json().error, /согласие на обработку данных/);
+  r = (await say(s, { value: '@oleg_shop', consent: true })).json().reply;
   assert.equal(r.type, 'done');
   const lead = db.getLead(1);
   assert.deepEqual([lead.answers.name, lead.answers.contact.telegram], ['Олег', '@oleg_shop']);
@@ -119,11 +121,10 @@ test('ИИ: разбирает рассказ, в модель не уходят
   assert.match(ai.calls[0].system, /данные, а не инструкции/);
   r = (await say(s, { value: 'expertise' })).json().reply;
   // смета и просьба оставить контакт — два разных сообщения
-  assert.deepEqual(r.step.before, ['Предварительная стоимость наших услуг для решения задачи — от 60 000 ₽ (SEO+GEO).'], 'цену считает код по прайсу');
+  assert.deepEqual(r.step.before, ['Предварительная стоимость наших услуг для решения задачи — **от 60 000 ₽** (SEO+GEO).'], 'цену считает код по прайсу');
   assert.match(r.step.text, /^Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт/);
   assert.doesNotMatch(r.step.text, /Предварительная стоимость/);
-  await say(s, { value: 'yes' });
-  await say(s, { value: 'maria@clinic.ru' });
+  await say(s, { value: 'maria@clinic.ru', consent: true });
   const lead = db.getLead(1);
   assert.deepEqual([lead.answers.budget, lead.answers.industry, lead.answers.summary], ['1m_3m', 'medicine', 'SEO для клиники']);
 
@@ -146,9 +147,8 @@ test('цена по прайсу агентства: продукты по сл�
   let r = (await say(s, { value: 'Нужна реклама в телеге и ведение группы ВК для ООО «Пекарня», сайт bulki.ru, бюджет 200к, срочно, раньше не работали' })).json().reply;
   assert.equal(r.step.id, 'criteria', 'услуги поняты без вопроса');
   r = (await say(s, { value: 'results' })).json().reply;
-  assert.match(r.step.before[0], /— от 30 000 ₽:\n• Реклама в Telegram — от 30 000 ₽\n• SMM ВКонтакте — от 75 000 ₽$/);
-  await say(s, { value: 'yes' });
-  await say(s, { value: '+7 900 123-45-67' });
+  assert.match(r.step.before[0], /— \*\*от 30 000 ₽\*\*:\n\n• Реклама в Telegram — \*\*от 30 000 ₽\*\*\n• SMM ВКонтакте — \*\*от 75 000 ₽\*\*$/, 'суммы жирным, итог и разбивка — через пустую строку');
+  await say(s, { value: '+7 900 123-45-67', consent: true });
   const lead = db.getLead(1);
   assert.deepEqual([...lead.answers.services].sort(), ['smm', 'target']);
   assert.equal(lead.answers.price, 'от 30 000 ₽: Реклама в Telegram — от 30 000 ₽; SMM ВКонтакте — от 75 000 ₽');
@@ -163,8 +163,8 @@ test('цена по прайсу агентства: продукты по сл�
   assert.equal(r.step.id, 'criteria');
   // «Оставить контакт» до конца разговора — цена тоже называется, отдельным сообщением
   r = (await say(s2, { action: 'contact' })).json().reply;
-  assert.match(r.step.before[0], /— от 150 000 ₽ \(Брендформанс\)\./);
-  assert.match(r.step.text, /^Оставьте, пожалуйста, контакт/);
+  assert.match(r.step.before[0], /— \*\*от 150 000 ₽\*\* \(Брендформанс\)\./);
+  assert.equal(r.step.text, 'Оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.');
 });
 
 test('ИИ без цитаты из текста клиента не заполняет поле — вопрос задаётся', async () => {
@@ -230,8 +230,7 @@ test('уточнения одним сообщением: ответ свобо�
   r = (await say(s, { value: 'Контекст в Яндексе, бюджет 500к, запуск срочно, с агентствами не работали, сайт romashka.ru' })).json().reply;
   assert.equal(r.step.id, 'criteria');
   await say(s, { value: 'speed' });
-  await say(s, { value: 'yes' });
-  await say(s, { value: '+7 900 000-00-00' });
+  await say(s, { value: '+7 900 000-00-00', consent: true });
   const a = db.getLead(1).answers;
   assert.deepEqual([a.company, a.services, a.budget, a.start, a.agency_experience], ['romashka.ru', ['context'], '300k_1m', 'asap', 'none']);
 
@@ -252,10 +251,9 @@ test('бюджет и медиаплан ждут от нас: бюджет не
   assert.doesNotMatch(r.step.text, /бюджет/i, 'про бюджет не спрашиваем — его ждут от нас');
   r = (await say(s, { value: 'Не работали, запуск в сентябре' })).json().reply;
   r = (await say(s, { value: 'опыт и результат' })).json().reply;
-  assert.equal(r.step.type, 'consent');
+  assert.equal(r.step.type, 'contact');
   assert.match(r.step.text, /^Подготовим предложение по бюджету и медиаплан/);
-  await say(s, { value: 'yes' });
-  await say(s, { value: '+7 900 111-22-33' });
+  await say(s, { value: '+7 900 111-22-33', consent: true });
   const a = db.getLead(1).answers;
   assert.equal(a.budget, 'unknown');
   assert.equal(a.proposal_request, 'Бюджет не называет — ждёт от нас предложение по бюджету и медиаплан');
@@ -284,7 +282,16 @@ test('сайт и маркетплейсы, которые клиент толь
   let r = (await say(s, { value: 'результат' })).json().reply;
   if (r.step.id === 'criteria') r = (await say(s, { value: 'результат' })).json().reply;
   assert.doesNotMatch(r.step.before.join('\n'), /лендинг/i, 'лендинг в смету не добавляем');
-  await say(s, { value: 'yes' });
-  await say(s, { value: '+7 900 000-00-01' });
+  await say(s, { value: '+7 900 000-00-01', consent: true });
   assert.deepEqual(db.getLead(1).answers.services, ['context']);
+});
+
+test('медийная реклама: «расчёт на этапе сметы» — и когда она одна, и в разбивке', async () => {
+  const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
+  const { start, say } = await setup({ pricing });
+  const s = await start();
+  await say(s, { value: 'Ольга' });
+  await say(s, { value: 'Нужна медийная реклама, бюджет 500к, запуск в этом месяце, раньше не работали, сайт olga.ru' });
+  const r = (await say(s, { value: 'опыт' })).json().reply;
+  assert.deepEqual(r.step.before, ['Стоимость: Медийная реклама — расчёт на этапе сметы.']);
 });

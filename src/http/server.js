@@ -35,6 +35,8 @@ const answerSchema = {
     skip: { type: 'boolean' },
     // «Оставить контакт» на любом шаге диалога с ИИ
     action: { type: 'string', enum: ['contact'] },
+    // согласие на обработку данных — галочкой у поля контакта
+    consent: { type: 'boolean' },
   },
 };
 

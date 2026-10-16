@@ -74,7 +74,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
       return ask(ctx, current);
     }
     const { phone_number: phone, first_name: name } = ctx.message.contact;
-    return submit(ctx, session, { stepId: current.step.id, value: { phone, name } });
+    // согласие — отправкой контакта после предупреждения в вопросе
+    return submit(ctx, session, { stepId: current.step.id, value: { phone, name }, ...(current.step.consent ? { consent: true } : {}) });
   });
 
   dm.on('message:text', async (ctx) => {
@@ -83,7 +84,7 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     const session = qualifier.activeSession(CHANNEL, ctx.from.id);
     if (!session) return startNew(ctx);
     const current = qualifier.resume(session);
-    return submit(ctx, session, { stepId: current.step?.id, value: text });
+    return submit(ctx, session, { stepId: current.step?.id, value: text, ...(current.step?.consent ? { consent: true } : {}) });
   });
 
   dm.on('message', async (ctx) => {
@@ -144,7 +145,10 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     }
     const { step } = reply;
     // сообщения перед вопросом (примерная смета) — отдельно
-    for (const t of step.before ?? []) await ctx.reply(t, { link_preview_options: { is_disabled: true } });
+    for (const t of step.before ?? []) {
+      // **…** — жирным (суммы в смете)
+      await ctx.reply(esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    }
     let text = questionHtml(reply);
     let markup;
 
@@ -161,6 +165,10 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
       if (ctx.from.username) kb.row().text(`@${ctx.from.username}`);
       markup = kb.resized().oneTime();
       text += '\n\nНажмите кнопку ниже или напишите телефон / e-mail.';
+      // в Telegram нет галочки: согласие — отправкой контакта после этого предупреждения
+      if (step.consent) {
+        text += `\n\n<i>Отправляя контакт, вы даёте согласие на обработку персональных данных${privacyPolicyUrl ? `: <a href="${esc(privacyPolicyUrl)}">политика</a>` : ''}.</i>`;
+      }
     } else if (!step.required) {
       markup = new InlineKeyboard().text('Пропустить', `s:${step.id}`);
     }

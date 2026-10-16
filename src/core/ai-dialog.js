@@ -57,7 +57,7 @@ export const wantedServices = (list, text) => (list ?? []).filter((s) => !SERVIC
 
 const START_WORDS = [
   ['asap', /срочно|как можно (?:скорее|быстрее)|вчера|немедленно|прямо сейчас|на этой неделе|asap/i],
-  ['month', /в (?:этом|течение|ближайш\S*) месяц|через (?:пару |две |2 )?недел|до конца месяца/i],
+  ['month', /в (?:этом|течение|ближайш\S*) месяц|через (?:пару |две |2 )?недел|через месяц|до конца месяца/i],
   ['quarter', /через (?:пару|два|2|три|3) месяц|в (?:этом|ближайш\S*) квартал|в (?:следующ\S*|ближайш\S*) (?:1|2|3)?[–-]?(?:3)? ?месяц/i],
   ['exploring', /пока (?:изуча|присматрива|смотр|выбира)|не (?:горит|срочно)|на будущее|просто узнать/i],
 ];
@@ -245,32 +245,40 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
           id: 'criteria', type: 'text',
           text: `${state.clarified ? 'Спасибо! ' : ''}Что для вас главное в выборе исполнителя?`,
         };
+      // после сметы — сразу поле для контакта, под ним галочка согласия и «Отправить»
+      // ('consent' — фаза диалогов, начатых до объединения шагов)
       case 'consent':
+      case 'contact':
         return {
-          id: 'consent', type: 'consent',
+          id: 'contact', type: 'contact',
           // примерная смета — отдельным сообщением перед просьбой оставить контакт
           before: state.price ? [priceText(state.price)] : [],
           text: state.answers.proposal_request
             // бюджет ждут от нас — обещаем предложение, а не «точную смету»
-            ? 'Подготовим предложение по бюджету и медиаплан под вашу задачу. Оставьте, пожалуйста, контакт — телефон, Telegram или MAX, — пришлём его и свяжемся с вами в ближайшее время.'
+            ? 'Подготовим предложение по бюджету и медиаплан под вашу задачу. Оставьте, пожалуйста, свой контакт, и мы пришлём его и свяжемся с вами в ближайшее время.'
             : state.early
-              ? 'Оставьте, пожалуйста, контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.'
-              : 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт — телефон, Telegram или MAX, и мы свяжемся с вами в ближайшее время.',
-          options: [{ value: 'yes', label: 'Согласен(на) на обработку данных' }],
+              ? 'Оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.'
+              : 'Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.',
+          placeholder: 'Телефон, Telegram (@username) или MAX',
+          consent: state.answers.consent === 'yes' ? null : { label: 'Согласие на обработку данных' },
         };
-      case 'contact':
-        return { id: 'contact', type: 'contact', text: 'Ваш телефон, Telegram (@username) или MAX:', placeholder: '+7 900 000-00-00 или @username' };
       default:
         return null;
     }
   }
 
   // «— от 105 000 ₽:» и по строке на продукт прайса; один продукт — в скобках
+  // суммы — жирным (**…**: виджет и Telegram показывают это выделением, в переписке менеджера — простой текст)
+  const boldSums = (t) => t.replace(/(?:от\s)?\d[\d\u00a0 ]*\s?₽/g, (m) => `**${m}**`);
   function priceText(price) {
-    if (!price?.total) return null;
+    if (!price?.items?.length) return null;
     const lead = 'Предварительная стоимость наших услуг для решения задачи';
-    if (price.items.length === 1) return `${lead} — ${price.total} (${price.items[0].replace(/ — .*$/, '')}).`;
-    return `${lead} — ${price.total}:\n${price.items.map((i) => `• ${i}`).join('\n')}`;
+    const list = price.items.map((i) => `• ${i}`).join('\n');
+    // цены нет ни у одной услуги (только медийная) — так и говорим: «расчёт на этапе сметы»
+    if (!price.total) return boldSums(price.items.length === 1 ? `Стоимость: ${price.items[0]}.` : `Стоимость:\n\n${list}`);
+    if (price.items.length === 1) return boldSums(`${lead} — ${price.total} (${price.items[0].replace(/ — .*$/, '')}).`);
+    // итоговое «от …» и разбивка — через пустую строку
+    return boldSums(`${lead} — ${price.total}:\n\n${list}`);
   }
 
   /** Цена по прайсу: направления — из разговора, конкретные продукты — по словам клиента. */
@@ -280,7 +288,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     const est = pricing?.estimate?.(a.services ?? (a.service ? [a.service] : []), words) ?? null;
     state.price = est ? { total: est.total, items: est.items } : null;
     // менеджеру — с разбивкой, чтобы видеть, из чего сложилась цифра, названная клиенту
-    if (est) a.price = `${est.total}: ${est.items.join('; ')}`;
+    if (est) a.price = est.total ? `${est.total}: ${est.items.join('; ')}` : est.items.join('; ');
     else delete a.price;
   }
 
@@ -296,7 +304,8 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     };
   }
 
-  const said = (state, text) => state.transcript.push({ from: 'bot', text });
+  // в переписке (карточка лида, CRM) — без разметки выделения
+  const said = (state, text) => state.transcript.push({ from: 'bot', text: String(text).replace(/\*\*/g, '') });
   const heard = (state, text) => state.transcript.push({ from: 'user', text });
 
   function start() {
@@ -402,7 +411,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     if (input.action === 'contact') {
       if (!['consent', 'contact'].includes(state.phase)) {
         state.early = true;
-        state.phase = 'consent';
+        state.phase = 'contact';
         setPrice(state);
       }
       return advance(state);
@@ -452,19 +461,16 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         if (c.value) state.answers.criteria = c.value;
         if (c.text) state.answers.criteria_text = c.text;
         setPrice(state);
-        state.phase = 'consent';
-        break;
-      }
-      case 'consent': {
-        if (String(input.value ?? '') !== 'yes') throw new AnswerError('Без согласия мы не сможем с вами связаться');
-        heard(state, 'Согласен(на) на обработку данных');
-        state.answers.consent = 'yes';
         state.phase = 'contact';
         break;
       }
+      case 'consent':
       case 'contact': {
+        // согласие — галочкой рядом с полем контакта (в Telegram — отправкой контакта после предупреждения)
+        if (state.answers.consent !== 'yes' && input.consent !== true) throw new AnswerError('Отметьте, пожалуйста, согласие на обработку данных');
         const contact = normalizeContact(input.value);
         heard(state, contact.raw);
+        state.answers.consent = 'yes';
         state.answers.contact = contact;
         state.phase = 'done';
         break;

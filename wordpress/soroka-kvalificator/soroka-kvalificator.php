@@ -21,7 +21,7 @@ function soroka_kval_defaults() {
         'enabled'   => '1',
         'button'    => 'Обсудить задачу',
         'title'     => 'Soroka Marketing',
-        'subtitle'  => 'Подберём решение под вашу задачу',
+        'subtitle'  => 'Давайте обсудим вашу задачу',
         'color'     => '#143a6b',
         'accent'    => '#17b3d6',
         'position'  => 'right',

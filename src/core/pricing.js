@@ -123,17 +123,18 @@ export function createPricing(matrix) {
     detect,
     pick,
     /**
-     * Предварительная стоимость по услугам и словам клиента или null, если цен нет.
+     * Предварительная стоимость по услугам и словам клиента или null, если продуктов прайса нет.
      * total — «от 30 000 ₽»: самая низкая цена из сметы (с неё начинается работа), не сумма;
+     * null — если у всех продуктов цена не фиксирована (медийная: «расчёт на этапе сметы»).
      * items — разбивка по продуктам (клиенту и менеджеру).
      */
     estimate(services, text = '') {
       const items = pick(services, text);
+      if (!items.length) return null;
       const priced = items.filter((p) => p.from);
-      if (!priced.length) return null;
       const unit = matrix?.unit ? ` ${matrix.unit}` : '';
-      const total = `от ${rub(Math.min(...priced.map((p) => p.from)))}${unit}`;
-      const line = (p) => `${p.name} — ${p.from ? `от ${rub(p.from)}` : p.note ?? 'индивидуально'}${p.from && p.note ? ` (${p.note})` : ''}`;
+      const total = priced.length ? `от ${rub(Math.min(...priced.map((p) => p.from)))}${unit}` : null;
+      const line = (p) => `${p.name} — ${p.from ? `от ${rub(p.from)}` : p.note ?? 'расчёт на этапе сметы'}${p.from && p.note ? ` (${p.note})` : ''}`;
       return { total, items: items.map(line), ids: items.map((p) => p.id) };
     },
   };

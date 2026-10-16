@@ -36,13 +36,12 @@ test('сводка ИИ: после заявки — в карточку, мен
   const qualifier = createQualifier({ db, scenarioSource: staticSource(), rules, notifier, log: silentLog, ai, aiMode: 'on', summarizer: createLeadSummary({ ai, log: silentLog }) });
   const app = await buildServer({ config: loadConfig({ DB_PATH: ':memory:' }), qualifier, logger: false });
   const s = (await app.inject({ method: 'POST', url: '/api/sessions', payload: { meta: {} } })).json();
-  const say = (value) => app.inject({ method: 'POST', url: `/api/sessions/${s.sessionId}/answer`, headers: { 'x-session-token': s.token }, payload: { value } });
+  const say = (value, extra = {}) => app.inject({ method: 'POST', url: `/api/sessions/${s.sessionId}/answer`, headers: { 'x-session-token': s.token }, payload: { value, ...extra } });
   await say('Арсений');
   await say('Нужна реклама в телеграме для кофейни, бюджет 200к');
   await say('через месяц, не работали, сайта нет');
   await say('результат по заявкам');
-  await say('yes');
-  await say('@arseniy_coffee');
+  await say('@arseniy_coffee', { consent: true });
   for (let i = 0; i < 50 && !leads.length; i++) await new Promise((r) => setTimeout(r, 20));
 
   assert.equal(leads.length, 1);
