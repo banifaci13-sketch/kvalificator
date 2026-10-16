@@ -275,7 +275,7 @@ window.addEventListener('hashchange', () => {
 async function boot() {
   try {
     const me = await api('/admin/api/me');
-    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat, avatars: me.avatars ?? {}, aiSummary: Boolean(me.aiSummary) });
+    Object.assign(ctx, { me: me.user, roles: me.roles, statuses: me.statuses, scenario: me.scenario, links: me.links, testChat: me.testChat, avatars: me.avatars ?? {}, aiSummary: Boolean(me.aiSummary), sections: me.sections ?? null });
     if (me.user.prefs) window.sorokaTheme?.apply(me.user.prefs);
     // без адреса раздела — стартовый раздел из личных настроек
     if (!location.hash.replace(/^#\/?/, '') && me.user.prefs?.start) return navigate(me.user.prefs.start);
@@ -654,8 +654,15 @@ const NAV = [
   ['kb', 'Регламенты'],
   ['staff', 'Сотрудники'],
 ];
+// Разделы, включённые на этом сервере (ADMIN_SECTIONS); учётная запись и её вкладки доступны всегда
+const ALWAYS = new Set(['account', 'appearance', 'notify-settings']);
+const sectionOf = (route) => PAGE_SECTION[route] ?? Object.keys(SECTION_TABS).find((k) => SECTION_TABS[k].some(([id]) => id === route)) ?? route;
+function sectionAllowed(route) {
+  return !ctx.sections || ALWAYS.has(route) || ctx.sections.includes(sectionOf(route));
+}
+
 function navItems(pref = ctx.me.prefs?.nav ?? '') {
-  const known = new Map(NAV.filter(([id]) => id !== 'staff' || ctx.me.role === 'admin').map(([id, label]) => [id, label]));
+  const known = new Map(NAV.filter(([id]) => (id !== 'staff' || ctx.me.role === 'admin') && sectionAllowed(id)).map(([id, label]) => [id, label]));
   const out = [];
   for (const raw of String(pref).split(',').map((x) => x.trim()).filter(Boolean)) {
     const hidden = raw.startsWith('-');
@@ -762,6 +769,8 @@ function shell(active, content) {
 
 function renderRoute() {
   const { name, params } = currentRoute();
+  // раздел выключен на этом сервере — на первый включённый
+  if (!sectionAllowed(name)) return navigate(ctx.sections.find((s) => routes[s]) ?? 'account');
   closeDrawer();
   const lead = params.get('lead');
   params.delete('lead');

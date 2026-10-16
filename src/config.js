@@ -25,6 +25,9 @@ export function loadConfig(env = process.env) {
     privacyPolicyUrl: env.PRIVACY_POLICY_URL || null,
     // Квалификатор-диалог с ИИ: off — сценарий с вопросами; test — диалог только в тестовых опросах; on — для всех
     qualifierAi: ['off', 'test', 'on'].includes(env.QUALIFIER_AI) ? env.QUALIFIER_AI : 'test',
+    // Разделы кабинета в меню (через запятую: tasks,calendar,docs,staff). Пусто — все разделы.
+    // Для копии кабинета на другом сайте, где нужны не все разделы.
+    adminSections: list(env.ADMIN_SECTIONS).length ? list(env.ADMIN_SECTIONS) : null,
     // брошенные диалоги (без контакта) хранятся столько дней, потом удаляются
     abandonedDays: Math.min(30, Math.max(1, Number(env.ABANDONED_DAYS) || 10)),
     telegram: {

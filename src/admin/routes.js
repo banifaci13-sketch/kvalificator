@@ -233,6 +233,7 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       testChat: Boolean(config.telegram.testChatId),
       avatars: auth.avatars(),
       aiSummary: Boolean(ai?.enabled),
+      sections: config.adminSections ?? null,
     }));
 
     api.get('/admin/api/leads', { schema: { querystring: leadQuery } }, async (req) => ({
