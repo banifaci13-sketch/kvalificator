@@ -4,7 +4,7 @@ import { openDb } from '../src/storage/db.js';
 import { createQualifier } from '../src/core/qualifier.js';
 import { buildServer } from '../src/http/server.js';
 import { loadConfig } from '../src/config.js';
-import { ruleExtract, cleanExtract, moneyFromText, budgetBucket } from '../src/core/ai-dialog.js';
+import { ruleExtract, cleanExtract, moneyFromText, budgetBucket, wantedServices } from '../src/core/ai-dialog.js';
 import { createAbandoned } from '../src/core/abandoned.js';
 import { createPricing, loadPricing } from '../src/core/pricing.js';
 import { formatLeadCard } from '../src/notify/telegram.js';
@@ -294,4 +294,32 @@ test('медийная реклама: «расчёт на этапе сметы
   await say(s, { value: 'Нужна медийная реклама, бюджет 500к, запуск в этом месяце, раньше не работали, сайт olga.ru' });
   const r = (await say(s, { value: 'опыт' })).json().reply;
   assert.deepEqual(r.step.before, ['Стоимость: Медийная реклама — расчёт на этапе сметы.']);
+});
+
+test('медийную рекламу ИИ не превращает в таргет: таргет — только при соцсетях в тексте', async () => {
+  // модель приняла «медийную» за таргет (отдельной услуги «медийная» в сценарии нет)
+  const ai = fakeAi(JSON.stringify({
+    services: ['context', 'target'],
+    evidence: { services: 'нужна медийная и контекстная реклама в директа' },
+  }));
+  const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
+  const { start, say, db } = await setup({ ai, pricing });
+  const s = await start();
+  await say(s, { value: 'Игорь' });
+  await say(s, { value: 'нужна медийная и контекстная реклама в директа для бренда подгузников. Бюджет 300к, запуск в этом месяце, раньше не работали, сайт diapers.ru' });
+  let r = (await say(s, { value: 'результат' })).json().reply;
+  if (r.step.id === 'criteria') r = (await say(s, { value: 'результат' })).json().reply;
+  const smeta = r.step.before.join('\n');
+  assert.match(smeta, /Медийная реклама — расчёт на этапе сметы/);
+  assert.match(smeta, /Контекстная реклама/);
+  assert.doesNotMatch(smeta, /Таргет/i);
+  await say(s, { value: '+7 900 000-00-02', consent: true });
+  assert.deepEqual(db.getLead(1).answers.services, ['context']);
+});
+
+test('таргет остаётся, когда клиент называет соцсети', () => {
+  assert.deepEqual(wantedServices(['target', 'context'], 'Нужна реклама в соцсетях и директ'), ['target', 'context']);
+  assert.deepEqual(wantedServices(['target'], 'реклама во ВК'), ['target']);
+  assert.deepEqual(wantedServices(['target'], 'нужен таргетолог'), ['target']);
+  assert.deepEqual(wantedServices(['target', 'context'], 'медийная и контекстная реклама'), ['context']);
 });
