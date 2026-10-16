@@ -269,3 +269,22 @@ test('бюджет и медиаплан ждут от нас: бюджет не
   r = (await say(s2, { value: 'цена' })).json().reply;
   assert.match(r.step.text, /^Подготовим предложение по бюджету и медиаплан/);
 });
+
+test('сайт и маркетплейсы, которые клиент только упомянул, — не услуги и не попадают в смету', async () => {
+  // модель «услышала» в рассказе сайт и маркетплейсы, хотя клиент их не заказывал
+  const ai = fakeAi(JSON.stringify({
+    services: ['context', 'marketplaces', 'site'],
+    evidence: { services: 'Нужна медийно-контекстная реклама' },
+  }));
+  const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
+  const { start, say, db } = await setup({ ai, pricing });
+  const s = await start();
+  await say(s, { value: 'Кирилл' });
+  await say(s, { value: 'Нужна медийно-контекстная реклама. Цель — напомнить о бренде и вести на наш сайт. Сайт www.taller.ru. Основные каналы продаж – это розничные магазины и сети и маркетплейсы. Бюджет 300к, запуск в сентябре, раньше не работали' });
+  let r = (await say(s, { value: 'результат' })).json().reply;
+  if (r.step.id === 'criteria') r = (await say(s, { value: 'результат' })).json().reply;
+  assert.doesNotMatch(r.step.before.join('\n'), /лендинг/i, 'лендинг в смету не добавляем');
+  await say(s, { value: 'yes' });
+  await say(s, { value: '+7 900 000-00-01' });
+  assert.deepEqual(db.getLead(1).answers.services, ['context']);
+});
