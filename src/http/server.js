@@ -89,6 +89,16 @@ export async function buildServer({ config, qualifier, logger, admin, brand = nu
     return reply.code(500).send({ error: 'Что-то пошло не так. Попробуйте ещё раз.' });
   });
 
+  // Поддомен квалификатора и кабинета — не для поисковиков: noindex на всех ответах и robots.txt.
+  // На индексацию основного сайта это не влияет: виджет там подключён скриптом, а не страницей.
+  app.addHook('onSend', async (req, reply) => {
+    reply.header('X-Robots-Tag', 'noindex, nofollow');
+  });
+  app.get('/robots.txt', (req, reply) =>
+    // widget.js открыт, чтобы поисковик мог отрисовать страницы основного сайта с виджетом
+    reply.type('text/plain; charset=utf-8').send('User-agent: *\nAllow: /widget.js\nDisallow: /\n'),
+  );
+
   app.get('/health', async () => ({ ok: true }));
 
   // Корень домена ведёт в рабочее место (виджет живёт по прямым ссылкам на файлы)

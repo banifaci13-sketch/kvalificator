@@ -146,3 +146,14 @@ test('корень домена ведёт на демо-страницу вид
   const widget = await app.inject({ method: 'GET', url: '/widget.js' });
   assert.equal(widget.statusCode, 200);
 });
+
+test('поддомен закрыт от поисковиков: robots.txt и X-Robots-Tag на всех ответах', async () => {
+  const { app } = await setup();
+  const robots = await app.inject({ method: 'GET', url: '/robots.txt' });
+  assert.equal(robots.statusCode, 200);
+  assert.match(robots.body, /User-agent: \*\nAllow: \/widget\.js\nDisallow: \/\n/);
+  for (const url of ['/robots.txt', '/widget.js', '/demo.html', '/health', '/nope']) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.headers['x-robots-tag'], 'noindex, nofollow', url);
+  }
+});
