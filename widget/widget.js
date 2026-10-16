@@ -3,7 +3,7 @@
  *
  * Подключение:
  *   <script src="https://ВАШ-СЕРВЕР/widget.js" defer
- *           data-button="Получить предложение"
+ *           data-button="Обсудить задачу"
  *           data-metrika="12345678"></script>
  *
  * Открыть из любой кнопки сайта: <a href="#kvalificator">…</a>, атрибут data-kval-open
@@ -25,7 +25,7 @@
   var opts = {
     title: ds.title || BRAND.title,
     subtitle: ds.subtitle || 'Подберём решение под вашу задачу',
-    button: ds.button || 'Получить предложение',
+    button: ds.button || 'Обсудить задачу',
     color: ds.color || BRAND.color,
     accent: ds.accent || BRAND.accent,
     accentText: ds.accentText || BRAND.accentText,

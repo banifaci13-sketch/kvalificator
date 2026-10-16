@@ -19,7 +19,7 @@ function soroka_kval_defaults() {
     return array(
         'server'    => '',
         'enabled'   => '1',
-        'button'    => 'Получить предложение',
+        'button'    => 'Обсудить задачу',
         'title'     => 'Soroka Marketing',
         'subtitle'  => 'Подберём решение под вашу задачу',
         'color'     => '#143a6b',
