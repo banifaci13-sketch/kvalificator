@@ -693,6 +693,8 @@
       '.log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}',
       '.msg{max-width:86%;padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word}',
       '.msg.bot{align-self:flex-start;background:var(--kv-bot);border-bottom-left-radius:4px}',
+      // сумма в смете не разрывается на две строки
+      '.msg.bot b{white-space:nowrap}',
       '.msg.user{align-self:flex-end;background:var(--kv-color);color:#fff;border-bottom-right-radius:4px}',
       '.msg.error{color:var(--kv-error)}',
       '.msg.typing{display:flex;gap:4px;padding:14px}',

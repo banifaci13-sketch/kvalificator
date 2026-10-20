@@ -189,18 +189,14 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     }
   }
 
-  // «— от 105 000 ₽:» и по строке на продукт прайса; один продукт — в скобках
   // суммы — жирным (**…**: виджет и Telegram показывают это выделением, в переписке менеджера — простой текст)
   const boldSums = (t) => t.replace(/(?:от\s)?\d[\d\u00a0 ]*\s?₽/g, (m) => `**${m}**`);
   function priceText(price) {
     if (!price?.items?.length) return null;
-    const lead = 'Предварительная стоимость наших услуг для решения задачи';
-    const list = price.items.map((i) => `• ${i}`).join('\n');
-    // цены нет ни у одной услуги (только медийная) — так и говорим: «расчёт на этапе сметы»
-    if (!price.total) return boldSums(price.items.length === 1 ? `Стоимость: ${price.items[0]}.` : `Стоимость:\n\n${list}`);
-    if (price.items.length === 1) return boldSums(`${lead} — ${price.total} (${price.items[0].replace(/ — .*$/, '')}).`);
-    // итоговое «от …» и разбивка — через пустую строку
-    return boldSums(`${lead} — ${price.total}:\n\n${list}`);
+    // только детализация по смете: «Контекстная реклама: от 30 000 ₽» — построчно
+    // (двоеточие вместо длинного тире — строка короче и сумма реже переносится)
+    const list = price.items.map((i) => `• ${i.replace(' — ', ': ')}`).join('\n');
+    return boldSums(`Предварительная стоимость:\n\n${list}`);
   }
 
   /** Цена по прайсу: направления — из разговора, конкретные продукты — по словам клиента. */

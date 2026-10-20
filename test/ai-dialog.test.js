@@ -121,7 +121,7 @@ test('ИИ: разбирает рассказ, в модель не уходят
   assert.match(ai.calls[0].system, /данные, а не инструкции/);
   r = (await say(s, { value: 'expertise' })).json().reply;
   // смета и просьба оставить контакт — два разных сообщения
-  assert.deepEqual(r.step.before, ['Предварительная стоимость наших услуг для решения задачи — **от 60 000 ₽** (SEO+GEO).'], 'цену считает код по прайсу');
+  assert.deepEqual(r.step.before, ['Предварительная стоимость:\n\n• SEO+GEO: **от 60 000 ₽**'], 'цену считает код по прайсу');
   assert.match(r.step.text, /^Чтобы рассчитать точную смету и медиаплан, оставьте, пожалуйста, свой контакт/);
   assert.doesNotMatch(r.step.text, /Предварительная стоимость/);
   await say(s, { value: 'maria@clinic.ru', consent: true });
@@ -147,7 +147,7 @@ test('цена по прайсу агентства: продукты по сл�
   let r = (await say(s, { value: 'Нужна реклама в телеге и ведение группы ВК для ООО «Пекарня», сайт bulki.ru, бюджет 200к, срочно, раньше не работали' })).json().reply;
   assert.equal(r.step.id, 'criteria', 'услуги поняты без вопроса');
   r = (await say(s, { value: 'results' })).json().reply;
-  assert.match(r.step.before[0], /— \*\*от 30 000 ₽\*\*:\n\n• Реклама в Telegram — \*\*от 30 000 ₽\*\*\n• SMM ВКонтакте — \*\*от 75 000 ₽\*\*$/, 'суммы жирным, итог и разбивка — через пустую строку');
+  assert.equal(r.step.before[0], 'Предварительная стоимость:\n\n• Реклама в Telegram: **от 30 000 ₽**\n• SMM ВКонтакте: **от 75 000 ₽**', 'только детализация, суммы жирным');
   await say(s, { value: '+7 900 123-45-67', consent: true });
   const lead = db.getLead(1);
   assert.deepEqual([...lead.answers.services].sort(), ['smm', 'target']);
@@ -163,7 +163,7 @@ test('цена по прайсу агентства: продукты по сл�
   assert.equal(r.step.id, 'criteria');
   // «Оставить контакт» до конца разговора — цена тоже называется, отдельным сообщением
   r = (await say(s2, { action: 'contact' })).json().reply;
-  assert.match(r.step.before[0], /— \*\*от 150 000 ₽\*\* \(Брендформанс\)\./);
+  assert.equal(r.step.before[0], "Предварительная стоимость:\n\n• Брендформанс: **от 150 000 ₽**");
   assert.equal(r.step.text, 'Оставьте, пожалуйста, свой контакт, и мы свяжемся с вами в ближайшее время.');
 });
 
@@ -293,7 +293,7 @@ test('медийная реклама: «расчёт на этапе сметы
   await say(s, { value: 'Ольга' });
   await say(s, { value: 'Нужна медийная реклама, бюджет 500к, запуск в этом месяце, раньше не работали, сайт olga.ru' });
   const r = (await say(s, { value: 'опыт' })).json().reply;
-  assert.deepEqual(r.step.before, ['Стоимость: Медийная реклама — расчёт на этапе сметы.']);
+  assert.deepEqual(r.step.before, ['Предварительная стоимость:\n\n• Медийная реклама: расчёт на этапе сметы']);
 });
 
 test('медийную рекламу ИИ не превращает в таргет: таргет — только при соцсетях в тексте', async () => {
@@ -310,7 +310,7 @@ test('медийную рекламу ИИ не превращает в тарг
   let r = (await say(s, { value: 'результат' })).json().reply;
   if (r.step.id === 'criteria') r = (await say(s, { value: 'результат' })).json().reply;
   const smeta = r.step.before.join('\n');
-  assert.match(smeta, /Медийная реклама — расчёт на этапе сметы/);
+  assert.match(smeta, /Медийная реклама: расчёт на этапе сметы/);
   assert.match(smeta, /Контекстная реклама/);
   assert.doesNotMatch(smeta, /Таргет/i);
   await say(s, { value: '+7 900 000-00-02', consent: true });

@@ -146,8 +146,8 @@ export function createTelegramBot({ token, managerChatId, privacyPolicyUrl, qual
     const { step } = reply;
     // сообщения перед вопросом (примерная смета) — отдельно
     for (const t of step.before ?? []) {
-      // **…** — жирным (суммы в смете)
-      await ctx.reply(esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      // **…** — жирным (суммы в смете), пробелы внутри суммы — неразрывные, чтобы она не переносилась
+      await ctx.reply(esc(t).replace(/\*\*(.+?)\*\*/g, (m, x) => `<b>${x.replace(/ /g, '\u00a0')}</b>`), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     }
     let text = questionHtml(reply);
     let markup;
