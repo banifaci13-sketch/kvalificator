@@ -10,7 +10,8 @@ import { serviceEvidence, ruleExtract, clarifyExtract, nameFrom, criteriaGuess }
 import { recognitionText } from '../src/core/text-norm.js';
 import { normalizeContact } from '../src/core/engine.js';
 import { loadPricing } from '../src/core/pricing.js';
-import { SERVICE_PHRASES, FIELD_PHRASES, CLARIFY_PHRASES } from './fixtures/client-phrases.js';
+import { SERVICE_PHRASES, FIELD_PHRASES, CLARIFY_PHRASES, NOT_CLIENT_PHRASES } from './fixtures/client-phrases.js';
+import { notClientKind } from '../src/core/offer-filter.js';
 import { rules, staticSource, silentLog } from './helpers.js';
 
 const pricing = loadPricing(new URL('../config/pricing.json', import.meta.url).pathname);
@@ -193,4 +194,38 @@ test('смета без отказанных услуг и без упомяну
   assert.match(smeta, /Реклама в Telegram/);
   assert.match(smeta, /Реклама ВКонтакте/);
   assert.doesNotMatch(smeta, /лендинг|SEO|Контекстная/i);
+});
+
+test('не клиент: предложения услуг и сотрудничества, резюме, спам — и клиенты, похожие на них', () => {
+  const bad = NOT_CLIENT_PHRASES.filter((c) => notClientKind(c.text) !== c.kind).map((c) => `«${c.text}»: ${notClientKind(c.text)} (ждём ${c.kind})`);
+  // ни одна клиентская фраза из корпуса не должна попасть под фильтр
+  for (const c of [...SERVICE_PHRASES, ...FIELD_PHRASES]) if (notClientKind(c.text)) bad.push(`клиент «${c.text}» → ${notClientKind(c.text)}`);
+  assert.deepEqual(bad, []);
+});
+
+test('предложение услуг вместо задачи — отправляем на почту, заявки нет', async () => {
+  const { start, say, db } = await setup();
+  const s = await start();
+  await say(s, { value: 'Анна' });
+  const r = (await say(s, { value: 'Здравствуйте! Предлагаем вам сотрудничество: мы digital-агентство полного цикла' })).reply;
+  assert.equal(r.type, 'done');
+  assert.equal(r.rejected, 'offer');
+  assert.match(r.text, /info@soroka-marketing\.ru/);
+  assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM leads').get().n, 0, 'в CRM не попадает');
+  assert.equal(db.getSession(s.sessionId).status, 'done', 'в брошенные не попадает');
+  const again = await say(s, { value: 'ау' });
+  assert.match(again.error, /завершён/);
+});
+
+test('резюме и спам — сразу, даже в поле имени', async () => {
+  const { start, say } = await setup();
+  let s = await start();
+  let r = (await say(s, { value: 'Добрый день, хочу у вас работать, резюме прилагаю' })).reply;
+  assert.equal(r.rejected, 'job');
+  assert.match(r.text, /Резюме и вопросы о работе.*info@soroka-marketing\.ru/);
+  s = await start();
+  await say(s, { value: 'Олег' });
+  await say(s, { value: 'Нужен таргет вк для салона' });
+  r = (await say(s, { value: 'Заработок от 5000 в день, пиши в лс' })).reply;
+  assert.equal(r.rejected, 'spam');
 });

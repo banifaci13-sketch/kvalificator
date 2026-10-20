@@ -8,6 +8,7 @@ import { ruleExtract, cleanExtract, moneyFromText, budgetBucket, wantedServices 
 import { createAbandoned } from '../src/core/abandoned.js';
 import { createPricing, loadPricing } from '../src/core/pricing.js';
 import { formatLeadCard } from '../src/notify/telegram.js';
+import { notClientKind } from '../src/core/offer-filter.js';
 import { scenario, rules, staticSource, silentLog } from './helpers.js';
 
 const fakeNotifier = () => {
@@ -353,4 +354,25 @@ test('услуги от ИИ сверяются со словарём: отка�
 test('сумма за год от ИИ пересчитывается в месяц кодом', () => {
   assert.deepEqual(cleanExtract({ budget_rub: 6_000_000, budget_period: 'year' }, scenario), { budget: '300k_1m' });
   assert.deepEqual(cleanExtract({ budget_rub: 900_000, budget_period: 'quarter' }, scenario), { budget: '300k_1m' });
+});
+
+test('ИИ узнал предложение услуг с цитатой — на почту; без слов предложения в цитате — это клиент', async () => {
+  const ai = fakeAi(JSON.stringify({ intent: 'offer', evidence: { intent: 'рассмотрите, пожалуйста, наши услуги' } }));
+  const { start, say, db } = await setup({ ai });
+  const s = await start();
+  await say(s, { value: 'Игорь' });
+  const text = 'Здравствуйте, рассмотрите, пожалуйста, наши услуги по настройке рекламы';
+  assert.equal(notClientKind(text), null, 'правила такое не узнают — решает ИИ');
+  let r = (await say(s, { value: text })).json().reply;
+  assert.equal(r.type, 'done');
+  assert.equal(r.rejected, 'offer');
+
+  // модель ошиблась: в цитате нет ничего про предложение — разговор продолжается
+  const ai2 = fakeAi(JSON.stringify({ intent: 'offer', services: ['context'], evidence: { intent: 'нужна реклама в директе', services: 'реклама в директе' } }));
+  const t2 = await setup({ ai: ai2 });
+  const s2 = await t2.start();
+  await t2.say(s2, { value: 'Олег' });
+  r = (await t2.say(s2, { value: 'Нужна реклама в директе для автосервиса' })).json().reply;
+  assert.equal(r.type, 'question');
+  assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM leads').get().n, 0);
 });

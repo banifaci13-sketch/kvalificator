@@ -13,6 +13,7 @@
 import { AnswerError, normalizeContact } from './engine.js';
 import { createMask } from '../ai/decks.js';
 import { recognitionText } from './text-norm.js';
+import { notClientKind, notClientText, NOT_CLIENT_HINT, DEFAULT_OFFERS_EMAIL } from './offer-filter.js';
 import { ruleExtract, clarifyExtract, nameFrom, criteriaGuess, moneyFromText, budgetBucket, serviceEvidence, PROPOSAL_TEXT } from './rule-extract.js';
 
 const MAX_TEXT = 2000;
@@ -56,6 +57,7 @@ function systemPrompt(scenario) {
 - geography: одно из [${opts('geography')}] или null
 - role: одно из [${opts('role')}] или null — только если человек сам сказал о своей роли
 - decision_maker: одно из [${opts('decision_maker')}] или null
+- intent: "client" — пишет клиент с задачей; "offer" — сам предлагает агентству свои услуги, сотрудничество, рекламу на своей площадке, лиды; "job" — ищет работу, присылает резюме; "spam" — спам. Клиент, который рассказывает о своём бизнесе («мы оказываем услуги клининга, нужна реклама») или просит у агентства предложение («пришлите КП»), — client
 - summary: суть задачи одним-двумя предложениями для менеджера
 - evidence: объект { поле: точная цитата из текста клиента, на которой основано значение } — для каждого заполненного поля, кроме summary.
   Цитату копируй дословно. Нет цитаты — значит, клиент этого не говорил: ставь null, не угадывай (сроки, опыт с подрядчиком, бюджет — особенно).
@@ -87,6 +89,7 @@ const plainText = (t) => String(t ?? '').toLowerCase().replace(/ё/g, 'е').repl
  */
 export function cleanExtract(raw, scenario, source = null) {
   if (!raw || typeof raw !== 'object') return {};
+  let backedIntent = () => false;
   if (source != null) {
     const text = plainText(source);
     const ev = raw.evidence && typeof raw.evidence === 'object' ? raw.evidence : {};
@@ -104,6 +107,7 @@ export function cleanExtract(raw, scenario, source = null) {
       const hits = qw.filter((w) => words.has(w) || stems.has(stem(w))).length;
       return hits / qw.length >= 0.8;
     };
+    backedIntent = said;
     const backed = (k, alias) => said(ev[k]) || (alias && said(ev[alias])) || (typeof raw[k] === 'string' && ['company', 'site'].includes(k) && said(raw[k]));
     raw = { ...raw };
     for (const k of ['company', 'site', 'services', 'start', 'agency_experience', 'dissatisfaction', 'reason', 'industry', 'market', 'geography', 'role', 'decision_maker']) {
@@ -131,6 +135,11 @@ export function cleanExtract(raw, scenario, source = null) {
   for (const id of ['dissatisfaction', 'reason']) {
     const v = str(raw[id]);
     if (v) out[id] = v;
+  }
+  // «не клиент» — только с цитатой, где есть слова предложения, резюме или спама: клиента на почту не отправляем
+  if (['offer', 'job', 'spam'].includes(raw.intent)) {
+    const q = Array.isArray(raw.evidence?.intent) ? raw.evidence.intent.join(' ') : raw.evidence?.intent;
+    if (source == null || (backedIntent(q) && NOT_CLIENT_HINT.test(String(q).toLowerCase().replace(/ё/g, 'е')))) out.intent = raw.intent;
   }
   const summary = str(raw.summary, 500);
   if (summary) out.summary = summary;
@@ -212,6 +221,8 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
   }
 
   function render(state) {
+    // пишет не клиент — отвечаем «пишите на почту» и заканчиваем
+    if (state.phase === 'rejected') return { type: 'done', text: notClientText(state.rejected, scenario.offersEmail ?? DEFAULT_OFFERS_EMAIL), rejected: state.rejected };
     const step = question(state);
     if (!step) return { type: 'done' };
     return {
@@ -321,9 +332,27 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
   }
 
   /** Рассказ о задаче: разбор и решение, что уточнить. */
+  /** Не клиент (предложение услуг, резюме, спам) — разговор заканчиваем, заявки нет. */
+  function reject(state, kind) {
+    state.rejected = kind;
+    state.phase = 'rejected';
+    return true;
+  }
+  const rejectIfNotClient = (state, t) => {
+    const kind = notClientKind(t);
+    return kind ? reject(state, kind) : false;
+  };
+
   async function takeTask(state, t) {
     state.answers.task = t;
-    apply(state, await extract(state, t));
+    if (rejectIfNotClient(state, t)) return;
+    const found = await extract(state, t);
+    // правила не узнали, а ИИ уверен и привёл цитату — тоже не клиент
+    if (found.intent) {
+      reject(state, found.intent);
+      return;
+    }
+    apply(state, found);
     state.ask = missing(state);
     state.phase = state.ask.length ? 'clarify' : 'criteria';
   }
@@ -346,6 +375,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       case 'name': {
         const raw = text(input.value);
         heard(state, raw);
+        if (rejectIfNotClient(state, raw)) break;
         // имя — только настоящее; нет его или выдумано — обращаемся без имени и больше не спрашиваем
         const { name, call, task } = nameFrom(raw);
         if (name) {
@@ -374,8 +404,14 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
         heard(state, t);
         state.answers.clarification = t;
         state.clarified = true;
+        if (rejectIfNotClient(state, t)) break;
         // ответ разбираем вместе с рассказом: «200к, через месяц, нет» понятнее рядом с вопросом
-        apply(state, await extract(state, `${state.answers.task}\n\nУточнение клиента: ${t}`, { asked: state.ask, reply: t }));
+        const found = await extract(state, `${state.answers.task}\n\nУточнение клиента: ${t}`, { asked: state.ask, reply: t });
+        if (found.intent) {
+          reject(state, found.intent);
+          break;
+        }
+        apply(state, found);
         // работали с подрядчиком и сразу сказали почему — тоже в карточку
         if (['past', 'current'].includes(state.extracted.agency_experience) && !state.extracted.dissatisfaction && REASON_RE.test(t)) {
           state.extracted.dissatisfaction = t.slice(0, 300);

@@ -73,7 +73,10 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
   }
 
   function resume(session) {
-    if (session.status === 'done') return { type: 'done', text: scenarioSource.get().outro.warm };
+    if (session.status === 'done') {
+      if (session.state?.rejected) return getEngine(session.state).current(session.state);
+      return { type: 'done', text: scenarioSource.get().outro.warm };
+    }
     return getEngine(session.state).current(session.state);
   }
 
@@ -86,6 +89,12 @@ export function createQualifier({ db, scenarioSource, rules, notifier, log = con
       const { state, reply } = await getEngine(session.state).answer(session.state, input);
       if (reply.type !== 'done') {
         db.saveState(session.id, state);
+        return reply;
+      }
+      // пишет не клиент (предложение услуг, резюме, спам): разговор закрыт, заявки и уведомлений нет
+      if (state.rejected) {
+        db.saveState(session.id, state, 'done');
+        log.info({ sessionId: session.id, kind: state.rejected, channel: session.channel }, 'Не клиент — отправили писать на почту');
         return reply;
       }
       return finish(session, state);
