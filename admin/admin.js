@@ -32,10 +32,10 @@ const EVENT_TEXT = {
 // что значит уровень — подсказка при ручной смене (критерии таблицы «Этапы продаж»)
 const LEVELS = [
   [5, 'A — звёздный клиент: мировой или федеральный бренд'],
-  [4, 'B — бюджет от 500 000 ₽/мес, несколько каналов или комплекс, зарубежный'],
+  [4, 'B — бюджет от 500 000 ₽/мес, может принести неплохо денег, несколько каналов или комплекс'],
   [3, 'C — крепкая адекватная компания'],
   [2, 'D — собирает КП, нет ЛПР, «сколько стоит», не проходит по цене'],
-  [1, 'E — неадекват, спам, стоп-слова'],
+  [1, 'E — неадекваты, спам, нищеброды, «короли мира»'],
 ];
 const PERIODS = [
   ['7', '7 дней'],
@@ -1300,10 +1300,10 @@ function fillLead(body, title, lead, events) {
   );
 
   // диалог с ИИ: суть задачи и список услуг — первыми, затем ответы по полям сценария
-  const EXTRA = { summary: 'Суть задачи', proposal_request: 'Ждёт от нас', famous_brand: 'Известный бренд (оценка ИИ)', budget_rub: 'Бюджет в месяц (назвал клиент)', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
+  const EXTRA = { summary: 'Суть задачи', proposal_request: 'Ждёт от нас', company_scale: 'Масштаб компании (оценка ИИ)', inadequate: 'Неадекват (оценка ИИ)', budget_rub: 'Бюджет в месяц (назвал клиент)', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
   const extra = Object.entries(EXTRA)
     .filter(([k]) => lead.answers[k] != null)
-    .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : k === 'budget_rub' ? `${Number(lead.answers[k]).toLocaleString('ru-RU')} ₽` : String(lead.answers[k]))]);
+    .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : k === 'budget_rub' ? `${Number(lead.answers[k]).toLocaleString('ru-RU')} ₽` : k === 'company_scale' ? ({ world: 'мировой бренд', federal: 'федеральный бренд', large: 'крупная компания', small: 'небольшой бизнес' })[lead.answers[k]] ?? lead.answers[k] : k === 'inadequate' ? (lead.answers[k] === true ? 'да' : lead.answers[k]) : String(lead.answers[k]))]);
   const answers = [
     ...extra,
     ...ctx.scenario.steps

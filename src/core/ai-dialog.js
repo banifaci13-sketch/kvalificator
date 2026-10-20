@@ -58,7 +58,8 @@ function systemPrompt(scenario) {
 - role: одно из [${opts('role')}] или null — только если человек сам сказал о своей роли
 - decision_maker: одно из [${opts('decision_maker')}] или null
 - intent: "client" — пишет клиент с задачей; "offer" — сам предлагает агентству свои услуги, сотрудничество, рекламу на своей площадке, лиды; "job" — ищет работу, присылает резюме; "spam" — спам. Клиент, который рассказывает о своём бизнесе («мы оказываем услуги клининга, нужна реклама») или просит у агентства предложение («пришлите КП»), — client
-- famous_brand: название, если клиент сам представляет известный мировой или федеральный бренд (крупный банк, страховая, сеть, производитель, известный по всей России), иначе null. Упоминание чужого бренда — не он: «продаём на Ozon» — не Ozon, «как у Сбера» — не Сбер
+- company_scale: масштаб компании клиента — оцени сам, по названию и рассказу, используя свои знания о компаниях: "world" — мировой бренд; "federal" — федеральный бренд, известный по всей России (крупный банк, страховая, сеть, производитель, сервис — не обязательно банк); "large" — не федеральный бренд, но клиент, который потенциально может принести агентству неплохо денег; "small" — небольшой бизнес; null — непонятно. Только про компанию самого клиента: «продаём на Ozon» — не Ozon, «как у Сбера» — не Сбер. В evidence — название компании или слова клиента о масштабе
+- inadequate: true — если клиент из категории «неадекваты, нищеброды, „короли мира“»; иначе null. В evidence — цитата
 - summary: суть задачи одним-двумя предложениями для менеджера
 - evidence: объект { поле: точная цитата из текста клиента, на которой основано значение } — для каждого заполненного поля, кроме summary.
   Цитату копируй дословно. Нет цитаты — значит, клиент этого не говорил: ставь null, не угадывай (сроки, опыт с подрядчиком, бюджет — особенно).
@@ -133,9 +134,10 @@ export function cleanExtract(raw, scenario, source = null) {
     out.budget = budgetBucket(perMonth);
     out.budget_rub = Math.round(perMonth);
   }
-  // известный бренд — только если его название есть в словах клиента
-  const brand = str(raw.famous_brand, 100);
-  if (brand && (source == null || backedIntent(brand))) out.famous_brand = brand;
+  // масштаб компании и неадекватность — оценка ИИ, только с цитатой из слов клиента
+  const evq = (k) => (Array.isArray(raw.evidence?.[k]) ? raw.evidence[k].join(' ') : raw.evidence?.[k]);
+  if (['world', 'federal', 'large', 'small'].includes(raw.company_scale) && (source == null || backedIntent(evq('company_scale')) || backedIntent(raw.company))) out.company_scale = raw.company_scale;
+  if (raw.inadequate === true && (source == null || backedIntent(evq('inadequate')))) out.inadequate = str(evq('inadequate'), 200) ?? true;
   for (const id of ['start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker']) {
     if (raw[id] != null && allowed(id).has(raw[id])) out[id] = raw[id];
   }
@@ -310,7 +312,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       a.service = ex.services.length > 1 ? 'complex' : ex.services[0];
       a.services = ex.services;
     }
-    for (const k of ['budget', 'budget_rub', 'start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker', 'dissatisfaction', 'reason', 'famous_brand']) {
+    for (const k of ['budget', 'budget_rub', 'start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker', 'dissatisfaction', 'reason', 'company_scale', 'inadequate']) {
       if (ex[k] != null) a[k] = ex[k];
     }
     if (ex.summary) a.summary = ex.summary;

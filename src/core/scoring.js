@@ -1,13 +1,15 @@
 // Уровень лида A–E (рейтинг 5…1) по таблице «Этапы продаж»:
-//   A (5) — звёздный клиент: мировой или федеральный бренд (не обязательно банк);
-//   B (4) — рекламный бюджет от 500 000 ₽ в месяц, или клиент, которому можно продать несколько
-//           каналов или комплекс, или зарубежный клиент;
+//   A (5) — звёздный клиент: мировой или федеральный бренд, не обязательно банк. Масштаб бренда
+//           оценивает ИИ по названию и рассказу клиента; список starBrands — запасной путь без ИИ;
+//   B (4) — рекламный бюджет от 500 000 ₽ в месяц, либо клиент, который потенциально может принести
+//           неплохо денег (оценка ИИ), либо можно продать несколько каналов или комплекс; зарубежные
+//           клиенты тоже сюда;
 //   C (3) — крепкая адекватная компания — все остальные клиенты агентства (по умолчанию);
 //   D (2) — собирают КП, нет доступа к ЛПР, важно только «сколько стоит», не проходят по цене
 //           (услуга нужна, но хотят контекст за 15–20 000 ₽);
-//   E (1) — неадекваты, спам, «нищеброды», стоп-слова.
-// Уровень решают явные признаки из таблицы; баллы (score) — справочно: что в заявке говорит в плюс и в минус.
-// Пороги и списки — в config/scoring.json (levels, starBrands, priorityIndustries).
+//   E (1) — неадекваты, спам, «нищеброды», «короли мира», стоп-слова (неадекватность оценивает ИИ).
+// Сфера (финансы, B2B, недвижимость, медицина, авто…) уровень не меняет — это метки для менеджера.
+// Баллы (score) — справочно. Пороги и списки — в config/scoring.json.
 
 const LABELS = {
   budget: 'бюджет',
@@ -25,12 +27,7 @@ const TEXT_FIELDS = ['task', 'reason', 'company', 'participants', 'dissatisfacti
 
 // бюджет категорией (сценарий из 19 вопросов) → границы суммы, если точной суммы нет
 const BUDGET_RANGE = { lt100k: [0, 99_999], '100_300k': [100_000, 299_999], '300k_1m': [300_000, 999_999], '1m_3m': [1_000_000, 2_999_999], gt3m: [3_000_000, Infinity] };
-const DEFAULT_LEVELS = {
-  A: { budgetFrom: 3_000_000 },
-  B: { budgetFrom: 500_000, multiServiceBudgetFrom: 300_000, priorityIndustryBudgetFrom: 300_000 },
-  D: { priceOnlyBudgetBelow: 100_000 },
-  E: { budgetBelow: 10_000 },
-};
+const DEFAULT_LEVELS = { B: { budgetFrom: 500_000 } };
 const rub = (v) => `${Math.round(v).toLocaleString('ru-RU').replace(/\s/g, ' ')} ₽`;
 // «мы — Кредит Европа Банк», «я из Газпромбанка», «представляю AstraZeneca»: бренд в рассказе — только как «мы»
 const SELF_RE = '(?<![а-яa-z])(?:мы|мы\\s+—|компания|представляю|представитель|я\\s+из|из\\s+компании|от\\s+лица|работаю\\s+в|наш(?:а|е)?\\s+(?:компания|банк|бренд))';
@@ -40,8 +37,7 @@ export function scoreLead(answers, rules, scenario) {
   const tags = [];
   const texts = TEXT_FIELDS.map((f) => answers[f]).filter((v) => typeof v === 'string');
   const allText = texts.join('\n').toLowerCase();
-  const L = { ...DEFAULT_LEVELS, ...(rules.levels ?? {}) };
-  for (const k of Object.keys(DEFAULT_LEVELS)) L[k] = { ...DEFAULT_LEVELS[k], ...(rules.levels?.[k] ?? {}) };
+  const L = { B: { ...DEFAULT_LEVELS.B, ...(rules.levels?.B ?? {}) } };
 
   // E — стоп-слова и спам: дальше не считаем
   const stopWord = rules.stopWords.find((w) => allText.includes(w.toLowerCase()));
@@ -75,11 +71,12 @@ export function scoreLead(answers, rules, scenario) {
   const noDecisionMaker = answers.decision_maker === 'other';
   const priceFrom = Number.isFinite(answers.price_from) ? answers.price_from : null;
 
-  // A — звёздный клиент: мировой или федеральный бренд
-  const starBrand = findStarBrand([answers.company, answers.site].filter((v) => typeof v === 'string').join(' '), rules.starBrands)
-    ?? findStarBrand(texts.join(' '), rules.starBrands, SELF_RE)
-    ?? (typeof answers.famous_brand === 'string' && answers.famous_brand.trim() ? answers.famous_brand.trim() : null);
-  if (starBrand) tags.push('звёздный бренд');
+  // A — мировой или федеральный бренд: оценка ИИ, а без неё — список брендов
+  const scale = answers.company_scale;
+  const listBrand = findStarBrand([answers.company, answers.site].filter((v) => typeof v === 'string').join(' '), rules.starBrands)
+    ?? findStarBrand(texts.join(' '), rules.starBrands, SELF_RE);
+  const bigBrand = scale === 'world' || scale === 'federal' ? (answers.company || 'по рассказу клиента') : listBrand;
+  if (bigBrand) tags.push('звёздный бренд');
   if (priority) tags.push('приоритетная сфера');
   if (answers.geography === 'international') tags.push('зарубежный');
   if (answers.market === 'b2b' || answers.market === 'both') tags.push('B2B');
@@ -88,44 +85,36 @@ export function scoreLead(answers, rules, scenario) {
   if (noDecisionMaker) tags.push('нет доступа к ЛПР');
   if (multi) tags.push('несколько направлений');
 
-  let rating;
-  if (starBrand) {
-    rating = 5;
-    reasons.push(`A: звёздный бренд — ${starBrand}`);
-  } else if (low != null && low >= L.A.budgetFrom) {
-    rating = 5;
-    reasons.push(`A: звёздный клиент — бюджет ${budgetText} в месяц`);
-  } else if (high != null && high < L.E.budgetBelow) {
-    rating = 1;
-    reasons.push(`E: бюджет ${budgetText} — меньше ${rub(L.E.budgetBelow)}`);
-  } else {
-    // B — бюджет от 500 000, зарубежный клиент, несколько каналов или комплекс, приоритетная сфера при хорошем бюджете
-    const b = [];
-    if (low != null && low >= L.B.budgetFrom) b.push(`бюджет ${budgetText} в месяц (от ${rub(L.B.budgetFrom)})`);
-    if (answers.geography === 'international') b.push('зарубежный клиент');
-    if (multi && low != null && low >= L.B.multiServiceBudgetFrom) b.push(`несколько направлений при бюджете от ${rub(L.B.multiServiceBudgetFrom)}`);
-    if (priority && low != null && low >= L.B.priorityIndustryBudgetFrom) b.push(`приоритетная сфера при бюджете от ${rub(L.B.priorityIndustryBudgetFrom)}`);
-    // D — не проходят по цене, важна только цена, нет доступа к ЛПР
-    const d = [];
-    if (priceFrom != null && high != null && high < priceFrom) d.push(`бюджет ${budgetText} меньше минимальной стоимости услуг (от ${rub(priceFrom)})`);
-    if (answers.criteria === 'price' && high != null && high < L.D.priceOnlyBudgetBelow) d.push(`важна только цена при бюджете до ${rub(L.D.priceOnlyBudgetBelow)}`);
-    if (noDecisionMaker) d.push('нет доступа к ЛПР — собирает предложения');
+  // признаки — только формулировки таблицы
+  const b = [];
+  if (low != null && low >= L.B.budgetFrom) b.push(`рекламный бюджет ${budgetText} в месяц (от ${rub(L.B.budgetFrom)})`);
+  if (scale === 'large') b.push('может принести неплохо денег (оценка ИИ)');
+  if (multi) b.push(`можно продать несколько каналов или комплекс${services.length >= 2 ? ` (${services.length})` : ''}`);
+  if (answers.geography === 'international') b.push('зарубежный клиент');
+  const d = [];
+  if (noDecisionMaker) d.push('собирает КП, нет доступа к ЛПР');
+  if (answers.criteria === 'price') d.push('важно только «сколько стоит»');
+  if (priceFrom != null && high != null && high < priceFrom) d.push(`не проходит по цене: бюджет ${budgetText} меньше стоимости услуг (от ${rub(priceFrom)})`);
+  const e = [];
+  if (answers.inadequate) e.push(`${typeof answers.inadequate === 'string' ? answers.inadequate : 'неадекват, нищеброд или «король мира»'} (оценка ИИ)`);
 
-    if (d.some((x) => !x.startsWith('нет доступа'))) {
-      rating = 2;
-      reasons.push(...d.map((x) => `D: ${x}`));
-    } else if (b.length) {
-      // признаки B, но решение принимает не он — на ступень ниже
-      rating = noDecisionMaker ? 3 : 4;
-      reasons.push(...b.map((x) => `B: ${x}`));
-      if (noDecisionMaker) reasons.push('C, а не B: нет доступа к ЛПР');
-    } else if (d.length) {
-      rating = 2;
-      reasons.push(...d.map((x) => `D: ${x}`));
-    } else {
-      rating = 3;
-      reasons.push('C: адекватная компания — признаков A, B, D и E нет');
-    }
+  // признаки двух уровней сразу — берём верхний по таблице: A → B → D → E; нет признаков — C
+  let rating;
+  if (bigBrand) {
+    rating = 5;
+    reasons.push(`A: ${scale === 'world' ? 'мировой' : 'федеральный'} бренд — ${bigBrand}${scale === 'world' || scale === 'federal' ? ' (оценка ИИ)' : ''}`);
+  } else if (b.length) {
+    rating = 4;
+    reasons.push(...b.map((x) => `B: ${x}`));
+  } else if (d.length) {
+    rating = 2;
+    reasons.push(...d.map((x) => `D: ${x}`));
+  } else if (e.length) {
+    rating = 1;
+    reasons.push(...e.map((x) => `E: ${x}`));
+  } else {
+    rating = 3;
+    reasons.push('C: крепкая адекватная компания — признаков A, B, D и E нет');
   }
   reasons.push(...signals);
   return { rating, score: round(score), reasons, tags };
