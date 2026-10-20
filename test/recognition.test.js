@@ -62,17 +62,38 @@ test('ответ на уточнение по пунктам: по номера�
   assert.deepEqual(clarifyExtract('нет, нет', ['budget', 'start', 'site']), {});
 });
 
-test('имя: «меня зовут…», приветствие, задача вместо имени', () => {
-  assert.deepEqual(nameFrom('Анна'), { name: 'Анна', task: false });
-  assert.deepEqual(nameFrom('меня зовут анна'), { name: 'Анна', task: false });
-  assert.deepEqual(nameFrom('Добрый день! Меня зовут Светлана'), { name: 'Светлана', task: false });
-  assert.deepEqual(nameFrom('Здравствуйте, это Игорь из ООО Ромашка'), { name: 'Игорь', task: false });
-  assert.deepEqual(nameFrom('Я — Ольга, маркетолог'), { name: 'Ольга', task: false });
-  assert.deepEqual(nameFrom('Анна Петрова'), { name: 'Анна Петрова', task: false });
-  assert.deepEqual(nameFrom('Мария-Луиза'), { name: 'Мария-Луиза', task: false });
-  assert.deepEqual(nameFrom('Игорь, нужен директ для автосервиса'), { name: 'Игорь', task: true });
-  assert.deepEqual(nameFrom('Нужна реклама в директе для автосервиса, бюджет 100к'), { name: null, task: true });
-  assert.deepEqual(nameFrom('Здравствуйте'), { name: null, task: false });
+test('имя: только настоящее, с большой буквы; обращение — по имени (с отчеством), без фамилии', () => {
+  const cases = [
+    ['Анна', 'Анна', 'Анна'],
+    ['анна', 'Анна', 'Анна'],
+    ['АННА', 'Анна', 'Анна'],
+    ['саша', 'Саша', 'Саша'],
+    ['меня зовут игорь', 'Игорь', 'Игорь'],
+    ['Добрый день! Меня зовут Светлана', 'Светлана', 'Светлана'],
+    ['Здравствуйте, это Игорь из ООО Ромашка', 'Игорь', 'Игорь'],
+    ['Я — Ольга, маркетолог', 'Ольга', 'Ольга'],
+    ['Анна Петрова', 'Анна Петрова', 'Анна'],
+    ['Петрова Анна', 'Анна Петрова', 'Анна'],
+    ['Дмитрий Сергеевич', 'Дмитрий Сергеевич', 'Дмитрий Сергеевич'],
+    ['Иванов Иван Иванович', 'Иван Иванович Иванов', 'Иван Иванович'],
+    ['Мария-Луиза', 'Мария-Луиза', 'Мария-Луиза'],
+    ['Айгуль', 'Айгуль', 'Айгуль'],
+    ['Sergey', 'Sergey', 'Sergey'],
+    // незнакомое имя — только если человек прямо представился и оно правдоподобно
+    ['меня зовут аэлита', 'Аэлита', 'Аэлита'],
+  ];
+  for (const [t, name, call] of cases) {
+    const r = nameFrom(t);
+    assert.equal(r.name, name, t);
+    assert.equal(r.call, call, t);
+  }
+  // не имя или выдумано — обращаемся без имени
+  for (const t of ['Здравствуйте', 'фывапр', 'ывфывф', 'asdf', 'qwerty', 'Ааааа', 'Ддд', 'Шмыгль', 'реклама', 'Клиент', 'Аноним', 'не важно', 'Тестовый', 'Меня зовут Фывап', '123']) {
+    assert.equal(nameFrom(t).name, null, t);
+  }
+  assert.deepEqual(nameFrom('Игорь, нужен директ для автосервиса'), { name: 'Игорь', call: 'Игорь', task: true });
+  assert.deepEqual(nameFrom('Нужна реклама в директе для автосервиса, бюджет 100к'), { name: null, call: null, task: true });
+  assert.equal(nameFrom('реклама').task, false, 'одно слово — не рассказ о задаче');
 });
 
 test('что важно в выборе исполнителя: «стоимость заявки» — это результат, а не цена', () => {
@@ -118,11 +139,29 @@ test('задача вместо имени: не теряется и второ�
   assert.equal(r.step.id, 'criteria', 'всё понятно — сразу к выбору исполнителя');
 });
 
-test('приветствие вместо имени — просим имя ещё раз', async () => {
+test('нет имени или оно выдумано — обращаемся без имени и больше не спрашиваем', async () => {
   const { start, say } = await setup();
+  for (const value of ['Здравствуйте!', 'фывапр', 'не скажу']) {
+    const s = await start();
+    let r = (await say(s, { value })).reply;
+    assert.equal(r.step.id, 'task', value);
+    assert.equal(r.step.text, 'Опишите своими словами, в чём состоит задача.');
+    r = (await say(s, { value: 'Нужен таргет вк для салона красоты' })).reply;
+    assert.match(r.step.text, /^Спасибо! Чтобы точнее понять задачу/);
+  }
+});
+
+test('имя с маленькой буквы — с большой; с отчеством — обращение по имени и отчеству', async () => {
+  const { start, say, db } = await setup();
   const s = await start();
-  const res = await say(s, { value: 'Здравствуйте!' });
-  assert.match(res.error, /Как к вам обращаться/);
+  let r = (await say(s, { value: 'анна сергеевна' })).reply;
+  assert.match(r.step.text, /^Анна Сергеевна, приятно познакомиться!/);
+  r = (await say(s, { value: 'Нужен таргет вк для салона красоты' })).reply;
+  assert.match(r.step.text, /^Анна Сергеевна, спасибо!/);
+  await say(s, { value: '1) 150 2) срочно 3) нет 4) нет' });
+  await say(s, { value: 'результат' });
+  await say(s, { value: '+7 900 555-66-78', consent: true });
+  assert.equal(db.getLead(1).answers.name, 'Анна Сергеевна');
 });
 
 test('уточнение «по пунктам» без ИИ: «нет» про подрядчика и про сайт, сумма числом', async () => {

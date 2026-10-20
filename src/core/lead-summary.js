@@ -56,7 +56,8 @@ export function leadFacts(lead, scenario, { price } = {}) {
   const extra = { task: 'Задача словами клиента', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе исполнителя', dissatisfaction: 'Почему меняют подрядчика', proposal_request: 'Ждёт от агентства' };
   for (const [k, l] of Object.entries(extra)) if (a[k] && !scenario.steps.some((s) => s.id === k)) rows.push(`${l}: ${a[k]}`);
   if (price ?? a.price) rows.push(`Предварительная стоимость, названная клиенту: ${price ?? a.price}`);
-  const dialog = lead.meta?.dialog ?? [];
+  // ответ на «Как к вам обращаться?» в модель не отправляем: там имя, а то и фамилия (задача и так есть выше)
+  const dialog = (lead.meta?.dialog ?? []).filter((m, i, all) => !(m.from === 'user' && /как\s+(?:могу\s+)?к\s+вам\s+обращаться/i.test(all[i - 1]?.text ?? '')));
   if (dialog.length) rows.push('', 'Переписка с ботом:', ...dialog.map((m) => `${m.from === 'user' ? 'Клиент' : 'Бот'}: ${m.text}`));
   return rows.join('\n');
 }

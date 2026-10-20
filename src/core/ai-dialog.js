@@ -145,14 +145,16 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
 
   // фразы диалога: имя — первым, дальше вопросы, собранные из ответов
   function question(state) {
-    const name = state.answers.name ? `${state.answers.name}, ` : '';
+    // обращение — по имени (с отчеством, если назвали), без фамилии
+    const who = state.callName ?? state.answers.name ?? null;
+    const name = who ? `${who}, ` : '';
     switch (state.phase) {
       case 'name':
         return { id: 'name', type: 'text', text: 'Здравствуйте! Как могу к вам обращаться?', placeholder: 'Имя' };
       case 'task':
         return {
           id: 'task', type: 'text',
-          text: `${state.answers.name ? `${state.answers.name}, приятно познакомиться! ` : ''}Опишите своими словами, в чём состоит задача.`,
+          text: `${who ? `${who}, приятно познакомиться! ` : ''}Опишите своими словами, в чём состоит задача.`,
         };
       case 'clarify':
         return {
@@ -348,14 +350,17 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       case 'name': {
         const raw = text(input.value);
         heard(state, raw);
-        const { name, task } = nameFrom(raw);
-        if (name) state.answers.name = name.slice(0, 60);
+        // имя — только настоящее; нет его или выдумано — обращаемся без имени и больше не спрашиваем
+        const { name, call, task } = nameFrom(raw);
+        if (name) {
+          state.answers.name = name.slice(0, 60);
+          state.callName = call.slice(0, 60);
+        }
         // вместо имени (или вместе с ним) сразу написали задачу — разбираем её, второй раз не спрашиваем
         if (task) {
           await takeTask(state, raw);
           break;
         }
-        if (!name) throw new AnswerError('Как к вам обращаться? Напишите, пожалуйста, имя');
         // «Игорь из ООО „Ромашка“, сайт romashka.ru» — компанию и сайт тоже запоминаем
         const { company, site } = ruleExtract(raw);
         if (company || site) apply(state, { company, site });

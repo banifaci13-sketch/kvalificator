@@ -3,6 +3,7 @@
 // Правила намеренно осторожные: лучше переспросить, чем записать догадку.
 
 import { recognitionText } from './text-norm.js';
+import { isKnownName, isPatronymic, isSurname, plausibleName } from './names.js';
 
 // Текст для поиска услуг — уже без отказов, в нижнем регистре, с исправленными опечатками и раскладкой
 // (text-norm.js). Границы слов — явные: \b в JavaScript не работает с русскими буквами.
@@ -435,39 +436,44 @@ export function clarifyExtract(text, asked = [], { now = new Date() } = {}) {
 // ---------- имя ----------
 
 const GREET_RE = /^(?:здравствуйте|здравствуй|добрый\s+(?:день|вечер)|доброе\s+утро|доброй\s+ночи|день\s+добрый|приветствую|привет|хай|салют|hello|hi)(?![а-яa-z])[\s,.!—-]*/iu;
-const NAME_WORD = '[А-ЯЁA-Zа-яёa-z][а-яёa-z]+(?:-[А-ЯЁа-яё][а-яё]+)?';
-const NAME_INTRO_RE = new RegExp(`(?:меня\\s+зовут|зовут\\s+меня|мо[её]\\s+имя|можно\\s+просто|обращайтесь\\s+(?:ко\\s+мне\\s+)?(?:по\\s+имени\\s+)?|на\\s+связи|с\\s+вами|(?:^|[\\s,])это)\\s*[:—-]?\\s*(${NAME_WORD}(?:\\s+${NAME_WORD})?)`, 'iu');
-const SELF_RE = /(?:^|[\s,])[яЯ]\s*[—-]?\s*([А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]+)?)/u;
-// слова, которые пишут рядом с именем, но это не имя
-const NOT_NAME = /^(?:компания|компании|директор|менеджер|маркетолог|собственник|владелец|представитель|руководитель|сотрудник|ассистент|помощник|агентство|ооо|ип|ао|пао|зао|из|от|по|для|меня|зовут|я|это|мы|нас|наш|наша|здравствуйте|привет|добрый|день|вечер|утро|спасибо|да|нет|ок|окей|хорошо)$/iu;
+// «меня зовут …», «это …», «я — …»: дальше идёт имя
+const NAME_INTRO_RE = /(?:меня\s+зовут|зовут\s+меня|мо[её]\s+имя|можно\s+просто|обращайтесь\s+(?:ко\s+мне\s+)?(?:по\s+имени\s+)?|на\s+связи|с\s+вами|(?:^|[\s,])это|(?:^|[\s,])я)\s*[:—-]?\s*/iu;
 const TASK_HINT_RE = /нуж[енанo]|хотим|хочу|интересу|требуется|реклам|продвиж|бюджет|сайт|заявк|клиент|продаж|магазин|запуст|настро|помогите|\d{3,}/iu;
-const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+const WORD_RE = /[А-ЯЁа-яёA-Za-z]+(?:-[А-ЯЁа-яёA-Za-z]+)?/gu;
+const cap = (w) => w.split('-').map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join('-');
 
 /**
- * Имя из ответа на «Как к вам обращаться?»: «Анна», «меня зовут анна», «Здравствуйте, это Игорь из ООО Ромашка».
- * task — клиент сразу написал задачу («Игорь, нужен директ для автосервиса»): её не теряем.
+ * Имя из ответа на «Как к вам обращаться?». Берём только настоящее имя — из словаря имён
+ * (или незнакомое, но правдоподобное, если клиент прямо представился: «меня зовут Аэлита»).
+ * С маленькой буквы — пишем с большой. Нет имени или оно выдумано — name: null, обращаемся без имени.
+ *   name — полностью («Иван Иванович Петров»), call — как обращаться («Иван Иванович»);
+ *   task — клиент сразу написал задачу («Игорь, нужен директ для автосервиса»): её не теряем.
  */
 export function nameFrom(text) {
   const raw = String(text ?? '').trim();
   const body = raw.replace(GREET_RE, '').trim();
   const words = body.split(/\s+/).filter(Boolean);
-  const task = words.length >= 8 || serviceEvidence(body).services.length > 0 || TASK_HINT_RE.test(body);
-  const fmt = (n) => n.split(/\s+/).filter((w) => !NOT_NAME.test(w)).slice(0, 2).map((w) => w.split('-').map(cap).join('-')).join(' ') || null;
-  const intro = NAME_INTRO_RE.exec(body) ?? SELF_RE.exec(body);
-  if (intro) {
-    const name = fmt(intro[1]);
-    if (name) return { name, task };
-  }
-  // «Анна», «Анна Петрова», «Анна, маркетолог», «Игорь, нужен директ» — имя первым словом
-  const first = /^([А-ЯЁA-Zа-яёa-z][а-яёa-z]+(?:-[А-ЯЁа-яё][а-яё]+)?)(?:\s+([А-ЯЁA-Z][а-яёa-z]+))?(?=[\s,.!—-]|$)/u.exec(body);
-  // при задаче имя — только отдельным словом перед запятой или тире: «Игорь, нужен директ», но не «Нужна реклама…»
-  const separated = first && (!task || /^\s*[,—-]/.test(body.slice(first[0].length)));
-  if (first && separated && !NOT_NAME.test(first[1]) && !TASK_HINT_RE.test(first[1])) {
-    const second = first[2] && !NOT_NAME.test(first[2]) && !task ? ` ${first[2]}` : '';
-    const name = fmt(first[1] + second);
-    if (name) return { name, task };
-  }
-  return { name: null, task };
+  // одно-два слова («реклама», «клиент») — не рассказ о задаче, просто не имя
+  const task = words.length >= 8 || serviceEvidence(body).services.length > 0 || (words.length >= 3 && TASK_HINT_RE.test(body));
+  const none = { name: null, call: null, task };
+
+  // где искать: после «меня зовут …»; иначе — в начале ответа (при задаче — до первой запятой или тире)
+  const intro = NAME_INTRO_RE.exec(body);
+  const zone = intro ? body.slice(intro.index + intro[0].length) : task ? body.split(/[,.!?;:—–]|\s-\s/)[0] : body;
+  const tokens = [...zone.matchAll(WORD_RE)].map((m) => m[0]).slice(0, 4);
+  let i = tokens.findIndex((w) => isKnownName(w));
+  // незнакомое, но правдоподобное — только если клиент прямо представился и это не слово из задачи
+  if (i < 0 && intro && tokens[0] && plausibleName(tokens[0]) && !TASK_HINT_RE.test(tokens[0]) && !isPatronymic(tokens[0])) i = 0;
+  if (i < 0) return none;
+
+  const first = cap(tokens[i]);
+  const patronymic = isPatronymic(tokens[i + 1]) ? cap(tokens[i + 1]) : null;
+  // фамилия рядом с именем: «Анна Петрова», «Петрова Анна», «Иван Иванович Петров»
+  const after = tokens[i + (patronymic ? 2 : 1)];
+  const before = tokens[i - 1];
+  const surname = [after, before].find((w) => w && isSurname(w) && !isKnownName(w) && !isPatronymic(w));
+  const call = patronymic ? `${first} ${patronymic}` : first;
+  return { name: [first, patronymic, surname && cap(surname)].filter(Boolean).join(' '), call, task };
 }
 
 // ---------- что важно в выборе исполнителя ----------
