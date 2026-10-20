@@ -219,7 +219,6 @@ const routes = {
   leads: renderLeads,
   board: renderBoard,
   stats: renderStats,
-  test: renderTest,
   staff: renderStaff,
   account: renderAccount,
   appearance: renderAppearance,
@@ -231,7 +230,6 @@ const SECTION_TABS = {
     ['leads', 'Лиды'],
     ['board', 'Воронка'],
     ['stats', 'Сводка'],
-    ['test', 'Тест'],
     ['abandoned', 'Брошенные'],
   ],
   plans: [
@@ -854,7 +852,6 @@ function readFilters(params) {
     status: params.get('status') ?? '',
     channel: params.get('channel') ?? '',
     q: params.get('q') ?? '',
-    test: params.get('test') === '1',
     page: Number(params.get('page') || 1),
     from: params.get('from') ?? '',
     to: params.get('to') ?? '',
@@ -877,7 +874,6 @@ function apiQuery(f, { withPage = true } = {}) {
   if (f.q) q.set('q', f.q);
   if (f.from) q.set('from', f.from);
   if (f.to) q.set('to', f.to);
-  if (f.test) q.set('test', '1');
   if (withPage && f.page > 1) q.set('page', String(f.page));
   return q;
 }
@@ -943,7 +939,7 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
     PERIODS.map(([v, label]) => h('option', { value: v, selected: v === f.period }, label)),
   );
 
-  const active = [f.period !== '30', f.rating, f.status, f.channel, f.test].filter(Boolean).length;
+  const active = [f.period !== '30', f.rating, f.status, f.channel].filter(Boolean).length;
   return h(
     'div',
     { class: 'filters collapsible' },
@@ -977,12 +973,6 @@ function filterBar(route, f, { rating = true, status = true, search = true } = {
       { class: 'select', 'aria-label': 'Канал', onchange: (e) => update({ channel: e.target.value }) },
       h('option', { value: '' }, 'Все каналы'),
       Object.entries(CHANNELS).map(([v, label]) => h('option', { value: v, selected: v === f.channel }, label)),
-    ),
-    h(
-      'label',
-      { class: 'check' },
-      h('input', { type: 'checkbox', checked: f.test, onchange: (e) => update({ test: e.target.checked }) }),
-      'Тестовые',
     ),
     ], active),
   );
@@ -1037,7 +1027,7 @@ async function renderLeads(params) {
           'td',
           { colspan: 9, class: 'empty' },
           h('strong', {}, f.q || f.rating || f.status || f.channel ? 'Под фильтр ничего не попало' : 'Лидов за этот период нет'),
-          f.test ? 'Пройдите тестовый опрос в разделе «Тест».' : 'Измените период или сбросьте фильтры.',
+          'Измените период или сбросьте фильтры.',
         ),
       ),
     );
@@ -1053,7 +1043,7 @@ async function renderLeads(params) {
         h('td', { class: 'id num' }, h('a', { class: 'row-link', href: `#/leads?lead=${l.id}`, onclick: (e) => { e.preventDefault(); open(); } }, `#${l.id}`)),
         h('td', { class: 'num nowrap' }, fmtDateTime(l.created_at)),
         h('td', {}, meter(l.rating)),
-        h('td', {}, h('span', { class: 'company' }, l.answers.company ?? '—', l.is_test ? ' ' : null, l.is_test ? h('span', { class: 'badge-test' }, 'тест') : null), h('span', { class: 'task' }, l.answers.task ?? '')),
+        h('td', {}, h('span', { class: 'company' }, l.answers.company ?? '—'), h('span', { class: 'task' }, l.answers.task ?? '')),
         h('td', { class: 'c-service' }, answerText('service', l.answers.service)),
         h('td', { class: 'num c-budget' }, answerText('budget', l.answers.budget)),
         h('td', { class: 'c-channel' }, CHANNELS[l.channel] ?? l.channel),
@@ -1245,7 +1235,7 @@ function leadSummary(lead, onUpdate) {
 }
 
 function fillLead(body, title, lead, events) {
-  title.replaceChildren(`Лид #${lead.id}`, ...(lead.is_test ? [' ', h('span', { class: 'badge-test' }, 'тест')] : []));
+  title.replaceChildren(`Лид #${lead.id}`);
 
   const status = h('select', { class: 'select', id: 'f-status' }, Object.entries(ctx.statuses).map(([v, label]) => h('option', { value: v, selected: v === lead.status }, label)));
   const assignee = h('input', { class: 'input', id: 'f-assignee', value: lead.assignee ?? '', placeholder: '@username или имя', maxlength: 100 });
@@ -1296,7 +1286,25 @@ function fillLead(body, title, lead, events) {
     h('div', { class: 'field full' }, h('label', { for: 'f-level' }, 'Уровень квалификации'), level),
     reasonField,
     h('div', { class: 'field full' }, h('label', { for: 'f-comment' }, 'Комментарий'), comment),
-    h('div', { class: 'work-actions' }, save, takeMine, saved),
+    h('div', { class: 'work-actions' }, save, takeMine, saved,
+      // удалить заявку насовсем — только администратор
+      ctx.me.role === 'admin'
+        ? h('button', {
+          type: 'button', class: 'btn btn-danger lead-delete',
+          onclick: async () => {
+            if (!(await confirmDialog(`Удалить лид #${lead.id} насовсем? Пропадут ответы клиента, диалог и история. Документы, медиапланы и клиенты в CRM останутся.`))) return;
+            try {
+              await api(`/admin/api/leads/${lead.id}`, { method: 'DELETE' });
+              toast('Лид удалён');
+              dismissLead();
+              const r = currentRoute();
+              routes[r.name]?.(r.params);
+            } catch (err) {
+              toast(err.message);
+            }
+          },
+        }, 'Удалить лид')
+        : null),
   );
 
   // диалог с ИИ: суть задачи и список услуг — первыми, затем ответы по полям сценария
@@ -1979,47 +1987,6 @@ function renderAccount() {
 }
 
 // ---------- тестовый режим ----------
-
-function renderTest() {
-  app.replaceChildren(
-    ...shell('test', [
-      h('div', { class: 'page-head' }, h('h1', {}, 'Тестовый режим')),
-      h(
-        'div',
-        { class: 'test-grid' },
-        h(
-          'section',
-          { class: 'panel' },
-          h('h2', {}, 'Опрос на сайте'),
-          h('p', {}, 'Откроется демо-страница с виджетом. Пройдите опрос как клиент.'),
-          h('a', { class: 'btn btn-primary', href: ctx.links.widgetTest, target: '_blank', rel: 'noopener' }, 'Открыть виджет'),
-        ),
-        h(
-          'section',
-          { class: 'panel' },
-          h('h2', {}, 'Опрос в Telegram'),
-          ctx.links.telegramTest
-            ? [h('p', {}, 'Бот начнёт тестовый опрос. Можно проверить и «Поделиться номером».'), h('a', { class: 'btn btn-primary', href: ctx.links.telegramTest, target: '_blank', rel: 'noopener' }, 'Открыть бота')]
-            : h('p', {}, 'Бот ещё не подключён: нужен TELEGRAM_BOT_TOKEN в настройках сервера.'),
-        ),
-        h(
-          'section',
-          { class: 'panel' },
-          h('h2', {}, 'Результаты'),
-          h('p', {}, 'Тестовые лиды видны в списке с отметкой «тест» и не смешиваются с рабочими.'),
-          h('a', { class: 'btn', href: '#/leads?test=1&period=all' }, 'Показать тестовые лиды'),
-        ),
-      ),
-      h(
-        'p',
-        { class: 'note' },
-        ctx.testChat
-          ? 'Карточки тестовых лидов приходят в тестовый чат Telegram, а не менеджерам. В CRM они не отправляются.'
-          : 'Тестовые лиды не отправляются менеджерам и в CRM. Чтобы видеть их карточки в Telegram, задайте TELEGRAM_TEST_CHAT_ID.',
-      ),
-    ]),
-  );
-}
 
 // ---------- логотип ----------
 // Оригинальный утверждённый файл (brand/assets/logo → admin/brand/logo.png при npm run brand:sync).

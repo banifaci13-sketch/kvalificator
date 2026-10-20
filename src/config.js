@@ -24,7 +24,8 @@ export function loadConfig(env = process.env) {
     scoringFile: path(env.SCORING_FILE, 'config/scoring.json'),
     privacyPolicyUrl: env.PRIVACY_POLICY_URL || null,
     // Квалификатор-диалог с ИИ: off — сценарий с вопросами; test — диалог только в тестовых опросах; on — для всех
-    qualifierAi: ['off', 'test', 'on'].includes(env.QUALIFIER_AI) ? env.QUALIFIER_AI : 'test',
+    // тестового режима больше нет: прежнее значение «test» — то же, что «on» (диалог с ИИ у всех)
+    qualifierAi: env.QUALIFIER_AI === 'off' ? 'off' : 'on',
     // брошенные диалоги (без контакта) хранятся столько дней, потом удаляются
     abandonedDays: Math.min(30, Math.max(1, Number(env.ABANDONED_DAYS) || 10)),
     telegram: {

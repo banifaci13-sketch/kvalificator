@@ -522,6 +522,10 @@ const MIGRATIONS = [
 
   // Сводка ИИ по заявке: кто клиент, потенциал, комментарий менеджеру (JSON)
   `ALTER TABLE leads ADD COLUMN ai_summary TEXT;`,
+
+  // Тестового режима больше нет: прежние тестовые заявки и диалоги — обычные
+  `UPDATE leads SET is_test = 0, meta = json_remove(meta, '$.test') WHERE is_test = 1 OR json_extract(meta, '$.test') IS NOT NULL;
+   UPDATE sessions SET meta = json_remove(meta, '$.test') WHERE json_extract(meta, '$.test') IS NOT NULL;`,
 ];
 
 /** Номер текущей версии схемы базы. */
@@ -680,6 +684,26 @@ export function openDb(path) {
       return parseLead(q.getLead.get(id));
     },
     leadEvents: (id) => q.listEvents.all(id).map((e) => ({ ...e, data: JSON.parse(e.data) })),
+    /**
+     * Удалить заявку насовсем (только администратор): история, диалог и ответы клиента.
+     * Документы, медиапланы, клиенты CRM и встречи остаются — просто без ссылки на заявку.
+     */
+    deleteLead(id) {
+      const lead = q.getLead.get(id);
+      if (!lead) return false;
+      db.exec('BEGIN');
+      try {
+        db.prepare('DELETE FROM lead_events WHERE lead_id = ?').run(id);
+        for (const table of ['documents', 'mediaplans', 'clients', 'meetings']) db.prepare(`UPDATE ${table} SET lead_id = NULL WHERE lead_id = ?`).run(id);
+        db.prepare('DELETE FROM leads WHERE id = ?').run(id);
+        db.prepare('DELETE FROM sessions WHERE id = ?').run(lead.session_id);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      return true;
+    },
     /** Для отчётов и админки, которым нужны собственные запросы. */
     raw: db,
     close: () => db.close(),

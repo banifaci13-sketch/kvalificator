@@ -339,6 +339,7 @@ table.leads { width: 100%; border-collapse: collapse; min-width: 980px; }
 .work .full { grid-column: 1 / -1; }
 .work-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
 .level-manual { margin: 0 0 6px; font-weight: 600; }
+.work-actions .lead-delete { margin-left: auto; }
 .saved { color: var(--good); font-size: 14px; }
 dl.answers { margin: 0; display: grid; grid-template-columns: minmax(130px, 34%) 1fr; }
 dl.answers dt, dl.answers dd { padding: 8px 0; border-bottom: 1px solid var(--line); margin: 0; font-size: 14px; }

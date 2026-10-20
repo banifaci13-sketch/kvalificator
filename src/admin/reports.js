@@ -23,8 +23,9 @@ export function createReports(db) {
   db.function('ulower', { deterministic: true }, (s) => (s == null ? null : String(s).toLowerCase()));
 
   function leadFilter(f = {}) {
-    const where = ['is_test = ?'];
-    const params = [f.test ? 1 : 0];
+    // тестового режима нет — показываем все заявки
+    const where = ['1 = 1'];
+    const params = [];
     if (f.rating?.length) {
       where.push(`rating IN (${f.rating.map(() => '?').join(',')})`);
       params.push(...f.rating);
@@ -103,9 +104,8 @@ export function createReports(db) {
       const byStatus = rows(`SELECT status, COUNT(*) AS n FROM leads WHERE ${sql} GROUP BY status`);
 
       // Воронка опроса: сколько начали, сколько дошли до конца, на каком вопросе ушли
-      const sWhere = ["json_extract(meta, '$.test') IS NOT 1"];
+      const sWhere = ['1 = 1'];
       const sParams = [];
-      if (f.test) sWhere[0] = "json_extract(meta, '$.test') = 1";
       if (f.channel) { sWhere.push('channel = ?'); sParams.push(f.channel); }
       if (f.from) { sWhere.push(`created_at >= datetime(?, '${MSK_BACK}')`); sParams.push(f.from); }
       if (f.to) { sWhere.push(`created_at < datetime(?, '+1 day', '${MSK_BACK}')`); sParams.push(f.to); }

@@ -296,6 +296,14 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
       },
     );
 
+    // удалить заявку насовсем — только администратор
+    api.delete('/admin/api/leads/:id', { schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } } }, async (req, reply) => {
+      if (req.user.role !== 'admin') return reply.code(403).send({ error: 'Удалять заявки может только администратор' });
+      if (!db.deleteLead(req.params.id)) return reply.code(404).send({ error: 'Лид не найден' });
+      req.log.info({ leadId: req.params.id, by: req.user.name }, 'Лид удалён');
+      return { ok: true };
+    });
+
     // ---------- сотрудники ----------
 
     // Своё имя (видно в шапке, у задач и встреч) каждый меняет сам

@@ -154,7 +154,7 @@ test('сводка: лиды по дням и воронка опроса', asyn
   assert.equal(stats.funnel.completed, 1);
 });
 
-test('тестовые лиды помечаются, не видны в рабочем списке и не уходят менеджерам', async () => {
+test('опрос по тестовой ссылке не уходит менеджерам, но заявка видна в общем списке (тестового режима нет)', async () => {
   const sent = [];
   const notifier = createNotifier(loadConfig({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_MANAGER_CHAT_ID: '1' }));
   const realFetch = globalThis.fetch;
@@ -171,8 +171,7 @@ test('тестовые лиды помечаются, не видны в раб�
     assert.deepEqual(sent, []);
 
     const headers = await login(app);
-    assert.equal((await app.inject({ url: '/admin/api/leads', headers })).json().total, 0);
-    assert.equal((await app.inject({ url: '/admin/api/leads?test=1', headers })).json().total, 1);
+    assert.equal((await app.inject({ url: '/admin/api/leads', headers })).json().total, 1);
 
     await makeLead(qualifier);
     await new Promise((r) => setImmediate(r));
@@ -446,4 +445,48 @@ test('фото профиля: загрузить, показать коллег
   await app.inject({ method: 'DELETE', url: '/admin/api/me/avatar', headers: anna });
   assert.deepEqual((await app.inject({ url: '/admin/api/me', headers: oleg })).json().avatars, {});
   assert.equal((await app.inject({ url: `/admin/api/users/${annaId}/avatar`, headers: oleg })).statusCode, 404);
+});
+
+test('удалить лид может только администратор: заявка, история и диалог стираются, связанное остаётся', async () => {
+  const { app, qualifier, db, auth } = await setup();
+  await makeLead(qualifier, { company: 'ООО Удалить' });
+  await makeLead(qualifier, { company: 'ООО Оставить' });
+  const headers = await login(app);
+  await app.inject({ method: 'PATCH', url: '/admin/api/leads/1', headers, payload: { comment: 'созвонились' } });
+  const sessionId = db.getLead(1).session_id;
+  db.raw.prepare("INSERT INTO mediaplans (title, client, lead_id, spec, created_by, updated_by) VALUES ('План', 'ООО Удалить', 1, '{}', 'Анна', 'Анна')").run();
+
+  // менеджеру нельзя
+  auth.addUser('ivan', 'Иван', { password: PASSWORD, role: 'manager' });
+  const res = await app.inject({ method: 'POST', url: '/admin/api/login', payload: { login: 'ivan', password: PASSWORD } });
+  const ivan = { cookie: `kval_admin=${res.cookies.find((c) => c.name === 'kval_admin').value}` };
+  assert.equal((await app.inject({ method: 'DELETE', url: '/admin/api/leads/1', headers: ivan })).statusCode, 403);
+  assert.ok(db.getLead(1));
+
+  const del = await app.inject({ method: 'DELETE', url: '/admin/api/leads/1', headers });
+  assert.equal(del.statusCode, 200);
+  assert.equal(db.getLead(1) ?? null, null);
+  assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM lead_events WHERE lead_id = 1').get().n, 0);
+  assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM sessions WHERE id = ?').get(sessionId).n, 0, 'диалог с данными клиента тоже стёрт');
+  assert.equal(db.raw.prepare('SELECT lead_id FROM mediaplans').get().lead_id, null, 'медиаплан остался, без ссылки');
+  assert.equal((await app.inject({ url: '/admin/api/leads', headers })).json().total, 1);
+  assert.equal((await app.inject({ method: 'DELETE', url: '/admin/api/leads/1', headers })).statusCode, 404);
+});
+
+test('после обновления прежние тестовые заявки и диалоги становятся обычными', async () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'test-mode.db');
+  const first = openDb(path);
+  const qualifier = createQualifier({ db: first, scenarioSource: staticSource(), rules, log: silentLog });
+  await makeLead(qualifier, {}, { test: true });
+  assert.equal(first.getLead(1).is_test, 1);
+  // откатываем номер версии на одну назад — как будто база до обновления
+  first.raw.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
+  first.close();
+
+  const db = openDb(path);
+  const lead = db.getLead(1);
+  assert.equal(lead.is_test, 0);
+  assert.equal(lead.meta.test, undefined);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sessions WHERE json_extract(meta, '$.test') IS NOT NULL").get().n, 0);
+  db.close();
 });
