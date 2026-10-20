@@ -155,17 +155,22 @@
 
   // Панель вариантов ответа уменьшает ленту — после её отрисовки снова прокручиваем вниз
   function scrollEnd() { log.scrollTop = log.scrollHeight; }
+  // Новые сообщения не помещаются (длинная смета) — показываем их с начала, а не с конца:
+  // иначе верх сметы уходит под шапку и кажется обрезанным
+  function showNew(first) {
+    if (first && log.scrollHeight - first.offsetTop > log.clientHeight) log.scrollTop = Math.max(0, first.offsetTop - 12);
+    else scrollEnd();
+  }
 
   function say(text, extraClass) {
     return new Promise(function (resolve) {
-      if (reduceMotion) { bubble('bot', text, extraClass); return resolve(); }
+      if (reduceMotion) return resolve(bubble('bot', text, extraClass));
       var typing = bubble('bot', '', 'typing');
       typing.innerHTML = '<i></i><i></i><i></i>';
       typing.setAttribute('aria-hidden', 'true');
       setTimeout(function () {
         typing.remove();
-        bubble('bot', text, extraClass);
-        resolve();
+        resolve(bubble('bot', text, extraClass));
       }, Math.min(900, 300 + text.length * 6));
     });
   }
@@ -207,9 +212,10 @@
     setProgress(reply.progress);
     // сообщения перед вопросом (примерная смета) — отдельными пузырями
     var show = Promise.resolve();
+    var firstNew = null;
     if (!(opts2 && opts2.silent)) {
       (step.before || []).concat([step.text]).forEach(function (t) {
-        show = show.then(function () { return say(t); }).then(function () { remember('bot', t); });
+        show = show.then(function () { return say(t); }).then(function (el) { if (!firstNew) firstNew = el; remember('bot', t); });
       });
     }
     return show.then(function () {
@@ -221,7 +227,7 @@
       else renderInput(step);
       if (!step.required) renderSkip(step);
       if (reply.canLeaveContact) renderLeaveContact();
-      scrollEnd();
+      showNew(firstNew);
     });
   }
 
@@ -690,7 +696,7 @@
       '.confirm p{margin:0 0 2px;font-size:13px;color:var(--kv-muted);text-align:center}',
       '.progress{height:3px;background:var(--kv-line)}',
       '.progress span{display:block;height:100%;width:0;background:var(--kv-accent);transition:width .3s ease}',
-      '.log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}',
+      '.log{position:relative;flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}',
       '.msg{max-width:86%;padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word}',
       '.msg.bot{align-self:flex-start;background:var(--kv-bot);border-bottom-left-radius:4px}',
       // сумма в смете не разрывается на две строки
