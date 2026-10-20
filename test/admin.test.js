@@ -96,6 +96,41 @@ test('смена статуса, ответственного и коммент�
   assert.equal(db.getLead(1).status, 'proposal');
 });
 
+test('уровень квалификации меняется вручную: было/стало и причина — в историю, фильтр видит новый уровень', async () => {
+  const { app, qualifier, db } = await setup();
+  await makeLead(qualifier, { company: 'ООО Ромашка' });
+  const headers = await login(app);
+  const before = db.getLead(1).rating;
+  const to = before === 5 ? 3 : 5;
+  const res = await app.inject({
+    method: 'PATCH', url: '/admin/api/leads/1', headers,
+    payload: { rating: to, rating_reason: ' созвонились: бюджет 2 млн ' },
+  });
+  assert.equal(res.statusCode, 200);
+  const { lead, events } = res.json();
+  assert.equal(lead.rating, to);
+  assert.deepEqual(events.at(-1).data, { from: before, to, reason: 'созвонились: бюджет 2 млн' });
+  assert.equal(events.at(-1).type, 'rating');
+  assert.equal(events.at(-1).actor, 'Анна');
+  assert.equal(events[0].data.rating, before, 'оценка бота сохраняется в истории');
+  const found = (await app.inject({ url: `/admin/api/leads?rating=${to}`, headers })).json();
+  assert.equal(found.total, 1);
+
+  // без причины — можно; тот же уровень — без записи в историю
+  const again = (await app.inject({ method: 'PATCH', url: '/admin/api/leads/1', headers, payload: { rating: 2 } })).json();
+  assert.equal(again.events.at(-1).data.reason, null);
+  const same = (await app.inject({ method: 'PATCH', url: '/admin/api/leads/1', headers, payload: { rating: 2, rating_reason: 'x' } })).json();
+  assert.equal(same.events.length, again.events.length);
+
+  for (const rating of [0, 6, 'A', 2.5]) {
+    const bad = await app.inject({ method: 'PATCH', url: '/admin/api/leads/1', headers, payload: { rating } });
+    assert.equal(bad.statusCode, 400, String(rating));
+  }
+  const onlyReason = await app.inject({ method: 'PATCH', url: '/admin/api/leads/1', headers, payload: { rating_reason: 'просто так' } });
+  assert.equal(onlyReason.statusCode, 400);
+  assert.equal(db.getLead(1).rating, 2);
+});
+
 test('выгрузка CSV для Excel: BOM, «;», защита от формул', async () => {
   const { app, qualifier } = await setup();
   await makeLead(qualifier, { task: '=HYPERLINK("http://evil")' });

@@ -663,10 +663,13 @@ export function openDb(path) {
       if (!lead) return null;
       db.exec('BEGIN');
       try {
-        for (const field of ['status', 'assignee', 'comment']) {
+        for (const field of ['status', 'assignee', 'comment', 'rating']) {
           if (!(field in patch) || patch[field] === lead[field]) continue;
           db.prepare(`UPDATE leads SET ${field} = ? WHERE id = ?`).run(patch[field], id);
-          const data = field === 'comment' ? { text: patch[field] } : { from: lead[field], to: patch[field] };
+          // уровень меняют вручную — в истории было/стало и почему
+          const data = field === 'comment' ? { text: patch[field] }
+            : field === 'rating' ? { from: lead.rating, to: patch.rating, reason: patch.rating_reason?.trim() || null }
+              : { from: lead[field], to: patch[field] };
           q.insertEvent.run(id, actor, field, JSON.stringify(data));
         }
         db.exec('COMMIT');

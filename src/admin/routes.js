@@ -278,12 +278,17 @@ export async function adminRoutes(app, { config, auth, reports, db, scenarioSour
               status: { type: 'string', enum: Object.keys(LEAD_STATUSES) },
               assignee: { type: ['string', 'null'], maxLength: 100 },
               comment: { type: ['string', 'null'], maxLength: 5000 },
+              // уровень квалификации вручную: 5 — A … 1 — E; причина — в историю лида
+              rating: { type: 'integer', minimum: 1, maximum: 5 },
+              rating_reason: { type: ['string', 'null'], maxLength: 500 },
             },
           },
         },
       },
       async (req, reply) => {
         const patch = { ...req.body };
+        if (!('rating' in patch)) delete patch.rating_reason;
+        if (!Object.keys(patch).length) return reply.code(400).send({ error: 'Нечего менять' });
         if (typeof patch.assignee === 'string') patch.assignee = patch.assignee.trim() || null;
         const lead = db.updateLead(req.params.id, patch, req.user.name);
         if (!lead) return reply.code(404).send({ error: 'Лид не найден' });

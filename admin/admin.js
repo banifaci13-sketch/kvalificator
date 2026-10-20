@@ -27,7 +27,16 @@ const EVENT_TEXT = {
   status: (e, ctx) => `Статус: ${ctx.statuses[e.data.from] ?? e.data.from ?? '—'} → ${ctx.statuses[e.data.to] ?? e.data.to}`,
   assignee: (e) => (e.data.to ? `Ответственный: ${e.data.to}` : 'Ответственный снят'),
   comment: (e) => (e.data.text ? `Комментарий: ${e.data.text}` : 'Комментарий удалён'),
+  rating: (e) => `Уровень изменён вручную: ${letter(e.data.from)} → ${letter(e.data.to)}${e.data.reason ? ` (${e.data.reason})` : ''}`,
 };
+// что значит уровень — подсказка при ручной смене (критерии таблицы «Этапы продаж»)
+const LEVELS = [
+  [5, 'A — звёздный клиент, доход агентству 300 000+'],
+  [4, 'B — бюджет от 1 млн или доход 150 000+'],
+  [3, 'C — крепкая адекватная компания'],
+  [2, 'D — «сколько стоит», нет ЛПР'],
+  [1, 'E — спам, нецелевой'],
+];
 const PERIODS = [
   ['7', '7 дней'],
   ['30', '30 дней'],
@@ -1241,6 +1250,11 @@ function fillLead(body, title, lead, events) {
   const status = h('select', { class: 'select', id: 'f-status' }, Object.entries(ctx.statuses).map(([v, label]) => h('option', { value: v, selected: v === lead.status }, label)));
   const assignee = h('input', { class: 'input', id: 'f-assignee', value: lead.assignee ?? '', placeholder: '@username или имя', maxlength: 100 });
   const comment = h('textarea', { class: 'textarea', id: 'f-comment', maxlength: 5000, placeholder: 'Договорённости, следующий шаг' }, lead.comment ?? '');
+  // уровень квалификации можно поменять вручную; причина — в историю
+  const level = h('select', { class: 'select', id: 'f-level' }, LEVELS.map(([v, label]) => h('option', { value: String(v), selected: v === lead.rating }, label)));
+  const levelReason = h('input', { class: 'input', id: 'f-level-reason', maxlength: 500, placeholder: 'Например: созвонились — бюджет 2 млн, решение принимает сам' });
+  const reasonField = h('div', { class: 'field full', hidden: true }, h('label', { for: 'f-level-reason' }, 'Почему меняете уровень'), levelReason);
+  level.addEventListener('change', () => { reasonField.hidden = Number(level.value) === lead.rating; });
   const saved = h('span', { class: 'saved', role: 'status' });
   const save = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Сохранить');
   const takeMine = h('button', { type: 'button', class: 'btn', onclick: () => { assignee.value = ctx.me.name; if (status.value === 'new') status.value = 'in_work'; } }, 'Взять себе');
@@ -1258,6 +1272,10 @@ function fillLead(body, title, lead, events) {
           if (status.value !== lead.status) patch.status = status.value;
           if ((assignee.value.trim() || null) !== lead.assignee) patch.assignee = assignee.value;
           if ((comment.value || null) !== lead.comment) patch.comment = comment.value || null;
+          if (Number(level.value) !== lead.rating) {
+            patch.rating = Number(level.value);
+            patch.rating_reason = levelReason.value.trim() || null;
+          }
           if (!Object.keys(patch).length) {
             saved.textContent = 'Изменений нет';
             return;
@@ -1275,6 +1293,8 @@ function fillLead(body, title, lead, events) {
     },
     h('div', { class: 'field' }, h('label', { for: 'f-status' }, 'Статус'), status),
     h('div', { class: 'field' }, h('label', { for: 'f-assignee' }, 'Ответственный'), assignee),
+    h('div', { class: 'field full' }, h('label', { for: 'f-level' }, 'Уровень квалификации'), level),
+    reasonField,
     h('div', { class: 'field full' }, h('label', { for: 'f-comment' }, 'Комментарий'), comment),
     h('div', { class: 'work-actions' }, save, takeMine, saved),
   );
@@ -1304,13 +1324,19 @@ function fillLead(body, title, lead, events) {
     ['Создан', fmtDateTime(lead.created_at)],
   ].filter(Boolean);
 
+  // уровень меняли вручную — показываем, кто и почему, и какой была оценка бота
+  const manual = [...events].reverse().find((e) => e.type === 'rating');
+  const autoRating = events.find((e) => e.type === 'created')?.data?.rating ?? events.find((e) => e.type === 'rating')?.data?.from;
+
   // пустые блоки (нет тегов, нет диалога) не выводим: replaceChildren превратил бы null в текст
   body.replaceChildren(...[
     h(
       'section',
       { class: 'score', 'aria-label': 'Оценка' },
       meter(lead.rating, true),
-      h('div', {}, h('ul', {}, lead.reasons.map((r) => h('li', {}, r)))),
+      h('div', {},
+        manual ? h('p', { class: 'level-manual' }, `Уровень изменён вручную: ${manual.actor}${manual.data.reason ? ` — ${manual.data.reason}` : ''}. Оценка бота — ${letter(autoRating)}, по ответам:`) : null,
+        h('ul', {}, lead.reasons.map((r) => h('li', {}, r)))),
     ),
     lead.tags.length ? h('div', {}, lead.tags.map((t) => h('span', { class: 'tag' }, t))) : null,
     leadSummary(lead, (res) => fillLead(body, title, res.lead, res.events)),
