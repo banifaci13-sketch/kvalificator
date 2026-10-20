@@ -39,7 +39,7 @@ test('разбор по правилам: бюджет, услуги, сроки
   assert.equal(moneyFromText('на 3 месяца, 2 канала'), null, 'не деньги');
   assert.deepEqual(
     ruleExtract('Нужна реклама в Директе и SMM для ООО «Таллер», сайт tallerbike.ru, бюджет 500 000 ₽, срочно, сейчас работаем с агентством'),
-    { services: ['context', 'smm'], budget: '300k_1m', start: 'asap', site: 'tallerbike.ru', company: 'ООО «Таллер»', agency_experience: 'current' },
+    { services: ['context', 'smm'], budget: '300k_1m', budget_rub: 500_000, start: 'asap', site: 'tallerbike.ru', company: 'ООО «Таллер»', agency_experience: 'current' },
   );
   assert.equal(ruleExtract('пишите на test@mail.ru').site, undefined, 'почта — не сайт');
   assert.equal(ruleExtract('сайт петров.рф').site, 'петров.рф');
@@ -50,7 +50,7 @@ test('ответ модели проверяется: только вариан�
     company: 'ООО Ромашка', site: 'romashka.ru', services: ['context', 'хакнуть сервер', 'seo'], budget_rub: 1_200_000,
     start: 'month', industry: 'medicine', role: 'boss', agency_experience: 'past', dissatisfaction: 'Нет отчётности', summary: 'Нужны заявки',
   }, scenario);
-  assert.deepEqual(out, { company: 'ООО Ромашка', site: 'romashka.ru', services: ['context', 'seo'], budget: '1m_3m', start: 'month', agency_experience: 'past', industry: 'medicine', dissatisfaction: 'Нет отчётности', summary: 'Нужны заявки' });
+  assert.deepEqual(out, { company: 'ООО Ромашка', site: 'romashka.ru', services: ['context', 'seo'], budget: '1m_3m', budget_rub: 1_200_000, start: 'month', agency_experience: 'past', industry: 'medicine', dissatisfaction: 'Нет отчётности', summary: 'Нужны заявки' });
   assert.deepEqual(cleanExtract({ budget_rub: 0 }, scenario), { budget: 'unknown' }, '0 — бюджет не определён');
   assert.deepEqual(cleanExtract('не JSON', scenario), {});
 });
@@ -352,8 +352,8 @@ test('услуги от ИИ сверяются со словарём: отка�
 });
 
 test('сумма за год от ИИ пересчитывается в месяц кодом', () => {
-  assert.deepEqual(cleanExtract({ budget_rub: 6_000_000, budget_period: 'year' }, scenario), { budget: '300k_1m' });
-  assert.deepEqual(cleanExtract({ budget_rub: 900_000, budget_period: 'quarter' }, scenario), { budget: '300k_1m' });
+  assert.deepEqual(cleanExtract({ budget_rub: 6_000_000, budget_period: 'year' }, scenario), { budget: '300k_1m', budget_rub: 500_000 });
+  assert.deepEqual(cleanExtract({ budget_rub: 900_000, budget_period: 'quarter' }, scenario), { budget: '300k_1m', budget_rub: 300_000 });
 });
 
 test('ИИ узнал предложение услуг с цитатой — на почту; без слов предложения в цитате — это клиент', async () => {

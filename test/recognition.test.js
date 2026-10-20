@@ -229,3 +229,24 @@ test('резюме и спам — сразу, даже в поле имени',
   r = (await say(s, { value: 'Заработок от 5000 в день, пиши в лс' })).reply;
   assert.equal(r.rejected, 'spam');
 });
+
+test('уровень в диалоге: «контекст за 20 тысяч» при цене от 30 000 — D, бюджет 600к — B', async () => {
+  const { start, say, db } = await setup();
+  let s = await start();
+  await say(s, { value: 'Олег' });
+  await say(s, { value: 'Нужен директ для автосервиса, бюджет 20 тысяч, срочно, раньше не работали, сайт avto.ru' });
+  await say(s, { value: 'результат' });
+  await say(s, { value: '+7 900 111-00-01', consent: true });
+  let lead = db.getLead(1);
+  assert.equal(lead.answers.budget_rub, 20_000);
+  assert.equal(lead.answers.price_from, 30_000);
+  assert.equal(lead.rating, 2, lead.reasons.join('; '));
+
+  s = await start();
+  await say(s, { value: 'Ирина' });
+  await say(s, { value: 'Нужен директ для автосервиса, бюджет 600 тысяч в месяц, срочно, раньше не работали, сайт avto2.ru' });
+  await say(s, { value: 'результат' });
+  await say(s, { value: '+7 900 111-00-02', consent: true });
+  lead = db.getLead(2);
+  assert.equal(lead.rating, 4, lead.reasons.join('; '));
+});

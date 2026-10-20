@@ -138,7 +138,7 @@ export function createPricing(matrix) {
       const unit = matrix?.unit ? ` ${matrix.unit}` : '';
       const total = priced.length ? `от ${rub(Math.min(...priced.map((p) => p.from)))}${unit}` : null;
       const line = (p) => `${p.name} — ${p.from ? `от ${rub(p.from)}` : p.note ?? 'расчёт на этапе сметы'}${p.from && p.note ? ` (${p.note})` : ''}`;
-      return { total, items: items.map(line), ids: items.map((p) => p.id) };
+      return { total, from: priced.length ? Math.min(...priced.map((p) => p.from)) : null, items: items.map(line), ids: items.map((p) => p.id) };
     },
   };
 }

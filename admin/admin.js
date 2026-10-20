@@ -31,11 +31,11 @@ const EVENT_TEXT = {
 };
 // что значит уровень — подсказка при ручной смене (критерии таблицы «Этапы продаж»)
 const LEVELS = [
-  [5, 'A — звёздный клиент, доход агентству 300 000+'],
-  [4, 'B — бюджет от 1 млн или доход 150 000+'],
+  [5, 'A — звёздный клиент: мировой или федеральный бренд'],
+  [4, 'B — бюджет от 500 000 ₽/мес, несколько каналов или комплекс, зарубежный'],
   [3, 'C — крепкая адекватная компания'],
-  [2, 'D — «сколько стоит», нет ЛПР'],
-  [1, 'E — спам, нецелевой'],
+  [2, 'D — собирает КП, нет ЛПР, «сколько стоит», не проходит по цене'],
+  [1, 'E — неадекват, спам, стоп-слова'],
 ];
 const PERIODS = [
   ['7', '7 дней'],
@@ -1300,10 +1300,10 @@ function fillLead(body, title, lead, events) {
   );
 
   // диалог с ИИ: суть задачи и список услуг — первыми, затем ответы по полям сценария
-  const EXTRA = { summary: 'Суть задачи', proposal_request: 'Ждёт от нас', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
+  const EXTRA = { summary: 'Суть задачи', proposal_request: 'Ждёт от нас', famous_brand: 'Известный бренд (оценка ИИ)', budget_rub: 'Бюджет в месяц (назвал клиент)', services: 'Услуги', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
   const extra = Object.entries(EXTRA)
     .filter(([k]) => lead.answers[k] != null)
-    .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : String(lead.answers[k]))]);
+    .map(([k, label]) => [h('dt', {}, label), h('dd', {}, k === 'services' ? lead.answers.services.map((v) => answerText('service', v)).join(', ') : k === 'budget_rub' ? `${Number(lead.answers[k]).toLocaleString('ru-RU')} ₽` : String(lead.answers[k]))]);
   const answers = [
     ...extra,
     ...ctx.scenario.steps

@@ -322,8 +322,10 @@ export function ruleExtract(text, { now = new Date() } = {}) {
   const rub = moneyFromText(t);
   const budgetToUs = BUDGET_TO_US_RE.test(t);
   if (budgetToUs || PROPOSAL_RE.test(t)) out.proposal = true;
-  if (rub != null) out.budget = budgetBucket(rub);
-  else if (budgetToUs || BUDGET_UNKNOWN_RE.test(t)) out.budget = 'unknown';
+  if (rub != null) {
+    out.budget = budgetBucket(rub);
+    out.budget_rub = rub;
+  } else if (budgetToUs || BUDGET_UNKNOWN_RE.test(t)) out.budget = 'unknown';
   const start = startFrom(t, now);
   if (start) out.start = start;
   const site = siteFrom(t);
@@ -364,11 +366,14 @@ function answerFor(key, part, now) {
     }
     case 'budget': {
       const rub = moneyFromText(p);
-      if (rub != null) return { budget: budgetBucket(rub) };
+      if (rub != null) return { budget: budgetBucket(rub), budget_rub: rub };
       if (BUDGET_TO_US_RE.test(p) || /от\s+вас|ваше\s+усмотрен|предлож|рекоменд/iu.test(p)) return { budget: 'unknown', proposal: true };
       // голое число в ответе на вопрос о бюджете — тысячи («150» → 150 000)
       const bare = /^\s*(?:около|примерно|порядка|до|от|~)?\s*(\d{2,4})\s*(?:в\s+мес\S*)?\s*$/iu.exec(p);
-      if (bare) return { budget: budgetBucket(Number(bare[1]) * 1000 - (/до/i.test(p) ? 1 : 0)) };
+      if (bare) {
+        const v = Number(bare[1]) * 1000 - (/до/i.test(p) ? 1 : 0);
+        return { budget: budgetBucket(v), budget_rub: v };
+      }
       if (DONT_KNOW_RE.test(p) || NO_RE.test(p) || BUDGET_UNKNOWN_RE.test(p)) return { budget: 'unknown' };
       return {};
     }

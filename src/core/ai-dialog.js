@@ -58,6 +58,7 @@ function systemPrompt(scenario) {
 - role: одно из [${opts('role')}] или null — только если человек сам сказал о своей роли
 - decision_maker: одно из [${opts('decision_maker')}] или null
 - intent: "client" — пишет клиент с задачей; "offer" — сам предлагает агентству свои услуги, сотрудничество, рекламу на своей площадке, лиды; "job" — ищет работу, присылает резюме; "spam" — спам. Клиент, который рассказывает о своём бизнесе («мы оказываем услуги клининга, нужна реклама») или просит у агентства предложение («пришлите КП»), — client
+- famous_brand: название, если клиент сам представляет известный мировой или федеральный бренд (крупный банк, страховая, сеть, производитель, известный по всей России), иначе null. Упоминание чужого бренда — не он: «продаём на Ozon» — не Ozon, «как у Сбера» — не Сбер
 - summary: суть задачи одним-двумя предложениями для менеджера
 - evidence: объект { поле: точная цитата из текста клиента, на которой основано значение } — для каждого заполненного поля, кроме summary.
   Цитату копируй дословно. Нет цитаты — значит, клиент этого не говорил: ставь null, не угадывай (сроки, опыт с подрядчиком, бюджет — особенно).
@@ -128,7 +129,13 @@ export function cleanExtract(raw, scenario, source = null) {
   // пересчёт в месяц — кодом, не моделью
   const perMonth = budget && raw.budget_period === 'year' ? budget / 12 : budget && raw.budget_period === 'quarter' ? budget / 3 : budget;
   if (budget === 0) out.budget = 'unknown';
-  else if (perMonth != null && perMonth > 0) out.budget = budgetBucket(perMonth);
+  else if (perMonth != null && perMonth > 0) {
+    out.budget = budgetBucket(perMonth);
+    out.budget_rub = Math.round(perMonth);
+  }
+  // известный бренд — только если его название есть в словах клиента
+  const brand = str(raw.famous_brand, 100);
+  if (brand && (source == null || backedIntent(brand))) out.famous_brand = brand;
   for (const id of ['start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker']) {
     if (raw[id] != null && allowed(id).has(raw[id])) out[id] = raw[id];
   }
@@ -218,6 +225,9 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
     // менеджеру — с разбивкой, чтобы видеть, из чего сложилась цифра, названная клиенту
     if (est) a.price = est.total ? `${est.total}: ${est.items.join('; ')}` : est.items.join('; ');
     else delete a.price;
+    // минимальная цена по прайсу — для оценки: бюджет меньше неё — «не проходит по цене» (уровень D)
+    if (est?.from) a.price_from = est.from;
+    else delete a.price_from;
   }
 
   function render(state) {
@@ -300,7 +310,7 @@ export function createAiDialog({ scenario, ai = null, log = console, pricing = n
       a.service = ex.services.length > 1 ? 'complex' : ex.services[0];
       a.services = ex.services;
     }
-    for (const k of ['budget', 'start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker', 'dissatisfaction', 'reason']) {
+    for (const k of ['budget', 'budget_rub', 'start', 'agency_experience', 'industry', 'market', 'geography', 'role', 'decision_maker', 'dissatisfaction', 'reason', 'famous_brand']) {
       if (ex[k] != null) a[k] = ex[k];
     }
     if (ex.summary) a.summary = ex.summary;
