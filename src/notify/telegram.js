@@ -64,7 +64,11 @@ export function formatLeadCard(lead, scenario) {
   for (const [id, value] of Object.entries(lead.answers)) {
     if (known.has(id)) continue;
     const label = EXTRA[id] ?? id;
-    const text = id === 'services' && Array.isArray(value) ? value.map((v) => serviceStep?.options?.find((o) => o.value === v)?.label ?? v).join(', ') : formatAnswer({}, value);
+    const text = id === 'services' && Array.isArray(value) ? value.map((v) => serviceStep?.options?.find((o) => o.value === v)?.label ?? v).join(', ')
+      : (id === 'budget_rub' || id === 'price_from') && Number.isFinite(value) ? `${Math.round(value).toLocaleString('ru-RU').replace(/\s/g, ' ')} ₽`
+        : id === 'company_scale' ? SCALE[value] ?? value
+          : id === 'inadequate' ? (value === true ? 'да' : value)
+            : formatAnswer({}, value);
     rows.push(`<b>${esc(label)}:</b> ${esc(text)}`);
   }
   if (lead.meta?.dialog?.length) rows.push(`<i>Диалог с клиентом — ${lead.meta.dialog.length} сообщений, целиком в карточке заявки в кабинете</i>`);
@@ -100,6 +104,7 @@ function formatAnswer(step, value) {
 }
 
 // подписи ответов диалога с ИИ, которых нет среди вопросов сценария
-const EXTRA = { proposal_request: 'Ждёт от нас', services: 'Услуги', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)' };
+const EXTRA = { proposal_request: 'Ждёт от нас', services: 'Услуги', summary: 'Суть задачи', clarification: 'Уточнение клиента', criteria_text: 'Главное в выборе (своими словами)', price: 'Предварительная стоимость (названа клиенту)', budget_rub: 'Бюджет в месяц (назвал клиент)', price_from: 'Минимальная стоимость услуг по прайсу', company_scale: 'Масштаб компании (оценка ИИ)', inadequate: 'Неадекват (оценка ИИ)' };
+const SCALE = { world: 'мировой бренд', federal: 'федеральный бренд', large: 'крупная компания', small: 'небольшой бизнес' };
 
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

@@ -31,6 +31,7 @@
     "fastify": "^5.12.5",
     "grammy": "^1.46.0",
     "jszip": "^3.10.2",
+    "nodemailer": "10.0.16",
     "pino": "^10.4.0",
     "playwright-core": "^1.56.1",
     "pptxgenjs": "^4.0.1"

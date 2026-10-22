@@ -444,9 +444,9 @@ export function createActions({ crm, calendar, auth, mediaplans, library, leads,
     },
 
     // ---------- деньги ----------
-    money_summary(user) {
+    money_summary(user, cmd, { now } = {}) {
       if (!money) return { reply: 'Учёт оплат недоступен.' };
-      const s = money.summary(user);
+      const s = money.summary(user, now);
       const rub = (v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
       const lines = [];
       lines.push(s.overdue.sum ? `Просрочено: ${rub(s.overdue.sum)} (${s.overdue.count}).` : 'Просроченных оплат нет.');

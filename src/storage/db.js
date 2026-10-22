@@ -526,6 +526,10 @@ const MIGRATIONS = [
   // Тестового режима больше нет: прежние тестовые заявки и диалоги — обычные
   `UPDATE leads SET is_test = 0, meta = json_remove(meta, '$.test') WHERE is_test = 1 OR json_extract(meta, '$.test') IS NOT NULL;
    UPDATE sessions SET meta = json_remove(meta, '$.test') WHERE json_extract(meta, '$.test') IS NOT NULL;`,
+
+  // Письмо о брошенном диалоге — один раз на диалог; о старых диалогах не пишем
+  `ALTER TABLE sessions ADD COLUMN abandon_notified INTEGER NOT NULL DEFAULT 0;
+   UPDATE sessions SET abandon_notified = 1;`,
 ];
 
 /** Номер текущей версии схемы базы. */

@@ -17,6 +17,15 @@ export function createAbandoned({ db, days = 10 }) {
          AND json_array_length(json_extract(state, '$.transcript')) > 1
        ORDER BY updated_at DESC LIMIT ?`,
     ),
+    // ещё не отправленные на почту: брошенные, с перепиской, не стёртые
+    toNotify: db.prepare(
+      `SELECT id, channel, status, created_at, updated_at, state, meta FROM sessions
+       WHERE status != 'done' AND abandon_notified = 0 AND json_extract(state, '$.purged') IS NULL
+         AND (status = 'abandoned' OR updated_at < datetime('now', '${IDLE}'))
+         AND json_array_length(json_extract(state, '$.transcript')) > 1
+       ORDER BY updated_at LIMIT ?`,
+    ),
+    markNotified: db.prepare('UPDATE sessions SET abandon_notified = 1 WHERE id = ?'),
     purge: db.prepare(
       `UPDATE sessions
        SET state = json_object('stepId', json_extract(state, '$.stepId'), 'mode', json_extract(state, '$.mode'), 'purged', 1),
@@ -55,6 +64,19 @@ export function createAbandoned({ db, days = 10 }) {
     days,
     /** Брошенные диалоги с ИИ-квалификатором, новые сверху. */
     list: (limit = 200) => q.list.all(limit).map(view),
+    /**
+     * Письма о новых брошенных диалогах: send(view) на каждый, один раз. Ошибка отправки —
+     * диалог остаётся неотправленным и уйдёт в следующий раз. Возвращает, сколько отправлено.
+     */
+    async notifyNew(send, limit = 20) {
+      let n = 0;
+      for (const row of q.toNotify.all(limit)) {
+        await send(view(row));
+        q.markNotified.run(row.id);
+        n++;
+      }
+      return n;
+    },
     /** Стереть переписку и ответы у незавершённых диалогов старше срока хранения. Возвращает, сколько стёрто. */
     purge: () => Number(q.purge.run(`-${days} days`).changes),
   };

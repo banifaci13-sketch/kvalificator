@@ -23,7 +23,6 @@ export function loadConfig(env = process.env) {
     scenarioCsvUrl: env.SCENARIO_CSV_URL || null,
     scoringFile: path(env.SCORING_FILE, 'config/scoring.json'),
     privacyPolicyUrl: env.PRIVACY_POLICY_URL || null,
-    // Квалификатор-диалог с ИИ: off — сценарий с вопросами; test — диалог только в тестовых опросах; on — для всех
     // тестового режима больше нет: прежнее значение «test» — то же, что «on» (диалог с ИИ у всех)
     qualifierAi: env.QUALIFIER_AI === 'off' ? 'off' : 'on',
     // брошенные диалоги (без контакта) хранятся столько дней, потом удаляются
@@ -42,6 +41,21 @@ export function loadConfig(env = process.env) {
     },
     max: {
       botUsername: env.MAX_BOT_USERNAME || null,
+    },
+    // Уведомления на почту: каждый новый лид и брошенные диалоги. Ящик и пароль — только здесь, в .env
+    mail: {
+      to: list(env.NOTIFY_EMAIL),
+      smtp: {
+        host: env.SMTP_HOST || null,
+        port: Number(env.SMTP_PORT || 465),
+        // 465 — сразу TLS; 587 — STARTTLS (SMTP_SECURE=false)
+        secure: env.SMTP_SECURE ? env.SMTP_SECURE !== 'false' : Number(env.SMTP_PORT || 465) === 465,
+        user: env.SMTP_USER || null,
+        pass: env.SMTP_PASSWORD || null,
+        from: env.SMTP_FROM || env.SMTP_USER || null,
+      },
+      // письма о брошенных диалогах (посетитель ушёл, не оставив контакт)
+      abandoned: env.NOTIFY_EMAIL_ABANDONED !== 'false',
     },
     webhook: {
       url: env.LEAD_WEBHOOK_URL || null,

@@ -47,7 +47,7 @@ const ai = createAi(config.ai);
 const pricing = loadPricing(resolve(config.root, 'config/pricing.json'), log);
 const qualifier = createQualifier({ db, scenarioSource, rules, notifier, log, ai, aiMode: config.qualifierAi, pricing, summarizer: createLeadSummary({ ai, log }) });
 
-if (!notifier) log.warn('Получатели лидов не настроены (TELEGRAM_* или LEAD_WEBHOOK_URL) — лиды только сохраняются в базу');
+if (!notifier) log.warn('Получатели лидов не настроены (TELEGRAM_*, NOTIFY_EMAIL + SMTP_* или LEAD_WEBHOOK_URL) — лиды только сохраняются в базу');
 
 const auth = createAuth(db.raw);
 bootstrapAdmin();
@@ -109,6 +109,13 @@ const abandoned = createAbandoned({ db: db.raw, days: config.abandonedDays });
 const purgeJob = monitor.job('purge', `Удаление брошенных диалогов старше ${config.abandonedDays} дн.`, 3600e3);
 const purgeTimer = setInterval(() => purgeJob(() => abandoned.purge()), 3600e3);
 setTimeout(() => purgeJob(() => abandoned.purge()), 60e3);
+// раз в минуту: письма о новых брошенных диалогах (если настроена почта)
+const abandonedMail = notifier?.email && config.mail.abandoned
+  ? monitor.job('abandoned-mail', 'Письма о брошенных диалогах', 60_000)
+  : null;
+const abandonedMailTimer = abandonedMail
+  ? setInterval(() => abandonedMail(() => abandoned.notifyNew((d) => notifier.email.notifyAbandoned(d, scenarioSource.get()))), 60_000)
+  : null;
 // раз в час: регулярные встречи — продлить серии на полгода вперёд
 const seriesJob = monitor.job('meetings', 'Регулярные встречи: продление на полгода вперёд', 3600e3);
 const seriesTimer = setInterval(() => seriesJob(() => calendar.extendSeries()), 3600e3);
@@ -126,6 +133,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     clearInterval(retryTimer);
     clearInterval(moneyTimer);
     clearInterval(purgeTimer);
+    clearInterval(abandonedMailTimer);
     clearInterval(seriesTimer);
     reminders?.stop();
     scenarioSource.stop();

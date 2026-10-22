@@ -331,7 +331,7 @@ test('после обновления первый сотрудник старо
   const path = join(mkdtempSync(join(tmpdir(), 'kval-')), 'v2.db');
   const fresh = openDb(path);
   // база в состоянии версии 2: колонки role ещё нет, сотрудники заведены старой командой
-  fresh.raw.exec(`DROP TABLE chat_files; DROP TABLE chat_messages; DROP TABLE chat_members; DROP TABLE chats; DROP TABLE client_files; DROP INDEX client_payments_auto; DROP TABLE client_payments; DROP TABLE task_files; DROP TABLE task_checklist; DROP TABLE news_reactions; DROP TABLE news_comments; DROP TABLE news_files; DROP TABLE news_posts; DROP TABLE files; ALTER TABLE admin_users DROP COLUMN news_seen; DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; ALTER TABLE admin_users DROP COLUMN prefs; ALTER TABLE admin_users DROP COLUMN position; ALTER TABLE admin_users DROP COLUMN phone; DROP TABLE media; DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; ALTER TABLE leads DROP COLUMN ai_summary; DROP TABLE meeting_participants; DROP INDEX meetings_series; DROP TABLE meetings; DROP TABLE meeting_series; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
+  fresh.raw.exec(`DROP TABLE chat_files; DROP TABLE chat_messages; DROP TABLE chat_members; DROP TABLE chats; DROP TABLE client_files; DROP INDEX client_payments_auto; DROP TABLE client_payments; DROP TABLE task_files; DROP TABLE task_checklist; DROP TABLE news_reactions; DROP TABLE news_comments; DROP TABLE news_files; DROP TABLE news_posts; DROP TABLE files; ALTER TABLE admin_users DROP COLUMN news_seen; DROP TABLE user_avatars; ALTER TABLE admin_users DROP COLUMN avatar_ver; ALTER TABLE admin_users DROP COLUMN prefs; ALTER TABLE admin_users DROP COLUMN position; ALTER TABLE admin_users DROP COLUMN phone; DROP TABLE media; DROP TABLE ai_log; DROP TABLE digests_sent; DROP TABLE meeting_reminders_sent; ALTER TABLE sessions DROP COLUMN abandon_notified; ALTER TABLE leads DROP COLUMN ai_summary; DROP TABLE meeting_participants; DROP INDEX meetings_series; DROP TABLE meetings; DROP TABLE meeting_series; DROP INDEX admin_users_calendar; ALTER TABLE admin_users DROP COLUMN telegram_chat_id; ALTER TABLE admin_users DROP COLUMN telegram_link_code; ALTER TABLE admin_users DROP COLUMN calendar_token; DROP TABLE notifications; DROP TABLE assistant_messages; DROP TABLE kb_docs; DROP TABLE task_links; DROP TABLE task_comments; DROP TABLE tasks; DROP TABLE task_columns; DROP TABLE task_boards; DROP TABLE clients; DROP TABLE mp_benchmarks; DROP TABLE mediaplans; DROP TABLE document_exports; DROP TABLE documents; DROP TABLE doc_templates;
     ALTER TABLE admin_users DROP COLUMN role; PRAGMA user_version = 2;
     INSERT INTO admin_users (email, name, password_hash) VALUES ('owner@soroka.ru', 'Владелец', NULL), ('second', 'Второй', NULL);`);
   fresh.close();
@@ -479,8 +479,8 @@ test('после обновления прежние тестовые заявк
   const qualifier = createQualifier({ db: first, scenarioSource: staticSource(), rules, log: silentLog });
   await makeLead(qualifier, {}, { test: true });
   assert.equal(first.getLead(1).is_test, 1);
-  // откатываем номер версии на одну назад — как будто база до обновления
-  first.raw.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
+  // откатываем базу на две версии назад — как будто она до обновления
+  first.raw.exec(`ALTER TABLE sessions DROP COLUMN abandon_notified; PRAGMA user_version = ${SCHEMA_VERSION - 2}`);
   first.close();
 
   const db = openDb(path);
